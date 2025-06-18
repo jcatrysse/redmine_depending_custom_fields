@@ -1,0 +1,6 @@
+<p>
+  <label><%= l(:label_extended_user) %></label>
+  <%= check_box_tag 'settings[enabled_formats][]',
+                    RedmineDependingCustomFields::FIELD_FORMAT_USER,
+                    @settings['enabled_formats'].include?(RedmineDependingCustomFields::FIELD_FORMAT_USER) %>
+</p>
