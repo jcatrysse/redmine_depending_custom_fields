@@ -1,0 +1,7 @@
+en:
+  label_extended_user: "User (extended)"
+  field_exclude_admins: "Exclude administrators"
+  label_show_active_users: "Show active users"
+  label_show_registered_users: "Show registered users"
+  label_show_locked_users: "Show inactive users"
+  label_groups: "Groups"

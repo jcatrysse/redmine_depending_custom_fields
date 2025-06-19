@@ -1,0 +1,7 @@
+nl:
+  label_extended_user: "Gebruiker (uitgebreid)"
+  field_exclude_admins: "Admins uitsluiten"
+  label_show_active_users: "Actieve gebruikers tonen"
+  label_show_registered_users: "Geregistreerde gebruikers tonen"
+  label_show_locked_users: "Inactieve gebruikers tonen"
+  label_groups: "Groepen"
