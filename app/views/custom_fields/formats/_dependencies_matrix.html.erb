@@ -1,0 +1,26 @@
+<% if parent_field && parent_field.possible_values.any? && custom_field.possible_values.any? %>
+<table class="list dependencies-matrix">
+  <thead>
+    <tr>
+      <th></th>
+      <% custom_field.possible_values.each do |cv| %>
+        <th><%= cv %></th>
+      <% end %>
+    </tr>
+  </thead>
+  <tbody>
+    <% parent_field.possible_values.each do |pv| %>
+      <tr>
+        <th><%= pv %></th>
+        <% custom_field.possible_values.each do |cv| %>
+          <% id = "dep_#{pv.parameterize}_#{cv.parameterize}" %>
+          <% checked = Array(custom_field.value_dependencies.to_h[pv.to_s]).include?(cv.to_s) %>
+          <td>
+            <%= check_box_tag "custom_field[value_dependencies][#{pv}][]", cv, checked, id: id %>
+          </td>
+        <% end %>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+<% end %>
