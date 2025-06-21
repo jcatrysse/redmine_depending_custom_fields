@@ -16,6 +16,9 @@ This plugin provides depending / cascading custom field formats for Redmine that
    - Key/value lists can depend on enumerations or dependable key/value lists of the same object type
    - `Parent` and `Child` relationships between fields
    - Relation between `Parent` and `Child` values is configurable in a matrix
+   - Child fields include a blank option to deselect and are disabled until a
+     parent value is chosen. Descendant fields update automatically when parents
+     are cleared and only show the allowed options
 
 ## Installation
 

@@ -13,4 +13,9 @@
                {include_blank: true},
                label: :field_parent_custom_field_id %>
 </p>
+<% if @custom_field.parent_custom_field_id.present? %>
+  <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
+  <%= render partial: 'custom_fields/formats/dependencies_matrix',
+             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+<% end %>
 <p><%= edit_tag_style_tag f %></p>

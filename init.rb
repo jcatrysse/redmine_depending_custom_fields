@@ -6,7 +6,7 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   author 'Jan Catrysse'
   description 'Provides depending / cascading custom field formats that can be toggled via plugin settings.'
   url 'https://github.com/jcatrysse/redmine_depending_custom_fields'
-  version '0.0.2'
+  version '0.0.3'
   requires_redmine version_or_higher: '5.0'
 end
 
@@ -20,6 +20,7 @@ CustomField.safe_attributes(
   'show_active',
   'show_registered',
   'show_locked',
-  'parent_custom_field_id'
+  'parent_custom_field_id',
+  'value_dependencies'
 )
 

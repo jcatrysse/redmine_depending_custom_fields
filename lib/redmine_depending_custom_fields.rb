@@ -3,6 +3,7 @@
 require 'redmine'
 require_relative 'redmine_depending_custom_fields/extended_user_format'
 require_relative 'redmine_depending_custom_fields/dependable_list_format'
+require_relative 'redmine_depending_custom_fields/hooks/view_hooks'
 
 module RedmineDependingCustomFields
   FIELD_FORMAT_EXTENDED_USER = 'extended_user'
