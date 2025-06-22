@@ -1,0 +1,37 @@
+<% if parent_field && custom_field %>
+  <% parent_vals = parent_field.possible_values_options.reject do |pv|
+       (pv.is_a?(Array) ? pv[1] : pv).to_s.blank?
+     end %>
+  <% child_vals  = custom_field.possible_values_options.reject do |cv|
+       (cv.is_a?(Array) ? cv[1] : cv).to_s.blank?
+     end %>
+  <% if parent_vals.present? && child_vals.present? %>
+    <table class="list dependencies-matrix">
+      <thead>
+        <tr>
+          <th></th>
+          <% child_vals.each do |cv| %>
+            <% label, value = cv.is_a?(Array) ? cv : [cv, cv] %>
+            <th><%= label %></th>
+          <% end %>
+        </tr>
+      </thead>
+      <tbody>
+        <% parent_vals.each do |pv| %>
+          <% plabel, pvalue = pv.is_a?(Array) ? pv : [pv, pv] %>
+          <tr>
+            <th><%= plabel %></th>
+            <% child_vals.each do |cv| %>
+              <% clabel, cvalue = cv.is_a?(Array) ? cv : [cv, cv] %>
+              <% id = "dep_#{pvalue.to_s.parameterize}_#{cvalue.to_s.parameterize}" %>
+              <% checked = Array(custom_field.value_dependencies.to_h[pvalue.to_s]).include?(cvalue.to_s) %>
+              <td>
+                <%= check_box_tag "custom_field[value_dependencies][#{pvalue}][]", cvalue, checked, id: id %>
+              </td>
+            <% end %>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>

@@ -1,0 +1,26 @@
+<% unless @custom_field.new_record? %>
+<p>
+  <label><%= l(:field_possible_values) %></label>
+  <%= link_to sprite_icon('edit', l(:button_edit)), custom_field_enumerations_path(@custom_field), :class => 'icon icon-edit' %>
+</p>
+<% if @custom_field.enumerations.active.any? %>
+  <p><%= f.select :default_value, @custom_field.enumerations.active.map{|v| [v.name, v.id.to_s]}, :include_blank => true %></p>
+<% end %>
+<% end %>
+
+<p><%= f.text_field :url_pattern, :size => 50, :label => :label_link_values_to %></p>
+<p>
+  <%= f.select :parent_custom_field_id,
+               CustomField.where(field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDABLE_ENUMERATION],
+                                  type: @custom_field.type)
+                          .where.not(id: @custom_field.id)
+                          .map { |cf| [cf.name, cf.id.to_s] },
+               {include_blank: true},
+               label: :field_parent_custom_field_id %>
+</p>
+<% if @custom_field.parent_custom_field_id.present? %>
+  <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
+  <%= render partial: 'custom_fields/formats/dependencies_matrix',
+             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+<% end %>
+<p><%= edit_tag_style_tag f %></p>

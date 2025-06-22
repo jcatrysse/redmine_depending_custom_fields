@@ -1,0 +1,10 @@
+de:
+  label_extended_user: "Benutzer (erweitert)"
+  field_exclude_admins: "Administratoren ausschließen"
+  label_show_active_users: "Aktive Benutzer anzeigen"
+  label_show_registered_users: "Registrierte Benutzer anzeigen"
+  label_show_locked_users: "Inaktive Benutzer anzeigen"
+  label_groups: "Gruppen"
+  label_dependable_list: "Liste (abhängig)"
+  label_dependable_enumeration: "Key/Value Liste (abhängig)"
+  field_parent_custom_field_id: "Abhängig von"

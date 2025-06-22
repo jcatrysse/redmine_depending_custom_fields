@@ -1,0 +1,37 @@
+<p>
+  <label><%= l(:label_groups) %></label>
+  <label class="block">
+    <%= radio_button_tag 'status', 1, custom_field.group_ids.blank?, :id => 'custom_field_group_all', :data => {:disables => '.custom_field_group input'} %>
+    <%= l(:label_all) %>
+  </label>
+  <label class="block">
+    <%= radio_button_tag 'status', 0, custom_field.group_ids.present?, :id => 'custom_field_group_only', :data => {:enables => '.custom_field_group input'} %>
+    <%= l(:label_only) %>:
+  </label>
+  <% Group.sorted.each do |group| %>
+    <label class="block custom_field_group" style="padding-left:2em;">
+      <%= check_box_tag 'custom_field[group_ids][]', group.id, custom_field.group_ids.is_a?(Array) && custom_field.group_ids.include?(group.id.to_s), :id => nil %>
+      <%= group.name %>
+    </label>
+  <% end %>
+  <%= hidden_field_tag 'custom_field[group_ids][]', '' %>
+</p>
+<p>
+  <label class="block">
+    <%= check_box_tag 'custom_field[exclude_admins]', '1', custom_field.exclude_admins %>
+    <%= l(:field_exclude_admins) %>
+  </label>
+  <label class="block">
+    <%= check_box_tag 'custom_field[show_active]', '1', custom_field.show_active != false %>
+    <%= l(:label_show_active_users) %>
+  </label>
+  <label class="block">
+    <%= check_box_tag 'custom_field[show_registered]', '1', custom_field.show_registered %>
+    <%= l(:label_show_registered_users) %>
+  </label>
+  <label class="block">
+    <%= check_box_tag 'custom_field[show_locked]', '1', custom_field.show_locked %>
+    <%= l(:label_show_locked_users) %>
+  </label>
+</p>
+<p><%= edit_tag_style_tag f %></p>

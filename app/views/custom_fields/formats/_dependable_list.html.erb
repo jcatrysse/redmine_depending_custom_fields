@@ -1,0 +1,21 @@
+<p>
+  <%= f.text_area :possible_values, :value => @custom_field.possible_values.to_a.join("\n"), :rows => 15, :required => true %>
+  <em class="info"><%= l(:text_custom_field_possible_values_info) %></em>
+</p>
+<p><%= f.text_field(:default_value) %></p>
+<p><%= f.text_field :url_pattern, :size => 50, :label => :label_link_values_to %></p>
+<p>
+  <%= f.select :parent_custom_field_id,
+               CustomField.where(field_format: ['list', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDABLE_LIST],
+                                  type: @custom_field.type)
+                          .where.not(id: @custom_field.id)
+                          .map { |cf| [cf.name, cf.id.to_s] },
+               {include_blank: true},
+               label: :field_parent_custom_field_id %>
+</p>
+<% if @custom_field.parent_custom_field_id.present? %>
+  <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
+  <%= render partial: 'custom_fields/formats/dependencies_matrix',
+             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+<% end %>
+<p><%= edit_tag_style_tag f %></p>
