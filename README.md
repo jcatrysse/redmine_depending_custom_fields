@@ -28,10 +28,16 @@ This plugin provides depending / cascading custom field formats for Redmine that
    - Allowed values are calculated across all selected issues so only valid options remain available
    - Javascript behaviour ensures only allowed values are selectable when parent fields change
    - "None" can be chosen to clear a value while bulk editing
-   - Selecting "None" for a parent field automatically clears all of its
-     dependent fields
-   - Choosing a value for a parent field hides the "No change" option on all of
-     its descendants so invalid values can't be kept
+  - Selecting "None" for a parent field automatically clears all of its
+    dependent fields
+  - Choosing a value for a parent field hides the "No change" option on all of
+    its descendants so invalid values can't be kept
+
+## Context menu wizard
+
+The plugin adds a context menu option on issue lists that opens a small wizard
+to edit dependent custom fields. After selecting the desired value the chosen
+option is saved for all selected issues.
 
 ## Installation
 
