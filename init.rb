@@ -1,6 +1,7 @@
 require_relative 'lib/redmine_depending_custom_fields'
 require_relative 'lib/redmine_depending_custom_fields/patches/query_custom_field_column_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
+require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 
 Redmine::Plugin.register :redmine_depending_custom_fields do
   name 'Redmine Depending Custom Fields'
