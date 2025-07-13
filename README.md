@@ -27,6 +27,7 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - New custom field types can be used when editing multiple issues at once
    - Allowed values are calculated across all selected issues so only valid options remain available
    - Javascript behaviour ensures only allowed values are selectable when parent fields change
+   - Invalid combinations submitted via API or email are rejected server-side
    - "None" can be chosen to clear a value while bulk editing
    - Selecting "None" for a parent field automatically clears all of its
      dependent fields

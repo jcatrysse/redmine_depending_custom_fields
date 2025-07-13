@@ -79,9 +79,28 @@ module RedmineDependingCustomFields
       end
     end
 
-    def after_custom_field_save(_custom_field)
-      Rails.cache.delete('depending_custom_fields/mapping')
-      Rails.cache.delete_matched('dcf/*')
-    end
+  def after_custom_field_save(_custom_field)
+    Rails.cache.delete('depending_custom_fields/mapping')
+    Rails.cache.delete_matched('dcf/*')
+  end
+
+  def validate_custom_value(custom_value)
+    errors = super
+    cf = custom_value.custom_field
+    customized = custom_value.customized
+    return errors unless cf.parent_custom_field_id.present? && customized
+
+    parent = CustomField.find_by(id: cf.parent_custom_field_id)
+    return errors unless parent
+
+    mapping = cf.value_dependencies || {}
+    parent_vals = Array(customized.custom_field_value(parent)).map(&:to_s)
+    allowed = parent_vals.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s)
+
+    child_vals = Array(custom_value.value).map(&:to_s)
+    invalid = child_vals.reject(&:blank?) - allowed
+    errors << ::I18n.t('activerecord.errors.messages.inclusion') if invalid.any?
+    errors
+  end
   end
 end
