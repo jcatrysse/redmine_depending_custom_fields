@@ -2,6 +2,7 @@ require_relative 'lib/redmine_depending_custom_fields'
 require_relative 'lib/redmine_depending_custom_fields/patches/query_custom_field_column_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_controller_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 
 Redmine::Plugin.register :redmine_depending_custom_fields do
@@ -9,7 +10,7 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   author 'Jan Catrysse'
   description 'Provides depending / cascading custom field formats.'
   url 'https://github.com/jcatrysse/redmine_depending_custom_fields'
-  version '0.0.4'
+  version '0.0.5'
   requires_redmine version_or_higher: '5.0'
 end
 
@@ -28,3 +29,4 @@ CustomField.safe_attributes(
 QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch
 CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
 ContextMenusController.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
+IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch

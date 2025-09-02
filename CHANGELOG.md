@@ -24,3 +24,8 @@
 
 * Improve Redmine 6.0 compatibility
 * Make default values configurable with parent / child relations
+
+## 0.0.5
+
+* Issue import recognizes extended user values by full name and id
+

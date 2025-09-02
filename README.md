@@ -11,6 +11,7 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Optionally exclude administrators
    - Choose to display active, registered and/or inactive users
    - Users are listed under headers for active, registered and inactive status in filters
+   - Issue import recognizes extended user values by full name and id
 2. `Depending` or `Cascading` custom fields
    - Both for `lists` as `key/value` pairs
    - New formats `List (depending)` and `Key/Value list (depending)` allow defining parent/child relationships
