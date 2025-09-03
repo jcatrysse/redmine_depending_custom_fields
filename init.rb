@@ -23,7 +23,8 @@ CustomField.safe_attributes(
   'show_locked',
   'parent_custom_field_id',
   'value_dependencies',
-  'default_value_dependencies'
+  'default_value_dependencies',
+  'hide_when_disabled'
 )
 
 QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch

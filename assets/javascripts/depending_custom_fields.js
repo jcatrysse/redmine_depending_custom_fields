@@ -129,17 +129,27 @@
         });
     };
 
-    const applyChildState = (parentValues, childSelect, allowed, hasMapping, defaults) => {
+    const setParentVisibility = (childSelect, visible) => {
+        const parent = childSelect.closest('p');
+        if (!parent) return;
+        parent.hidden = !visible;
+    };
+
+    const applyChildState = (parentValues, childSelect, allowed, hasMapping, defaults, hideParent) => {
         const isBulk        = childSelect.querySelector(`option[value="${NONE_VALUE}"]`) !== null;
         const noChangeOption = childSelect.querySelector('option[value=""]');
         const hasNone  = parentValues.includes(NONE_VALUE);
         const hasValue = parentValues.some(v => v !== '' && v !== NONE_VALUE);
+        const hasAllowed = allowed.length > 0;
 
+        let visible = true;
         if (hasNone) {
             childSelect.disabled = true;
             setValues(childSelect, [NONE_VALUE]);
-        } else if (!hasValue || !hasMapping) {
+            visible = false;
+        } else if (!hasValue || !hasMapping || !hasAllowed) {
             childSelect.disabled = !isBulk;
+            visible = false;
             if (!isBulk) {
                 setValues(childSelect, []);
             } else {
@@ -150,6 +160,7 @@
             childSelect.disabled = false;
             const currentVals = getValues(childSelect).filter(v => allowed.includes(v) || v === NONE_VALUE);
             setValues(childSelect, currentVals);
+            visible = true;
         }
 
         if (isBulk && hasValue && noChangeOption) {
@@ -162,6 +173,18 @@
             noChangeOption.hidden       = false;
             noChangeOption.style.display = '';
         }
+
+        if (hideParent) {
+            setParentVisibility(childSelect, visible);
+        } else {
+            setParentVisibility(childSelect, true);
+        }
+
+        console.debug('DCF applyChildState', {
+            child: childSelect.id,
+            hideParent,
+            visible
+        });
 
         if (!childSelect.disabled && hasValue) {
             const valueMap = childSelect.dataset.valueMap ? JSON.parse(childSelect.dataset.valueMap) : {};
@@ -193,11 +216,20 @@
         }
     };
 
-    const updateChild = (parentSelect, childSelect, mapping, defaults = {}) => {
+    const updateChild = (parentSelect, childSelect, mapping, defaults = {}, hideParentSetting = false) => {
         const parentValues = getValues(parentSelect);
         const { allowed, hasMapping } = calculateAllowed(parentValues, mapping);
+        const hideParent = hideParentSetting === true || hideParentSetting === '1' || hideParentSetting === 1;
+        console.debug('DCF updateChild', {
+            child: childSelect.id,
+            hideParentSetting,
+            hideParent,
+            parentValues,
+            allowed,
+            hasMapping
+        });
         updateOptionVisibility(childSelect, allowed, hasMapping);
-        applyChildState(parentValues, childSelect, allowed, hasMapping, defaults);
+        applyChildState(parentValues, childSelect, allowed, hasMapping, defaults, hideParent);
         syncHiddenInputs(childSelect);
         childSelect.dispatchEvent(new Event('change', { bubbles: true }));
     };
@@ -261,13 +293,13 @@
                                 document.getElementById(`${base}_custom_field_values_${id}`) ||
                                 document.getElementById(`${base}_custom_field_values_${id}_`);
                             const childInfo = mapping[id] || {};
-                            if (child) updateChild(parentSelect, child, childInfo.map || {}, childInfo.defaults || {});
+                            if (child) updateChild(parentSelect, child, childInfo.map || {}, childInfo.defaults || {}, childInfo.hide_when_disabled);
                         });
                     });
                     parentSelect.dataset.dependingChangeListener = '1';
                 }
 
-                updateChild(parentSelect, childSelect, info.map || {}, info.defaults || {});
+                updateChild(parentSelect, childSelect, info.map || {}, info.defaults || {}, info.hide_when_disabled);
             });
         });
 

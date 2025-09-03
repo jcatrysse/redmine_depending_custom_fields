@@ -27,5 +27,5 @@
 
 ## 0.0.5
 
+* Add option to hide depending fields when no valid options are available
 * Issue import recognizes extended user values by full name and id
-

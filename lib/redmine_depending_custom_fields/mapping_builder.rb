@@ -22,7 +22,8 @@ module RedmineDependingCustomFields
         h[cf.id.to_s] = {
           parent_id: cf.parent_custom_field_id.to_s,
           map: RedmineDependingCustomFields::Sanitizer.sanitize_dependencies(cf.value_dependencies),
-          defaults: RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(cf.default_value_dependencies)
+          defaults: RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(cf.default_value_dependencies),
+          hide_when_disabled: ActiveModel::Type::Boolean.new.cast(cf.hide_when_disabled)
         }
       end
 

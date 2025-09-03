@@ -22,4 +22,5 @@
   <%= render partial: 'custom_fields/formats/default_dependencies',
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
 <% end %>
+<p><%= f.check_box :hide_when_disabled, label: :field_hide_when_disabled %></p>
 <p><%= edit_tag_style_tag f %></p>

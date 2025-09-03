@@ -2,7 +2,7 @@ require_relative '../rails_helper'
 
 RSpec.describe RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook do
   let(:hook) { described_class.send(:new) }
-  let(:mapping) { { '1' => { parent_id: '2', map: { 'a' => ['b'] }, defaults: { 'a' => 'b' } } } }
+  let(:mapping) { { '1' => { parent_id: '2', map: { 'a' => ['b'] }, defaults: { 'a' => 'b' }, hide_when_disabled: true } } }
 
   before do
     allow(Rails.cache).to receive(:fetch).and_return(mapping)
@@ -34,7 +34,8 @@ RSpec.describe RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook 
       {
         'parent_id' => value[:parent_id],
         'map' => value[:map],
-        'defaults' => value[:defaults]
+        'defaults' => value[:defaults],
+        'hide_when_disabled' => value[:hide_when_disabled]
       }
     end
     expect(data).to eq(expected)

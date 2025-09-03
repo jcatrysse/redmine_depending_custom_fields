@@ -6,5 +6,6 @@ de:
   label_show_locked_users: "Inaktive Benutzer anzeigen"
   label_groups: "Gruppen"
   label_depending_list: "Liste (abhängig)"
-  label_depending_enumeration: "Key/Value Liste (abhängig)"
+  label_depending_enumeration: "Schlüssel/Wert-Liste (abhängig)"
   field_parent_custom_field_id: "Abhängig von"
+  field_hide_when_disabled: "Ausblenden, wenn keine gültigen Optionen vorhanden sind"

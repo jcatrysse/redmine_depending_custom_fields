@@ -22,6 +22,8 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Child fields include a blank option to deselect and are disabled until a
      parent value is chosen. Descendant fields update automatically when parents
      are cleared and only show the allowed options
+   - Fields can optionally be hidden when they have no valid options to choose
+     from
    - Works on all objects that support custom fields such as issues, projects,
      time entries, versions and users
 3. `Bulk edit`

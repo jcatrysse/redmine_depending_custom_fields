@@ -42,7 +42,8 @@ RSpec.describe "DependingCustomFields API", type: :request do
                     "roles" => kind_of(Array),
                     "parent_custom_field_id" => be_nil.or(be_kind_of(Integer)),
                     "value_dependencies" => be_nil.or(be_kind_of(Hash)),
-                    "default_value_dependencies" => be_nil.or(be_kind_of(Hash))
+                    "default_value_dependencies" => be_nil.or(be_kind_of(Hash)),
+                    "hide_when_disabled" => boolean
                   )
   end
 

@@ -1,10 +1,11 @@
 nl:
   label_extended_user: "Gebruiker (uitgebreid)"
-  field_exclude_admins: "Admins uitsluiten"
+  field_exclude_admins: "Beheerders uitsluiten"
   label_show_active_users: "Actieve gebruikers tonen"
   label_show_registered_users: "Geregistreerde gebruikers tonen"
   label_show_locked_users: "Inactieve gebruikers tonen"
   label_groups: "Groepen"
   label_depending_list: "Lijst (afhankelijk)"
-  label_depending_enumeration: "Sleutel/Waarde lijst (afhankelijk)"
+  label_depending_enumeration: "Sleutel/Waarde-lijst (afhankelijk)"
   field_parent_custom_field_id: "Afhankelijk van"
+  field_hide_when_disabled: "Verbergen wanneer er geen geldige opties beschikbaar zijn"

@@ -8,3 +8,4 @@ fr:
   label_depending_list: "Liste (dépendante)"
   label_depending_enumeration: "Liste clé/valeur (dépendante)"
   field_parent_custom_field_id: "Dépend de"
+  field_hide_when_disabled: "Masquer lorsqu'aucune option valide n'est disponible"

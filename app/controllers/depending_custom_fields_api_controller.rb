@@ -117,6 +117,7 @@ class DependingCustomFieldsApiController < ApplicationController
       :multiple, :default_value, :url_pattern,
       :edit_tag_style, :is_for_all,
       :parent_custom_field_id,
+      :hide_when_disabled,
       possible_values: [],
       value_dependencies: {},
       default_value_dependencies: {},
@@ -157,7 +158,8 @@ class DependingCustomFieldsApiController < ApplicationController
       roles: roles.map { |r| { id: r.id, name: r.name } },
       parent_custom_field_id: cf.respond_to?(:parent_custom_field_id) ? cf.parent_custom_field_id : nil,
       value_dependencies: cf.respond_to?(:value_dependencies) ? cf.value_dependencies : nil,
-      default_value_dependencies: cf.respond_to?(:default_value_dependencies) ? cf.default_value_dependencies : nil
+      default_value_dependencies: cf.respond_to?(:default_value_dependencies) ? cf.default_value_dependencies : nil,
+      hide_when_disabled: cf.respond_to?(:hide_when_disabled) ? !!cf.hide_when_disabled : false
     }
   end
 

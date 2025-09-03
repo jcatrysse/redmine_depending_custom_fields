@@ -8,3 +8,4 @@ en:
   label_depending_list: "List (depending)"
   label_depending_enumeration: "Key/Value list (depending)"
   field_parent_custom_field_id: "Depends on"
+  field_hide_when_disabled: "Hide when no valid options"

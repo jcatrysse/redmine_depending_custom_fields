@@ -10,7 +10,7 @@ module RedmineDependingCustomFields
   class DependingEnumerationFormat < Redmine::FieldFormat::EnumerationFormat
     add 'depending_enumeration'
     self.form_partial = 'custom_fields/formats/depending_enumeration'
-    field_attributes :parent_custom_field_id, :value_dependencies, :default_value_dependencies
+    field_attributes :parent_custom_field_id, :value_dependencies, :default_value_dependencies, :hide_when_disabled
 
     def label
       :label_depending_enumeration

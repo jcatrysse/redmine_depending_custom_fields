@@ -14,7 +14,8 @@ RSpec.describe RedmineDependingCustomFields::MappingBuilder do
           'a' => ['1', '', nil],
           '' => '',
           nil => '2'
-        }
+        },
+        hide_when_disabled: true
       )
       cf2 = build_custom_field(
         id: 32,
@@ -26,7 +27,8 @@ RSpec.describe RedmineDependingCustomFields::MappingBuilder do
         default_value_dependencies: {
           b: '3',
           c: nil
-        }
+        },
+        hide_when_disabled: false
       )
       cf3 = build_custom_field(
         id: 33,
@@ -40,8 +42,8 @@ RSpec.describe RedmineDependingCustomFields::MappingBuilder do
       result = described_class.build
 
       expect(result).to eq(
-        '31' => { parent_id: '10', map: { 'a' => ['1'] }, defaults: { 'a' => ['1'] } },
-        '32' => { parent_id: '11', map: { 'b' => ['3'] }, defaults: { 'b' => '3' } }
+        '31' => { parent_id: '10', map: { 'a' => ['1'] }, defaults: { 'a' => ['1'] }, hide_when_disabled: true },
+        '32' => { parent_id: '11', map: { 'b' => ['3'] }, defaults: { 'b' => '3' }, hide_when_disabled: false }
       )
     end
   end
