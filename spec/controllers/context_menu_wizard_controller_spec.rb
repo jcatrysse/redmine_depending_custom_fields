@@ -66,8 +66,26 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     it 'clears the value when __none__ is passed' do
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => '__none__' } } }
 
-      expect(issue1).to have_received(:custom_field_values=).with('5' => nil)
-      expect(issue2).to have_received(:custom_field_values=).with('5' => nil)
+      expect(issue1).to have_received(:custom_field_values=).with('5' => '')
+      expect(issue2).to have_received(:custom_field_values=).with('5' => '')
+    end
+
+    it 'does nothing when blank value is submitted' do
+      expect(issue1).not_to receive(:custom_field_values=)
+      expect(issue2).not_to receive(:custom_field_values=)
+
+      post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => '' } } }
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'does nothing when empty array is submitted' do
+      expect(issue1).not_to receive(:custom_field_values=)
+      expect(issue2).not_to receive(:custom_field_values=)
+
+      post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => [] } } }
+
+      expect(response).to have_http_status(:ok)
     end
 
     it 'accepts ids[] array parameters' do

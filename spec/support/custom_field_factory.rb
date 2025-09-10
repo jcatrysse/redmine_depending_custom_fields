@@ -4,7 +4,8 @@ module SpecHelpers
       id: 1,
       name: 'Field',
       save: true,
-      errors: double('errors', full_messages: [])
+      errors: double('errors', full_messages: []),
+      multiple?: false
     }
     instance_double(CustomField, defaults.merge(attrs))
   end

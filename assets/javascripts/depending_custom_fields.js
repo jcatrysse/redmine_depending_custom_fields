@@ -61,10 +61,6 @@
     };
 
     const syncBulkInputs = (select, values, container) => {
-        if (select.multiple && values.length === 0) {
-            appendHidden(container, select.name.replace(/\[\]$/, ''), NONE_VALUE);
-            return;
-        }
         if (!select.multiple && values.length === 1 && values[0] === '') return;
         if (select.multiple && values.length === 1 && values[0] === NONE_VALUE) {
             appendHidden(container, select.name.replace(/\[\]$/, ''), NONE_VALUE);
@@ -81,7 +77,7 @@
 
     const syncRegularInputs = (select, values, container) => {
         if (values.length === 0) {
-            appendHidden(container, select.name, NONE_VALUE);
+            appendHidden(container, select.name, '');
         } else {
             values.forEach(v => appendHidden(container, select.name, v));
         }
@@ -180,12 +176,6 @@
             setParentVisibility(childSelect, true);
         }
 
-        console.debug('DCF applyChildState', {
-            child: childSelect.id,
-            hideParent,
-            visible
-        });
-
         if (!childSelect.disabled && hasValue) {
             const valueMap = childSelect.dataset.valueMap ? JSON.parse(childSelect.dataset.valueMap) : {};
             const parentWithStored = parentValues.find(v => Object.prototype.hasOwnProperty.call(valueMap, v));
@@ -220,14 +210,6 @@
         const parentValues = getValues(parentSelect);
         const { allowed, hasMapping } = calculateAllowed(parentValues, mapping);
         const hideParent = hideParentSetting === true || hideParentSetting === '1' || hideParentSetting === 1;
-        console.debug('DCF updateChild', {
-            child: childSelect.id,
-            hideParentSetting,
-            hideParent,
-            parentValues,
-            allowed,
-            hasMapping
-        });
         updateOptionVisibility(childSelect, allowed, hasMapping);
         applyChildState(parentValues, childSelect, allowed, hasMapping, defaults, hideParent);
         syncHiddenInputs(childSelect);
@@ -241,7 +223,6 @@
             mapping = typeof rawData.mapping === 'object' ? rawData.mapping : rawData;
         }
         if (!mapping || typeof mapping !== 'object') {
-            console.warn('DependingCustomFields: mapping is missing or invalid, setup skipped');
             return;
         }
 

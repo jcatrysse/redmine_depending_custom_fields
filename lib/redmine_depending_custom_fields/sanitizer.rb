@@ -24,5 +24,23 @@ module RedmineDependingCustomFields
         h[key] = v.is_a?(Array) ? values : values.first
       end
     end
+
+    # Mirrors ApplicationController#replace_none_values_with_blank
+    # Converts 'none' and '__none__' markers into blank strings so that
+    # assigning the resulting hash clears the corresponding attributes.
+    def self.replace_none_values_with_blank(params)
+      attributes = (params || {})
+      attributes.each_key { |k| attributes[k] = '' if attributes[k] == 'none' }
+      if (custom = attributes[:custom_field_values])
+        custom.each_key do |k|
+          if custom[k].is_a?(Array)
+            custom[k] << '' if custom[k].delete('__none__')
+          else
+            custom[k] = '' if custom[k] == '__none__'
+          end
+        end
+      end
+      attributes
+    end
   end
 end

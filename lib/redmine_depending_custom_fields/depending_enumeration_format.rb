@@ -29,7 +29,6 @@ module RedmineDependingCustomFields
       custom_field.default_value_dependencies = RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(custom_field.default_value_dependencies)
     end
 
-    # lib/redmine_depending_custom_fields/depending_list_format.rb
     def possible_values_options(custom_field, object = nil)
       # Ask the core for the base options.
       # When bulk-editing (array of issues) any single object suffices for i18n, etc.
@@ -58,7 +57,7 @@ module RedmineDependingCustomFields
       # This lets legacy values remain visible while preventing new invalid picks.
       base_options.map do |opt|
         label, value = opt.is_a?(Array) ? opt.take(2) : [opt, opt]
-        if value.blank? || value.to_s == '__none__' || allowed.include?(value.to_s)
+        if value.blank? || allowed.include?(value.to_s)
           [label, value]
         else
           [label, value, { hidden: true, style: 'display:none;' }]
@@ -91,8 +90,11 @@ module RedmineDependingCustomFields
     end
 
     def validate_custom_value(custom_value)
-      errors = super
       cf = custom_value.custom_field
+      sanitized = Array(custom_value.value).map(&:to_s).reject(&:blank?)
+      custom_value.value = cf.multiple? ? sanitized : sanitized.first
+
+      errors = super
       customized = custom_value.customized
       return errors unless cf.parent_custom_field_id.present? && customized
 

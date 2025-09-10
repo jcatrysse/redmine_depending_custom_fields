@@ -18,6 +18,7 @@ class ContextMenuWizardController < ApplicationController
 
   def save
     values = extract_custom_field_values
+    return head :ok if values.blank?
 
     unless issues_all? do |issue|
       !issue.respond_to?(:safe_attribute?) ||
@@ -44,23 +45,30 @@ class ContextMenuWizardController < ApplicationController
 
   def extract_custom_field_values
     permitted = params.permit(:fieldId, :value, issue: { custom_field_values: {} })
-    hash = permitted.dig(:issue, :custom_field_values)
-
-    if hash.blank? && permitted[:fieldId]
-      val = permitted[:value]
-      return {} if val.to_s.blank?
-      val = nil if val.to_s == '__none__'
-      return { permitted[:fieldId].to_s => val }
-    end
+    raw_hash = permitted.dig(:issue, :custom_field_values)
 
     values = {}
-    (hash || {}).each do |fid, val|
-      next if val.blank?
-      cleaned = val.is_a?(Array) ? val.reject { |v| v.blank? || v == '__none__' } : val
-      next if cleaned.blank?
-      cleaned = nil if cleaned == '__none__' || (cleaned.is_a?(Array) && cleaned.empty?)
-      values[fid.to_s] = cleaned
+    (raw_hash || {}).each do |fid, val|
+      if val.is_a?(Array)
+        if val.delete('__none__') || val.delete('none')
+          values[fid.to_s] = ''
+        else
+          cleaned = val.reject(&:blank?)
+          values[fid.to_s] = cleaned if cleaned.any?
+        end
+      else
+        next if val.blank?
+        values[fid.to_s] = (val == '__none__' || val == 'none') ? '' : val
+      end
     end
+
+    if values.blank? && permitted[:fieldId].present?
+      fid = permitted[:fieldId].to_s
+      val = permitted[:value]
+      return {} if val.to_s.blank?
+      values[fid] = (val == '__none__' || val == 'none') ? '' : val
+    end
+
     values
   end
 

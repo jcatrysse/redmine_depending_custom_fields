@@ -29,3 +29,7 @@
 
 * Add option to hide depending fields when no valid options are available
 * Issue import recognizes extended user values by full name and id
+
+## 0.0.6
+
+* Resolve error on saving new issue
