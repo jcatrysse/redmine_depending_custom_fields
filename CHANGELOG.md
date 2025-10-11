@@ -33,3 +33,8 @@
 ## 0.0.6
 
 * Resolve error on saving new issue
+
+## 0.0.7
+
+* Resolve missing values on API GET output
+* Resolve incorrect fields on API GET output

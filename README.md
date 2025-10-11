@@ -207,7 +207,7 @@ curl -X POST -H "Content-Type: application/json" \
   -d '{
     "custom_field": {
       "name": "Detailed activity",
-      "type": "TimeEntryCustomField",
+      "type": "IssueCustomField",
       "field_format": "depending_enumeration",
       "enumerations": [
         {"name": "Research", "position": 1},
