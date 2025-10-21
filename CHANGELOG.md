@@ -38,3 +38,8 @@
 
 * Resolve missing values on API GET output
 * Resolve incorrect fields on API GET output
+
+## 0.0.8
+
+* Reworked JavaScript to handle checkboxes.
+* Optimize default values handling.
