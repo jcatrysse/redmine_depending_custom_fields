@@ -9,33 +9,35 @@
   <% defaults  = custom_field.default_value_dependencies.to_h %>
   <% multiple  = custom_field.multiple? %>
   <% if parent_vals.present? && child_vals.present? %>
-    <table class="list dependencies-defaults">
-      <thead>
-        <tr>
-          <th><%= parent_field.name %></th>
-          <th><%= l(:label_default_value) %></th>
-        </tr>
-      </thead>
-      <tbody>
-        <% parent_vals.each do |pv| %>
-          <% plabel, pvalue = pv.is_a?(Array) ? pv : [pv, pv] %>
-          <% allowed = Array(mapping[pvalue.to_s]).map(&:to_s) %>
-          <% options = child_vals.select do |cv|
-               (cv.is_a?(Array) ? cv[1] : cv).to_s.in?(allowed)
-             end.map { |cv| cv.is_a?(Array) ? cv : [cv, cv] } %>
+    <div class="dependencies-defaults-container">
+      <table class="list dependencies-defaults">
+        <thead>
           <tr>
-            <th><%= plabel %></th>
-            <td>
-              <% name = "custom_field[default_value_dependencies][#{pvalue}]" %>
-              <% name = name + '[]' if multiple %>
-              <%= select_tag name,
-                             options_for_select([['', '']] + options, defaults[pvalue.to_s]),
-                             disabled: options.empty?,
-                             multiple: multiple %>
-            </td>
+            <th class="dependencies-defaults__parent"><%= parent_field.name %></th>
+            <th><%= l(:label_default_value) %></th>
           </tr>
-        <% end %>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          <% parent_vals.each do |pv| %>
+            <% plabel, pvalue = pv.is_a?(Array) ? pv : [pv, pv] %>
+            <% allowed = Array(mapping[pvalue.to_s]).map(&:to_s) %>
+            <% options = child_vals.select do |cv|
+                 (cv.is_a?(Array) ? cv[1] : cv).to_s.in?(allowed)
+               end.map { |cv| cv.is_a?(Array) ? cv : [cv, cv] } %>
+            <tr>
+              <th class="dependencies-defaults__parent"><%= plabel %></th>
+              <td>
+                <% name = "custom_field[default_value_dependencies][#{pvalue}]" %>
+                <% name = name + '[]' if multiple %>
+                <%= select_tag name,
+                               options_for_select([['', '']] + options, defaults[pvalue.to_s]),
+                               disabled: options.empty?,
+                               multiple: multiple %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
   <% end %>
 <% end %>

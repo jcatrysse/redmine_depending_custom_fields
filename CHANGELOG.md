@@ -43,3 +43,7 @@
 
 * Reworked JavaScript to handle checkboxes.
 * Optimize default values handling.
+
+## 0.0.9
+
+* Refactor table layout in formats

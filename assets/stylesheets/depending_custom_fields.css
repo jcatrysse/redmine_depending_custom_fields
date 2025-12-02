@@ -1,4 +1,26 @@
 .dependencies-matrix th { text-align: left; }
+.dependencies-matrix__child {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  padding: 6px 4px;
+}
+
+.dependencies-defaults-container {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.dependencies-defaults {
+  table-layout: auto;
+  width: auto;
+}
+
+.dependencies-defaults__parent {
+  white-space: nowrap;
+  text-align: left;
+}
 .depending-child { margin-left: 20px; }
 
 .cf-wizard-spinner {
