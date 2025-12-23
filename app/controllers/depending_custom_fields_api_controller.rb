@@ -38,6 +38,10 @@ class DependingCustomFieldsApiController < ApplicationController
     end
 
     @custom_field = klass.new(permitted_params.except(:enumerations, :type))
+    dependency_errors = dependency_rules_errors
+    if dependency_errors.any?
+      return render json: { errors: { dependency_rules: dependency_errors } }, status: :unprocessable_entity
+    end
 
     ActiveRecord::Base.transaction do
       unless @custom_field.save
@@ -57,6 +61,11 @@ class DependingCustomFieldsApiController < ApplicationController
   end
 
   def update
+    dependency_errors = dependency_rules_errors
+    if dependency_errors.any?
+      return render json: { errors: { dependency_rules: dependency_errors } }, status: :unprocessable_entity
+    end
+
     ActiveRecord::Base.transaction do
       unless @custom_field.update(permitted_params.except(:enumerations, :type))
         raise ActiveRecord::Rollback
@@ -134,11 +143,15 @@ class DependingCustomFieldsApiController < ApplicationController
       :multiple, :default_value, :url_pattern,
       :edit_tag_style, :is_for_all,
       :parent_custom_field_id,
+      :parent_field_type,
+      :parent_field_key,
+      :dependency_rules,
       :hide_when_disabled,
-      :exclude_admins, :show_active, :show_registered, :show_locked,
+      :exclude_admins, :only_project_members, :show_active, :show_registered, :show_locked,
       possible_values: [],
       value_dependencies: {},
       default_value_dependencies: {},
+      dependency_rules: [:operator, :value, :value_to, { child_values: [] }],
       enumerations: [:id, :name, :position, :_destroy, :active],
       tracker_ids: [], project_ids: [], role_ids: [], group_ids: []
     )
@@ -205,6 +218,7 @@ class DependingCustomFieldsApiController < ApplicationController
       url_pattern: cf.respond_to?(:url_pattern) ? cf.url_pattern : nil,
       edit_tag_style: cf.respond_to?(:edit_tag_style) ? cf.edit_tag_style : nil,
       is_for_all: cf.is_for_all,
+      only_project_members: cf.respond_to?(:only_project_members) ? cast_boolean(cf.only_project_members) : nil,
       trackers: trackers.map { |t| { id: t.id, name: t.name } },
       projects: projects.map { |p| { id: p.id, name: p.name } },
       roles: roles.map { |r| { id: r.id, name: r.name } }
@@ -222,8 +236,11 @@ class DependingCustomFieldsApiController < ApplicationController
 
     if depending_formats.include?(cf.field_format)
       payload[:parent_custom_field_id] = cf.parent_custom_field_id
+      payload[:parent_field_type] = cf.parent_field_type
+      payload[:parent_field_key] = cf.parent_field_key
       payload[:value_dependencies] = cf.value_dependencies || {}
       payload[:default_value_dependencies] = cf.default_value_dependencies || {}
+      payload[:dependency_rules] = normalize_dependency_rules(cf.dependency_rules)
       payload[:hide_when_disabled] = cast_boolean(cf.hide_when_disabled)
     end
 
@@ -276,6 +293,41 @@ class DependingCustomFieldsApiController < ApplicationController
 
     to_destroy.each(&:destroy)
     true
+  end
+
+  def dependency_rules_errors
+    rules = permitted_params[:dependency_rules]
+    return [] if rules.nil?
+
+    parsed, error = RedmineDependingCustomFields::Sanitizer.parse_dependency_rules(rules)
+    return { base: [{ code: 'invalid_json', message: I18n.t(:text_dependency_rules_invalid_json) }] } if error
+
+    schema_errors = RedmineDependingCustomFields::Sanitizer.rule_schema_errors(parsed)
+    if schema_errors.any?
+      return schema_errors.group_by { |schema| schema[:index] }.transform_values do |items|
+        items.map do |schema|
+          {
+            code: schema[:code],
+            message: I18n.t(:text_dependency_rules_invalid_rule_index, index: schema[:index] + 1)
+          }
+        end
+      end
+    end
+
+    []
+  end
+
+  def normalize_dependency_rules(value)
+    return value if value.is_a?(Array)
+    return [] if value.nil?
+
+    if value.is_a?(String)
+      JSON.parse(value)
+    else
+      []
+    end
+  rescue JSON::ParserError
+    []
   end
 
   def collect_child_errors(parent, child)

@@ -35,6 +35,7 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
         show_registered: false,
         show_locked: false,
         exclude_admins: false,
+        only_project_members: false,
         group_ids: []
       )
     end
@@ -43,6 +44,19 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
       options = format.possible_values_options(field)
       ids = options.select { |o| o.is_a?(Array) && o[1].present? }.map { |o| o[1] }
       expect(ids).to include(User.where(status: User::STATUS_ACTIVE).first.id.to_s)
+    end
+
+    it 'filters by project members when enabled' do
+      field.only_project_members = true
+      project = instance_double(Project, id: 5)
+
+      relation = User.all
+      allow(relation).to receive(:where).with(status: [User::STATUS_ACTIVE]).and_return(relation)
+      expect(relation).to receive(:joins).with(:members).and_return(relation)
+      expect(relation).to receive(:where).with(members: { project_id: project.id }).and_return(relation)
+      allow(relation).to receive(:distinct).and_return(relation)
+
+      format.possible_values_options(field, instance_double(Issue, project: project))
     end
 
     it 'groups options by status' do
@@ -61,6 +75,7 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
         show_registered: false,
         show_locked: false,
         exclude_admins: false,
+        only_project_members: false,
         group_ids: []
       )
     end
@@ -80,6 +95,7 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
         show_registered: nil,
         show_locked: nil,
         exclude_admins: nil,
+        only_project_members: nil,
         group_ids: []
       )
     end
@@ -90,7 +106,7 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
       expect(field.show_registered).to eq(false)
       expect(field.show_locked).to eq(false)
       expect(field.exclude_admins).to eq(false)
+      expect(field.only_project_members).to eq(false)
     end
   end
 end
-

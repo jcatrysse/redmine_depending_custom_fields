@@ -1,29 +1,51 @@
+<% parent_type = @custom_field.parent_field_type.presence || (@custom_field.parent_field_key.present? ? 'core_field' : (@custom_field.parent_custom_field_id.present? ? 'custom_field' : '')) %>
+<% parent_reference = RedmineDependingCustomFields::ParentReference.from_custom_field(@custom_field) %>
 <% unless @custom_field.new_record? %>
 <p>
   <label><%= l(:field_possible_values) %></label>
   <%= link_to sprite_icon('edit', l(:button_edit)), custom_field_enumerations_path(@custom_field), :class => 'icon icon-edit' %>
 </p>
-  <% if @custom_field.parent_custom_field_id.blank? && @custom_field.enumerations.active.any? %>
+  <% if parent_reference.blank? && @custom_field.enumerations.active.any? %>
     <p><%= f.select :default_value, @custom_field.enumerations.active.map { |v| [v.name, v.id.to_s] }, include_blank: true %></p>
   <% end %>
 <% end %>
 
 <p><%= f.text_field :url_pattern, :size => 50, :label => :label_link_values_to %></p>
 <p>
+  <%= f.select :parent_field_type,
+               [
+                 [l(:label_parent_field_type_custom), 'custom_field'],
+                 [l(:label_parent_field_type_core), 'core_field']
+               ],
+               { include_blank: true, selected: parent_type },
+               data: { parent_type_toggle: true },
+               label: :field_parent_field_type %>
+</p>
+<p class="depending-parent-field depending-parent-custom">
   <%= f.select :parent_custom_field_id,
-               CustomField.where(field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION],
-                                  type: @custom_field.type)
+               CustomField.where(type: @custom_field.type)
                           .where.not(id: @custom_field.id)
+                          .order(:position)
                           .map { |cf| [cf.name, cf.id.to_s] },
-               {include_blank: true},
+               { include_blank: true },
                label: :field_parent_custom_field_id %>
 </p>
-<% if @custom_field.parent_custom_field_id.present? %>
-  <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
-  <%= render partial: 'custom_fields/formats/dependencies_matrix',
-             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
-  <%= render partial: 'custom_fields/formats/default_dependencies',
-             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+<p class="depending-parent-field depending-parent-core">
+  <%= f.select :parent_field_key,
+               RedmineDependingCustomFields::ParentValueOptions.core_field_options,
+               { include_blank: true },
+               label: :field_parent_field_key %>
+</p>
+<% if parent_reference.present? %>
+  <% if parent_reference.enumerated? %>
+    <%= render partial: 'custom_fields/formats/dependencies_matrix',
+               locals: { parent_label: parent_reference.label, parent_options: parent_reference.options, custom_field: @custom_field } %>
+    <%= render partial: 'custom_fields/formats/default_dependencies',
+               locals: { parent_label: parent_reference.label, parent_options: parent_reference.options, custom_field: @custom_field } %>
+  <% else %>
+    <%= render partial: 'custom_fields/formats/dependencies_rules',
+               locals: { custom_field: @custom_field, f: f, parent_format: parent_reference.format } %>
+  <% end %>
 <% end %>
 <p><%= f.check_box :hide_when_disabled, label: :field_hide_when_disabled %></p>
 <p><%= edit_tag_style_tag f %></p>

@@ -10,7 +10,7 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   author 'Jan Catrysse'
   description 'Provides depending / cascading custom field formats.'
   url 'https://github.com/jcatrysse/redmine_depending_custom_fields'
-  version '0.0.9'
+  version '0.1.0'
   requires_redmine version_or_higher: '5.0'
 end
 
@@ -18,12 +18,16 @@ RedmineDependingCustomFields.register_formats
 CustomField.safe_attributes(
   'group_ids',
   'exclude_admins',
+  'only_project_members',
   'show_active',
   'show_registered',
   'show_locked',
   'parent_custom_field_id',
+  'parent_field_type',
+  'parent_field_key',
   'value_dependencies',
   'default_value_dependencies',
+  'dependency_rules',
   'hide_when_disabled'
 )
 

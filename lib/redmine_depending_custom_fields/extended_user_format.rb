@@ -8,7 +8,7 @@ module RedmineDependingCustomFields
   class ExtendedUserFormat < Redmine::FieldFormat::UserFormat
     add 'extended_user'
     self.form_partial = 'custom_fields/formats/extended_user'
-    field_attributes :group_ids, :exclude_admins, :show_active, :show_registered, :show_locked
+    field_attributes :group_ids, :exclude_admins, :show_active, :show_registered, :show_locked, :only_project_members
 
     # Use User as target class so the field supports sorting and grouping
     def target_class
@@ -31,7 +31,7 @@ module RedmineDependingCustomFields
     end
 
     def possible_values_options(custom_field, object = nil)
-      users = filtered_users(custom_field)
+      users = filtered_users(custom_field, project_from(object))
       show_active     = boolean(custom_field.show_active)
       show_registered = boolean(custom_field.show_registered)
       show_locked     = boolean(custom_field.show_locked)
@@ -62,7 +62,7 @@ module RedmineDependingCustomFields
     end
 
     def query_filter_values(custom_field, query)
-      users = filtered_users(custom_field)
+      users = filtered_users(custom_field, query&.project)
       show_active     = boolean(custom_field.show_active)
       show_registered = boolean(custom_field.show_registered)
       show_locked     = boolean(custom_field.show_locked)
@@ -98,16 +98,25 @@ module RedmineDependingCustomFields
       custom_field.show_active     = boolean(custom_field.show_active)
       custom_field.show_registered = boolean(custom_field.show_registered)
       custom_field.show_locked     = boolean(custom_field.show_locked)
+      custom_field.only_project_members = boolean(custom_field.only_project_members)
     end
 
     private
 
-    def filtered_users(custom_field)
+    def filtered_users(custom_field, project = nil)
       users = User.all
       group_ids = Array(custom_field.group_ids).reject(&:blank?).map(&:to_i)
       users = users.joins(:groups).where(groups: { id: group_ids }).distinct if group_ids.any?
       users = users.where(admin: false) if boolean(custom_field.exclude_admins)
+      if boolean(custom_field.only_project_members) && project
+        users = users.joins(:members).where(members: { project_id: project.id }).distinct
+      end
       users
+    end
+
+    def project_from(object)
+      target = object.is_a?(Array) ? object.first : object
+      target&.respond_to?(:project) ? target.project : nil
     end
 
     def cast_single_value(custom_field, value, customized = nil)

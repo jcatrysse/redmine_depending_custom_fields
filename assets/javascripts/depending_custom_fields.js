@@ -1,6 +1,20 @@
 /* globals window, document, MutationObserver, jQuery */
 (function () {
     const NONE_VALUE = '__none__';
+    const CORE_FIELD_SELECTORS = {
+        project_id: ['#issue_project_id', 'select[name$="[project_id]"]', 'select[name="issue[project_id]"]'],
+        tracker_id: ['#issue_tracker_id', 'select[name$="[tracker_id]"]', 'select[name="issue[tracker_id]"]'],
+        status_id: ['#issue_status_id', 'select[name$="[status_id]"]', 'select[name="issue[status_id]"]'],
+        priority_id: ['#issue_priority_id', 'select[name$="[priority_id]"]', 'select[name="issue[priority_id]"]'],
+        assigned_to_id: ['#issue_assigned_to_id', 'select[name$="[assigned_to_id]"]', 'select[name="issue[assigned_to_id]"]'],
+        author_id: ['#issue_author_id', 'select[name$="[author_id]"]', 'select[name="issue[author_id]"]'],
+        category_id: ['#issue_category_id', 'select[name$="[category_id]"]', 'select[name="issue[category_id]"]'],
+        fixed_version_id: ['#issue_fixed_version_id', 'select[name$="[fixed_version_id]"]', 'select[name="issue[fixed_version_id]"]'],
+        subject: ['#issue_subject', 'input[name="issue[subject]"]'],
+        start_date: ['#issue_start_date', 'input[name="issue[start_date]"]'],
+        due_date: ['#issue_due_date', 'input[name="issue[due_date]"]'],
+        done_ratio: ['#issue_done_ratio', 'select[name="issue[done_ratio]"]']
+    };
 
     function collectRelevantFieldIds(mapping) {
         const ids = new Set();
@@ -22,6 +36,7 @@
     };
 
     const isSelectElement = (element) => element && element.tagName === 'SELECT';
+    const isTextInputElement = (element) => element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA');
 
     const ensureElementId = (() => {
         let counter = 0;
@@ -96,6 +111,20 @@
         return candidate || checkbox;
     };
 
+    const findCoreFieldElement = (root, fieldKey) => {
+        if (!fieldKey) return null;
+        const selectors = CORE_FIELD_SELECTORS[fieldKey] || [];
+        for (const selector of selectors) {
+            const scopedCandidate = root.querySelector(selector);
+            if (scopedCandidate) return scopedCandidate;
+            if (root !== document) {
+                const globalCandidate = document.querySelector(selector);
+                if (globalCandidate) return globalCandidate;
+            }
+        }
+        return null;
+    };
+
     const getContextRoot = (element) => {
         if (!element || !element.closest) return document;
         return element.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk-edit-form, form') || document;
@@ -110,6 +139,10 @@
                     .map(o => String(o.value));
             }
             return field.value === '' ? [] : [String(field.value)];
+        }
+        if (isTextInputElement(field)) {
+            const rawValue = field.value;
+            return rawValue === '' ? [] : [String(rawValue)];
         }
         const inputs = getFieldInputs(field);
         const checked = inputs.filter(input => input.checked).map(input => String(input.value || ''));
@@ -210,10 +243,101 @@
         }
     };
 
-    const calculateAllowed = (parentValues, mapping) => {
-        const hasMapping = parentValues.some(v => Object.prototype.hasOwnProperty.call(mapping, v));
+    const determineValueType = (format) => {
+        if (['int', 'float'].includes(format)) return 'number';
+        if (['date'].includes(format)) return 'date';
+        return 'string';
+    };
+
+    const normalizeForComparison = (value, type) => {
+        if (value === null || value === undefined) return null;
+        if (type === 'number') {
+            const parsed = parseFloat(value);
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+        if (type === 'date') {
+            const stringValue = String(value);
+            if (!/^\d{4}-\d{2}-\d{2}/.test(stringValue)) return null;
+            const parsed = Date.parse(stringValue);
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+        return String(value);
+    };
+
+    const matchesRule = (rule, parentValues, valueType) => {
+        const operator = String(rule.operator || '');
+        const values = parentValues.map(v => String(v));
+
+        if (operator === 'present') {
+            return values.some(v => v !== '' && v !== null && v !== undefined);
+        }
+        if (operator === 'blank') {
+            return values.every(v => v === '' || v === null || v === undefined);
+        }
+
+        const normalizedValues = values
+            .map(v => normalizeForComparison(v, valueType))
+            .filter(v => v !== null);
+        if (normalizedValues.length === 0) return false;
+
+        const rawValue = rule.value || '';
+        const rawValueTo = rule.value_to || '';
+        const comparisonValue = normalizeForComparison(rawValue, valueType);
+        const comparisonValueTo = normalizeForComparison(rawValueTo, valueType);
+
+        switch (operator) {
+            case 'equals':
+                return normalizedValues.some(v => v === comparisonValue);
+            case 'not_equals':
+                return normalizedValues.some(v => v !== comparisonValue);
+            case 'contains':
+                return normalizedValues.some(v => String(v).includes(String(rawValue)));
+            case 'starts_with':
+                return normalizedValues.some(v => String(v).startsWith(String(rawValue)));
+            case 'ends_with':
+                return normalizedValues.some(v => String(v).endsWith(String(rawValue)));
+            case 'regex':
+                try {
+                    const pattern = new RegExp(String(rawValue));
+                    return normalizedValues.some(v => pattern.test(String(v)));
+                } catch (e) {
+                    return false;
+                }
+            case 'lt':
+                return normalizedValues.some(v => comparisonValue !== null && v < comparisonValue);
+            case 'lte':
+                return normalizedValues.some(v => comparisonValue !== null && v <= comparisonValue);
+            case 'gt':
+                return normalizedValues.some(v => comparisonValue !== null && v > comparisonValue);
+            case 'gte':
+                return normalizedValues.some(v => comparisonValue !== null && v >= comparisonValue);
+            case 'between':
+                if (comparisonValue === null || comparisonValueTo === null) return false;
+                return normalizedValues.some(v => v >= comparisonValue && v <= comparisonValueTo);
+            default:
+                return false;
+        }
+    };
+
+    const calculateAllowed = (parentValues, mapping, rules, parentFormat) => {
+        const filteredValues = parentValues.filter(v => v !== NONE_VALUE);
+        const ruleList = Array.isArray(rules) ? rules : [];
+        if (ruleList.length > 0) {
+            const allowed = [];
+            const valueType = determineValueType(parentFormat || '');
+            ruleList.forEach(rule => {
+                if (!rule || !rule.child_values || !matchesRule(rule, filteredValues, valueType)) return;
+                rule.child_values.forEach(val => {
+                    const strVal = String(val);
+                    if (!allowed.includes(strVal)) allowed.push(strVal);
+                });
+            });
+            return { allowed, hasMapping: true };
+        }
+
+        const hasMapping = filteredValues.some(v => Object.prototype.hasOwnProperty.call(mapping, v));
         let allowed = [];
-        parentValues.forEach(v => {
+        filteredValues.forEach(v => {
             if (Object.prototype.hasOwnProperty.call(mapping, v) && Array.isArray(mapping[v])) {
                 allowed = allowed.concat(mapping[v].map(String));
             }
@@ -413,9 +537,9 @@
         }
     };
 
-    const updateChild = (parentSelect, childSelect, mapping, defaults = {}, hideParentSetting = false) => {
+    const updateChild = (parentSelect, childSelect, mapping, rules = [], defaults = {}, parentFormat = '', hideParentSetting = false) => {
         const parentValues = getValues(parentSelect);
-        const { allowed, hasMapping } = calculateAllowed(parentValues, mapping);
+        const { allowed, hasMapping } = calculateAllowed(parentValues, mapping, rules, parentFormat);
         const hideParent = hideParentSetting === true || hideParentSetting === '1' || hideParentSetting === 1;
         updateOptionVisibility(childSelect, allowed, hasMapping);
         applyChildState(parentValues, childSelect, allowed, hasMapping, defaults, hideParent);
@@ -471,11 +595,14 @@
                 childElement.dataset.dependingPrefix = prefix;
 
                 const contextRoot = getContextRoot(childElement);
-                const parentSelect = findFieldElement(contextRoot, prefix, info.parent_id);
+                const isCoreParent = info.parent_type === 'core_field';
+                const parentSelect = isCoreParent
+                    ? findCoreFieldElement(contextRoot, info.parent_key)
+                    : findFieldElement(contextRoot, prefix, info.parent_id);
                 if (!parentSelect) return;
 
-                const parentPrefix = extractPrefix(parentSelect) || prefix;
-                parentSelect.dataset.dependingFieldId = parentSelect.dataset.dependingFieldId || String(info.parent_id);
+                const parentPrefix = isCoreParent ? 'core' : (extractPrefix(parentSelect) || prefix);
+                parentSelect.dataset.dependingFieldId = parentSelect.dataset.dependingFieldId || (isCoreParent ? String(info.parent_key) : String(info.parent_id));
                 parentSelect.dataset.dependingPrefix = parentSelect.dataset.dependingPrefix || parentPrefix;
                 const parentIdAttr = ensureElementId(parentSelect);
                 const parentKey = parentSelect.dataset.dependingKey || `${parentPrefix}:${parentSelect.dataset.dependingFieldId}:${parentIdAttr}`;
@@ -500,7 +627,7 @@
                 }
 
                 if (!parentSelect.dataset.dependingChangeListener) {
-                    parentSelect.addEventListener('change', () => {
+                    const handleParentChange = () => {
                         const allEntries = (parentSelect.dataset[key] || '').split(',').filter(Boolean);
                         const searchRoot = getContextRoot(parentSelect);
                         allEntries.forEach(item => {
@@ -508,13 +635,17 @@
                             if (!childPrefix || !childId) return;
                             const child = findFieldElement(searchRoot, childPrefix, childId) || findFieldElement(document, childPrefix, childId);
                             const childInfo = mapping[childId] || {};
-                            if (child) updateChild(parentSelect, child, childInfo.map || {}, childInfo.defaults || {}, childInfo.hide_when_disabled);
+                            if (child) updateChild(parentSelect, child, childInfo.map || {}, childInfo.rules || [], childInfo.defaults || {}, childInfo.parent_format || '', childInfo.hide_when_disabled);
                         });
-                    });
+                    };
+                    parentSelect.addEventListener('change', handleParentChange);
+                    if (!isSelectElement(parentSelect)) {
+                        parentSelect.addEventListener('input', handleParentChange);
+                    }
                     parentSelect.dataset.dependingChangeListener = '1';
                 }
 
-                updateChild(parentSelect, childElement, info.map || {}, info.defaults || {}, info.hide_when_disabled);
+                updateChild(parentSelect, childElement, info.map || {}, info.rules || [], info.defaults || {}, info.parent_format || '', info.hide_when_disabled);
             });
         });
 
@@ -532,10 +663,224 @@
     let debounceTimeout;
     const requestSetup = (root = document) => {
         clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(() => setup(root), 100);
+        debounceTimeout = setTimeout(() => {
+            setup(root);
+            setupParentTypeToggles(root);
+            setupRuleValidation(root);
+        }, 100);
     };
 
-    document.addEventListener('DOMContentLoaded', () => setup());
+    const setupParentTypeToggles = (root = document) => {
+        const selects = Array.from(root.querySelectorAll('select[data-parent-type-toggle]'));
+        selects.forEach(select => {
+            const form = select.closest('form') || root;
+            const customBlocks = form.querySelectorAll('.depending-parent-custom');
+            const coreBlocks = form.querySelectorAll('.depending-parent-core');
+            const updateVisibility = () => {
+                if (!select.value) {
+                    select.value = 'custom_field';
+                }
+                const value = select.value;
+                customBlocks.forEach(block => { block.style.display = value === 'custom_field' ? '' : 'none'; });
+                coreBlocks.forEach(block => { block.style.display = value === 'core_field' ? '' : 'none'; });
+            };
+            updateVisibility();
+            if (!select.dataset.parentTypeListener) {
+                select.addEventListener('change', updateVisibility);
+                select.dataset.parentTypeListener = '1';
+            }
+        });
+    };
+
+    const DATE_RULE_OPERATORS = ['equals', 'not_equals', 'lt', 'lte', 'gt', 'gte', 'between'];
+    const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+    const TEMPLATE_RULE = [
+        { operator: 'equals', value: 'Bug', child_values: ['High', 'Critical'] }
+    ];
+
+    const setupRuleValidation = (root = document) => {
+        const textareas = Array.from(root.querySelectorAll('textarea[name="custom_field[dependency_rules]"]'));
+        textareas.forEach(textarea => {
+            const warning = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__warning');
+            const insertButton = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__insert');
+            const addButton = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__add');
+            const operatorSelect = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__operator');
+            const valueInput = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__value');
+            const valueToInput = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__value-to');
+            const childSelect = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__child-values');
+            const toggleAdvanced = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__toggle-advanced');
+            const advancedPanel = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__advanced');
+            const blocking = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__blocking');
+            const preview = textarea.closest('.dependencies-rules')?.querySelector('.dependencies-rules__preview');
+            if (!warning || textarea.dataset.ruleValidationBound) return;
+
+            const parentFormat = textarea.dataset.parentFormat;
+            const invalidJsonMessage = textarea.dataset.invalidJsonMessage || 'Invalid JSON.';
+            const invalidDateMessage = textarea.dataset.invalidDateMessage || 'Invalid date format.';
+            const invalidRuleMessage = textarea.dataset.invalidRuleMessage || 'Invalid rule.';
+            const blockingMessage = textarea.dataset.blockingMessage || 'Submission blocked due to invalid rules.';
+            let debounceTimer;
+
+            const validate = () => {
+                warning.hidden = true;
+                warning.textContent = '';
+
+                let parsed;
+                try {
+                    parsed = JSON.parse(textarea.value || '[]');
+                } catch (e) {
+                    warning.textContent = invalidJsonMessage;
+                    warning.hidden = false;
+                    textarea.dataset.ruleInvalid = '1';
+                    if (preview) preview.textContent = textarea.value || '';
+                    return;
+                }
+
+                if (!Array.isArray(parsed)) {
+                    warning.textContent = invalidRuleMessage;
+                    warning.hidden = false;
+                    if (preview) preview.textContent = JSON.stringify(parsed, null, 2);
+                    return;
+                }
+
+                const invalidRule = parsed.some(rule => {
+                    if (!rule || typeof rule !== 'object') return true;
+                    if (!rule.operator || !Array.isArray(rule.child_values) || rule.child_values.length === 0) return true;
+                    if (rule.operator === 'present' || rule.operator === 'blank') return false;
+                    if (rule.value == null || String(rule.value).trim() === '') return true;
+                    if (rule.operator === 'between' && (rule.value_to == null || String(rule.value_to).trim() === '')) return true;
+                    return false;
+                });
+
+                if (invalidRule) {
+                    warning.textContent = invalidRuleMessage;
+                    warning.hidden = false;
+                    textarea.dataset.ruleInvalid = '1';
+                    if (preview) preview.textContent = JSON.stringify(parsed, null, 2);
+                    return;
+                }
+
+                if (parentFormat !== 'date') {
+                    if (preview) preview.textContent = JSON.stringify(parsed, null, 2);
+                    textarea.dataset.ruleInvalid = '0';
+                    return;
+                }
+
+                const invalidDate = parsed.some(rule => {
+                    if (!rule || !DATE_RULE_OPERATORS.includes(rule.operator)) return false;
+                    const values = [rule.value, rule.value_to].filter(Boolean);
+                    return values.some(val => typeof val === 'string' && !ISO_DATE_REGEX.test(val));
+                });
+
+                if (invalidDate) {
+                    warning.textContent = invalidDateMessage;
+                    warning.hidden = false;
+                    textarea.dataset.ruleInvalid = '1';
+                }
+                if (!invalidDate) {
+                    textarea.dataset.ruleInvalid = '0';
+                }
+                if (preview) preview.textContent = JSON.stringify(parsed, null, 2);
+            };
+
+            textarea.addEventListener('blur', validate);
+            textarea.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(validate, 300);
+            });
+            if (insertButton && !insertButton.dataset.insertBound) {
+                insertButton.addEventListener('click', () => {
+                    textarea.value = JSON.stringify(TEMPLATE_RULE, null, 2);
+                    validate();
+                });
+                insertButton.dataset.insertBound = '1';
+            }
+            if (addButton && !addButton.dataset.addBound) {
+                addButton.addEventListener('click', () => {
+                    const operator = operatorSelect?.value;
+                    const childValues = childSelect
+                        ? Array.from(childSelect.selectedOptions).map(opt => opt.value)
+                        : [];
+                    if (!operator || childValues.length === 0) {
+                        warning.textContent = invalidRuleMessage;
+                        warning.hidden = false;
+                        textarea.dataset.ruleInvalid = '1';
+                        return;
+                    }
+                    if (operator !== 'present' && operator !== 'blank') {
+                        if (!valueInput?.value || valueInput.value.trim() === '') {
+                            warning.textContent = invalidRuleMessage;
+                            warning.hidden = false;
+                            textarea.dataset.ruleInvalid = '1';
+                            return;
+                        }
+                        if (operator === 'between' && (!valueToInput?.value || valueToInput.value.trim() === '')) {
+                            warning.textContent = invalidRuleMessage;
+                            warning.hidden = false;
+                            textarea.dataset.ruleInvalid = '1';
+                            return;
+                        }
+                    }
+
+                    const payload = {
+                        operator,
+                        value: valueInput?.value || '',
+                        value_to: valueToInput?.value || '',
+                        child_values: childValues
+                    };
+
+                    let existing;
+                    try {
+                        existing = JSON.parse(textarea.value || '[]');
+                    } catch (e) {
+                        existing = [];
+                    }
+                    if (!Array.isArray(existing)) existing = [];
+                    existing.push(payload);
+                    textarea.value = JSON.stringify(existing, null, 2);
+                    validate();
+                });
+                addButton.dataset.addBound = '1';
+            }
+            if (toggleAdvanced && advancedPanel && !toggleAdvanced.dataset.toggleBound) {
+                toggleAdvanced.addEventListener('click', () => {
+                    advancedPanel.hidden = !advancedPanel.hidden;
+                    toggleAdvanced.setAttribute('aria-expanded', String(!advancedPanel.hidden));
+                });
+                toggleAdvanced.dataset.toggleBound = '1';
+            }
+            textarea.dataset.ruleValidationBound = '1';
+            validate();
+        });
+
+        const form = root.closest ? root.closest('form') : null;
+        if (form && !form.dataset.ruleSubmitBound) {
+            form.addEventListener('submit', event => {
+                const invalid = form.querySelector('textarea[name="custom_field[dependency_rules]"][data-rule-invalid="1"]');
+                if (invalid) {
+                    event.preventDefault();
+                    const warning = invalid.closest('.dependencies-rules')?.querySelector('.dependencies-rules__warning');
+                    const blocking = invalid.closest('.dependencies-rules')?.querySelector('.dependencies-rules__blocking');
+                    if (warning && warning.hidden) {
+                        warning.textContent = invalid.dataset.invalidRuleMessage || 'Invalid rules.';
+                        warning.hidden = false;
+                    }
+                    if (blocking) {
+                        blocking.textContent = invalid.dataset.blockingMessage || 'Submission blocked due to invalid rules.';
+                        blocking.hidden = false;
+                    }
+                    invalid.focus();
+                }
+            });
+            form.dataset.ruleSubmitBound = '1';
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setup();
+        setupParentTypeToggles(document);
+        setupRuleValidation(document);
+    });
 
     if (window.jQuery) {
         jQuery(document).ajaxComplete(() => requestSetup(document));

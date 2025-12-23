@@ -1,5 +1,5 @@
-<% if parent_field && custom_field %>
-  <% parent_vals = parent_field.possible_values_options.reject do |pv|
+<% if parent_options && custom_field %>
+  <% parent_vals = parent_options.reject do |pv|
        (pv.is_a?(Array) ? pv[1] : pv).to_s.blank?
      end %>
   <% child_vals  = custom_field.possible_values_options.reject do |cv|

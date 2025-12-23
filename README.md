@@ -24,6 +24,8 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      are cleared and only show the allowed options
    - Fields can optionally be hidden when they have no valid options to choose
      from
+   - Parent fields can be standard Redmine issue fields (project, tracker, status, priority, assignee, etc.)
+   - Dependency rules can be defined using JSON to match non-enumerated parents (dates, text, numbers)
    - Works on all objects that support custom fields such as issues, projects,
      time entries, versions and users
 3. `Bulk edit`
@@ -265,4 +267,3 @@ Many thanks to ChatGPT for helping to create this plugin.
 ## License
 
 This plugin is released under the GNU GPL v3.
-

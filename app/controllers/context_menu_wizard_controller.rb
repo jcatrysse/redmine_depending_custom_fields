@@ -86,7 +86,10 @@ class ContextMenuWizardController < ApplicationController
   end
 
   def parent_options(mapping)
-    parent_ids    = mapping.values.map { |i| i[:parent_id].to_i }.uniq
+    parent_ids    = mapping.values.select do |info|
+      info[:parent_type] == 'custom_field' &&
+        RedmineDependingCustomFields::ParentDetector::PARENT_FORMATS.include?(info[:parent_format])
+    end.map { |info| info[:parent_id].to_i }.uniq
     fields_by_id  = CustomField.where(id: parent_ids).index_by(&:id)
 
     parent_ids.map do |pid|
@@ -111,7 +114,11 @@ class ContextMenuWizardController < ApplicationController
   def child_options(mapping)
     pid     = params[:parent_id].to_s
     pval    = params[:parent_value].to_s
-    childs  = mapping.select { |_, info| info[:parent_id].to_s == pid }
+    childs  = mapping.select do |_, info|
+      info[:parent_id].to_s == pid &&
+        info[:parent_type] == 'custom_field' &&
+        RedmineDependingCustomFields::ParentDetector::PARENT_FORMATS.include?(info[:parent_format])
+    end
     ids     = childs.keys.map(&:to_i)
     fields  = CustomField.where(id: ids).index_by(&:id)
 

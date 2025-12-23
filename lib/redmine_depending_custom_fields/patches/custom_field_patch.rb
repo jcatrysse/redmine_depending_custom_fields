@@ -1,4 +1,5 @@
 require_dependency 'custom_field'
+require 'json'
 
 # Extension for CustomField that triggers a callback on the field format after
 # the record is saved. This allows formats to invalidate caches when their
@@ -9,6 +10,9 @@ module RedmineDependingCustomFields
     module CustomFieldPatch
       def self.prepended(base)
         base.after_save :dispatch_after_custom_field_save
+        if base.table_exists? && base.column_names.include?('dependency_rules')
+          base.serialize :dependency_rules, JSON
+        end
       end
 
       private

@@ -1,0 +1,55 @@
+<% if custom_field && f %>
+  <% rules_value = custom_field.dependency_rules.presence || [] %>
+  <% rules_json = rules_value.is_a?(String) ? rules_value : JSON.pretty_generate(rules_value) %>
+  <div class="dependencies-rules">
+    <em class="info"><%= l(:text_dependency_rules_info) %></em>
+    <span class="dependencies-rules__hint"><%= l(:text_dependency_rules_builder_hint) %></span>
+    <button type="button" class="dependencies-rules__insert"><%= l(:button_insert_rule_template) %></button>
+    <button type="button" class="dependencies-rules__toggle-advanced" aria-expanded="false"><%= l(:button_toggle_rules_editor) %></button>
+    <div class="dependencies-rules__builder">
+      <label><%= l(:label_rule_operator) %>
+        <select class="dependencies-rules__operator">
+          <option value=""></option>
+          <% RedmineDependingCustomFields::Sanitizer::RULE_OPERATORS.each do |op| %>
+            <option value="<%= op %>"><%= op %></option>
+          <% end %>
+        </select>
+      </label>
+      <label><%= l(:label_rule_value) %>
+        <input type="text" class="dependencies-rules__value" />
+      </label>
+      <label><%= l(:label_rule_value_to) %>
+        <input type="text" class="dependencies-rules__value-to" />
+      </label>
+      <label><%= l(:label_rule_child_values) %>
+        <select class="dependencies-rules__child-values" multiple>
+          <% custom_field.possible_values_options.each do |cv| %>
+            <% label, value = cv.is_a?(Array) ? cv.take(2) : [cv, cv] %>
+            <% next if value.to_s.blank? %>
+            <option value="<%= value %>"><%= label %></option>
+          <% end %>
+        </select>
+      </label>
+      <button type="button" class="dependencies-rules__add"><%= l(:button_add_rule) %></button>
+    </div>
+    <div class="dependencies-rules__advanced" hidden>
+      <%= f.text_area :dependency_rules,
+                      value: rules_json,
+                      rows: 8,
+                      label: :field_dependency_rules,
+                      data: {
+                        parent_format: local_assigns[:parent_format],
+                        invalid_json_message: l(:text_dependency_rules_invalid_json),
+                        invalid_date_message: l(:text_dependency_rules_invalid_date),
+                        invalid_rule_message: l(:text_dependency_rules_invalid_rule),
+                        blocking_message: l(:text_dependency_rules_blocked)
+                      } %>
+    </div>
+    <pre class="dependencies-rules__preview" aria-live="polite"></pre>
+    <% if custom_field.errors[:dependency_rules].present? %>
+      <span class="error"><%= custom_field.errors[:dependency_rules].join(', ') %></span>
+    <% end %>
+    <span class="dependencies-rules__warning" hidden></span>
+    <span class="dependencies-rules__blocking" hidden></span>
+  </div>
+<% end %>

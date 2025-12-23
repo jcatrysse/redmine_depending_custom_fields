@@ -22,6 +22,27 @@
   text-align: left;
 }
 .depending-child { margin-left: 20px; }
+.depending-parent-field { margin-left: 20px; }
+.dependencies-rules textarea { width: 100%; }
+.dependencies-rules .error { display: block; color: #d00; margin-top: 4px; }
+.dependencies-rules__example { margin-top: 6px; font-size: 11px; color: #666; }
+.dependencies-rules__warning { display: block; color: #b36b00; margin-top: 4px; }
+.dependencies-rules__insert { margin-top: 6px; }
+.dependencies-rules__builder { margin-top: 8px; display: grid; gap: 6px; }
+.dependencies-rules__builder label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  float: none;
+  width: auto;
+  margin-left: 0;
+}
+.dependencies-rules__builder select[multiple] { min-height: 90px; }
+.dependencies-rules__blocking { display: block; color: #b00020; margin-top: 4px; font-weight: bold; }
+.dependencies-rules__toggle-advanced { margin-left: 6px; }
+.dependencies-rules__preview { margin-top: 6px; font-size: 11px; color: #444; background: #f7f7f7; padding: 6px; }
+.dependencies-rules__hint { display: block; margin-top: 4px; color: #555; font-size: 11px; }
+.dependencies-rules button { cursor: pointer; }
 
 .cf-wizard-spinner {
   width: 24px;
@@ -109,4 +130,3 @@
   justify-content: flex-end;
   gap: 4px;
 }
-

@@ -65,8 +65,11 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect(cf["possible_values"]).to eq(["A", "B"])
       expect(cf).to include(
         "parent_custom_field_id" => nil,
+        "parent_field_type" => nil,
+        "parent_field_key" => nil,
         "value_dependencies" => {},
         "default_value_dependencies" => {},
+        "dependency_rules" => [],
         "hide_when_disabled" => false
       )
       expect(cf).not_to have_key("enumerations")
@@ -173,6 +176,69 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect(cf["show_registered"]).to eq(true)
       expect(cf["show_locked"]).to eq(false)
     end
+
+    it "rejects invalid dependency rules" do
+      payload = {
+        custom_field: {
+          name: "rule field",
+          type: "IssueCustomField",
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          possible_values: ["A"],
+          dependency_rules: "invalid-json"
+        }
+      }
+
+      expect {
+        post "/depending_custom_fields.json", params: payload
+      }.not_to change { CustomField.count }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body["errors"]).to have_key("dependency_rules")
+      expect(body["errors"]["dependency_rules"]["base"].first).to include("code" => "invalid_json")
+    end
+
+    it "rejects dependency rules missing child_values" do
+      payload = {
+        custom_field: {
+          name: "rule field",
+          type: "IssueCustomField",
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          possible_values: ["A"],
+          dependency_rules: [{ operator: "equals", value: "A" }]
+        }
+      }
+
+      expect {
+        post "/depending_custom_fields.json", params: payload
+      }.not_to change { CustomField.count }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body["errors"]).to have_key("dependency_rules")
+      expect(body["errors"]["dependency_rules"]["0"].first).to include("code" => "missing_child_values")
+    end
+
+    it "rejects dependency rules missing operator" do
+      payload = {
+        custom_field: {
+          name: "rule field",
+          type: "IssueCustomField",
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          possible_values: ["A"],
+          dependency_rules: [{ value: "A", child_values: ["B"] }]
+        }
+      }
+
+      expect {
+        post "/depending_custom_fields.json", params: payload
+      }.not_to change { CustomField.count }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body["errors"]).to have_key("dependency_rules")
+      expect(body["errors"]["dependency_rules"]["0"].first).to include("code" => "missing_operator")
+    end
   end
 
   describe "PUT /depending_custom_fields/:id" do
@@ -240,6 +306,7 @@ RSpec.describe "DependingCustomFields API", type: :request do
           default_value_dependencies: { "1" => "A" },
           hide_when_disabled: true
         )
+        field.update_column(:dependency_rules, '[{"operator":"equals","value":"A","child_values":["B"]}]')
       end
     end
 
@@ -273,8 +340,13 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect_common_attributes(cf, name: "Depending list", field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, type: "IssueCustomField")
       expect(cf["possible_values"]).to match_array(%w[A B])
       expect(cf["parent_custom_field_id"]).to be_nil
+      expect(cf["parent_field_type"]).to be_nil
+      expect(cf["parent_field_key"]).to be_nil
       expect(cf["value_dependencies"]).to eq({ "1" => ["A"] })
       expect(cf["default_value_dependencies"]).to eq({ "1" => "A" })
+      expect(cf["dependency_rules"]).to eq(
+        [{ "operator" => "equals", "value" => "A", "child_values" => ["B"] }]
+      )
       expect(cf["hide_when_disabled"]).to eq(true)
       expect(cf).not_to have_key("enumerations")
       expect(cf).not_to have_key("group_ids")
@@ -293,6 +365,7 @@ RSpec.describe "DependingCustomFields API", type: :request do
       )
       expect(cf["value_dependencies"]).to eq({})
       expect(cf["default_value_dependencies"]).to eq({})
+      expect(cf["dependency_rules"]).to eq([])
       expect(cf["hide_when_disabled"]).to eq(false)
     end
 

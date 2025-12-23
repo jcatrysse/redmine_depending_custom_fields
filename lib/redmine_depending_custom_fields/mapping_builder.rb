@@ -17,12 +17,17 @@ module RedmineDependingCustomFields
       ])
 
       mapping = cfs.each_with_object({}) do |cf, h|
-        next unless cf.parent_custom_field_id.present?
+        parent_reference = ParentReference.from_custom_field(cf)
+        next unless parent_reference
 
         h[cf.id.to_s] = {
-          parent_id: cf.parent_custom_field_id.to_s,
+          parent_id: parent_reference.custom_field&.id&.to_s,
+          parent_type: parent_reference.type,
+          parent_key: parent_reference.key,
+          parent_format: parent_reference.format,
           map: RedmineDependingCustomFields::Sanitizer.sanitize_dependencies(cf.value_dependencies),
           defaults: RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(cf.default_value_dependencies),
+          rules: RedmineDependingCustomFields::Sanitizer.sanitize_dependency_rules(cf.dependency_rules),
           hide_when_disabled: ActiveModel::Type::Boolean.new.cast(cf.hide_when_disabled)
         }
       end

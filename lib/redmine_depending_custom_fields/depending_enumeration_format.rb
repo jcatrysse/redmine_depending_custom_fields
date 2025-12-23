@@ -10,7 +10,9 @@ module RedmineDependingCustomFields
   class DependingEnumerationFormat < Redmine::FieldFormat::EnumerationFormat
     add 'depending_enumeration'
     self.form_partial = 'custom_fields/formats/depending_enumeration'
-    field_attributes :parent_custom_field_id, :value_dependencies, :default_value_dependencies, :hide_when_disabled
+    field_attributes :parent_custom_field_id, :parent_field_type, :parent_field_key,
+                     :value_dependencies, :default_value_dependencies, :dependency_rules,
+                     :hide_when_disabled
 
     def label
       :label_depending_enumeration
@@ -18,15 +20,50 @@ module RedmineDependingCustomFields
 
     def before_custom_field_save(custom_field)
       super
-      if custom_field.parent_custom_field_id.present?
-        parent = CustomField.find_by(id: custom_field.parent_custom_field_id.to_i,
-                                     type: custom_field.type,
-                                     field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION])
-        custom_field.parent_custom_field_id = parent&.id
-        custom_field.default_value = nil if parent
+      parent_type = custom_field.parent_field_type.to_s
+
+      if parent_type == 'core_field'
+        custom_field.parent_custom_field_id = nil
+        custom_field.parent_field_key = custom_field.parent_field_key.presence
+        if custom_field.parent_field_key.present?
+          custom_field.default_value = nil
+        else
+          custom_field.parent_field_type = nil
+        end
+      else
+        parent_id = custom_field.parent_custom_field_id
+        if parent_id.present?
+          parent = CustomField.find_by(id: parent_id.to_i, type: custom_field.type)
+          custom_field.parent_custom_field_id = parent&.id
+          custom_field.parent_field_type = parent ? 'custom_field' : nil
+          custom_field.parent_field_key = nil
+          custom_field.default_value = nil if parent
+        else
+          custom_field.parent_field_type = nil if custom_field.parent_field_key.blank?
+        end
       end
+
       custom_field.value_dependencies = RedmineDependingCustomFields::Sanitizer.sanitize_dependencies(custom_field.value_dependencies)
       custom_field.default_value_dependencies = RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(custom_field.default_value_dependencies)
+
+      parsed_rules, error = RedmineDependingCustomFields::Sanitizer.parse_dependency_rules(custom_field.dependency_rules)
+      if error
+        custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_json))
+      end
+      parent_reference = RedmineDependingCustomFields::ParentReference.from_custom_field(custom_field)
+      if parent_reference&.format == 'date' &&
+         RedmineDependingCustomFields::Sanitizer.invalid_date_rules?(parsed_rules)
+        custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_date))
+      end
+      schema_errors = RedmineDependingCustomFields::Sanitizer.rule_schema_errors(parsed_rules)
+      schema_errors.each do |error|
+        custom_field.errors.add(
+          :dependency_rules,
+          ::I18n.t(:text_dependency_rules_invalid_rule_index, index: error[:index] + 1)
+        )
+      end
+      sanitized_rules = RedmineDependingCustomFields::Sanitizer.sanitize_dependency_rules(parsed_rules)
+      custom_field.dependency_rules = sanitized_rules.to_json
     end
 
     def possible_values_options(custom_field, object = nil)
@@ -43,15 +80,10 @@ module RedmineDependingCustomFields
       # ======================================================================
 
       # === Filter path (single record) ======================================
-      # Filter only when a parent custom field exists and can be found.
-      return base_options unless custom_field.parent_custom_field_id.present?
+      evaluation = RedmineDependingCustomFields::DependencyEvaluator.evaluate(custom_field, object)
+      return base_options unless evaluation.applicable
 
-      parent = CustomField.find_by(id: custom_field.parent_custom_field_id)
-      return base_options unless parent
-
-      mapping = custom_field.value_dependencies || {}
-      parent_values = Array(object.custom_field_value(parent)).map(&:to_s)
-      allowed = parent_values.flat_map { |v| Array(mapping[v]) }.map(&:to_s).uniq
+      allowed = evaluation.allowed
 
       # Keep every option in the markup, but hide the ones that aren’t allowed.
       # This lets legacy values remain visible while preventing new invalid picks.
@@ -68,9 +100,13 @@ module RedmineDependingCustomFields
 
     def query_filter_values(custom_field, query = nil)
       raw = super(custom_field, query)
+      parent_reference = RedmineDependingCustomFields::ParentReference.from_custom_field(custom_field)
+      return raw unless parent_reference&.type == 'custom_field' && parent_reference.enumerated?
+
       project = query&.project
-      parent = CustomField.find_by(id: custom_field.parent_custom_field_id)
-      parent_values = Array(project&.custom_field_value(parent)).map(&:to_s)
+      return raw unless project
+
+      parent_values = Array(project.custom_field_value(parent_reference.custom_field)).map(&:to_s)
       mapping = custom_field.value_dependencies || {}
       allowed = parent_values.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s).uniq
 
@@ -96,14 +132,12 @@ module RedmineDependingCustomFields
 
       errors = super
       customized = custom_value.customized
-      return errors unless cf.parent_custom_field_id.present? && customized
+      return errors unless customized
 
-      parent = CustomField.find_by(id: cf.parent_custom_field_id)
-      return errors unless parent
+      evaluation = RedmineDependingCustomFields::DependencyEvaluator.evaluate(cf, customized)
+      return errors unless evaluation.applicable
 
-      mapping = cf.value_dependencies || {}
-      parent_vals = Array(customized.custom_field_value(parent)).map(&:to_s)
-      allowed = parent_vals.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s)
+      allowed = evaluation.allowed
 
       child_vals = Array(custom_value.value).map(&:to_s)
       invalid = child_vals.reject(&:blank?) - allowed
