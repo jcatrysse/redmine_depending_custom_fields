@@ -27,7 +27,11 @@ module RedmineDependingCustomFields
         return Result.new(allowed: allowed, has_rules: true, has_mapping: true, applicable: true)
       end
 
-      mapping = Sanitizer.sanitize_dependencies(custom_field.value_dependencies)
+      mapping = if custom_field.respond_to?(:value_dependencies)
+                  Sanitizer.sanitize_dependencies(custom_field.value_dependencies)
+                else
+                  {}
+                end
       allowed = allowed_from_mapping(parent_values, mapping)
       Result.new(allowed: allowed, has_rules: false, has_mapping: mapping.present?, applicable: true)
     end
@@ -75,6 +79,8 @@ module RedmineDependingCustomFields
 
       value = normalize_value(rule['value'], type)
       value_to = normalize_value(rule['value_to'], type)
+      return false if %w[equals not_equals contains starts_with ends_with regex lt lte gt gte].include?(operator) && value.nil?
+      return false if operator == 'between' && (value.nil? || value_to.nil?)
 
       case operator
       when 'equals'
@@ -123,7 +129,7 @@ module RedmineDependingCustomFields
           nil
         end
       when :date
-        return value.to_date if value.respond_to?(:to_date)
+        return value.to_date if value.respond_to?(:to_date) && !value.is_a?(String)
         string_value = value.to_s
         return nil unless string_value.match?(RedmineDependingCustomFields::Sanitizer::ISO_DATE_PATTERN)
 

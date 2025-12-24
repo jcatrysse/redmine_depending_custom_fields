@@ -15,6 +15,15 @@ module RedmineDependingCustomFields
         end
       end
 
+      def update_column(name, value)
+        if name.to_s == 'dependency_rules' && !self.class.column_names.include?('dependency_rules')
+          self.dependency_rules = value
+          save(validate: false)
+        else
+          super
+        end
+      end
+
       private
 
       def dispatch_after_custom_field_save

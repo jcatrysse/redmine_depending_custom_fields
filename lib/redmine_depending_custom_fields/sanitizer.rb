@@ -58,12 +58,13 @@ module RedmineDependingCustomFields
         value = rule['value'] || rule[:value]
         value_to = rule['value_to'] || rule[:value_to]
 
-        sanitized << {
+        sanitized_rule = {
           'operator' => operator,
           'value' => value.to_s,
-          'value_to' => value_to.to_s,
           'child_values' => child_values
         }
+        sanitized_rule['value_to'] = value_to.to_s if value_to.present?
+        sanitized << sanitized_rule
       end
     end
 
@@ -90,8 +91,9 @@ module RedmineDependingCustomFields
 
     def self.invalid_rule_schema?(rules)
       Array(rules).any? do |rule|
-        return true unless rule.is_a?(Hash)
+        return true unless rule.respond_to?(:to_h)
 
+        rule = rule.to_h
         operator = rule['operator'] || rule[:operator]
         child_values = rule['child_values'] || rule[:child_values]
         return true if operator.to_s.strip.empty?
@@ -113,11 +115,12 @@ module RedmineDependingCustomFields
 
     def self.rule_schema_errors(rules)
       Array(rules).each_with_index.with_object([]) do |(rule, index), errors|
-        unless rule.is_a?(Hash)
+        unless rule.respond_to?(:to_h)
           errors << { index: index, code: 'invalid_rule', message: 'Rule must be an object' }
           next
         end
 
+        rule = rule.to_h
         operator = rule['operator'] || rule[:operator]
         child_values = rule['child_values'] || rule[:child_values]
         operator = operator.to_s
@@ -146,7 +149,7 @@ module RedmineDependingCustomFields
     end
 
     def self.valid_iso_date?(value)
-      return true if value.respond_to?(:to_date)
+      return true if value.respond_to?(:to_date) && !value.is_a?(String)
       return false unless value.is_a?(String) && value.match?(ISO_DATE_PATTERN)
 
       DateTime.iso8601(value)

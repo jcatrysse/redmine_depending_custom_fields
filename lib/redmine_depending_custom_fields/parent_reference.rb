@@ -30,6 +30,25 @@ module RedmineDependingCustomFields
       parent = CustomField.find_by(id: parent_id)
       return nil unless parent
 
+      if custom_field.respond_to?(:type) && parent.respond_to?(:type)
+        return nil unless parent.type == custom_field.type
+      end
+
+      if custom_field.respond_to?(:field_format) && parent.respond_to?(:field_format)
+        expected_formats = case custom_field.field_format.to_s
+                           when RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION
+                             [
+                               'list',
+                               'enumeration',
+                               RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+                               RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION
+                             ]
+                           when RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST
+                             ['list', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST]
+                           end
+        return nil if expected_formats && !expected_formats.include?(parent.field_format.to_s)
+      end
+
       new(type: 'custom_field', custom_field: parent)
     end
 
@@ -41,6 +60,8 @@ module RedmineDependingCustomFields
 
     def enumerated?
       if custom_field
+        return false unless custom_field.respond_to?(:field_format)
+
         ENUMERATED_FORMATS.include?(custom_field.field_format)
       else
         ParentValueOptions.enumerated_core_field?(key)
@@ -48,14 +69,16 @@ module RedmineDependingCustomFields
     end
 
     def format
-      return custom_field.field_format.to_s if custom_field
+      return custom_field.field_format.to_s if custom_field&.respond_to?(:field_format)
 
       ParentValueOptions.core_field_format(key)
     end
 
     def label
       if custom_field
-        custom_field.name
+        return custom_field.name if custom_field.respond_to?(:name)
+
+        custom_field.to_s
       else
         info = ParentValueOptions::CORE_FIELDS[key.to_s]
         return key.to_s.humanize unless info
@@ -68,6 +91,8 @@ module RedmineDependingCustomFields
       return [] unless enumerated?
 
       if custom_field
+        return [] unless custom_field.respond_to?(:possible_values_options)
+
         custom_field.possible_values_options.reject do |pv|
           (pv.is_a?(Array) ? pv[1] : pv).to_s.blank?
         end

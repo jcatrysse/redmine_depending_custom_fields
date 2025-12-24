@@ -22,6 +22,7 @@ module RedmineDependingCustomFields
       super
       parent_type = custom_field.parent_field_type.to_s
 
+      parent = nil
       if parent_type == 'core_field'
         custom_field.parent_custom_field_id = nil
         custom_field.parent_field_key = custom_field.parent_field_key.presence
@@ -33,7 +34,11 @@ module RedmineDependingCustomFields
       else
         parent_id = custom_field.parent_custom_field_id
         if parent_id.present?
-          parent = CustomField.find_by(id: parent_id.to_i, type: custom_field.type)
+          parent = CustomField.find_by(
+            id: parent_id.to_i,
+            type: custom_field.type,
+            field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION]
+          )
           custom_field.parent_custom_field_id = parent&.id
           custom_field.parent_field_type = parent ? 'custom_field' : nil
           custom_field.parent_field_key = nil
@@ -50,7 +55,12 @@ module RedmineDependingCustomFields
       if error
         custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_json))
       end
-      parent_reference = RedmineDependingCustomFields::ParentReference.from_custom_field(custom_field)
+      parent_reference = if parent_type == 'core_field'
+                           key = custom_field.parent_field_key.to_s
+                           key.present? ? RedmineDependingCustomFields::ParentReference.new(type: 'core_field', key: key) : nil
+                         elsif parent
+                           RedmineDependingCustomFields::ParentReference.new(type: 'custom_field', custom_field: parent)
+                         end
       if parent_reference&.format == 'date' &&
          RedmineDependingCustomFields::Sanitizer.invalid_date_rules?(parsed_rules)
         custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_date))

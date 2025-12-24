@@ -18,7 +18,10 @@ module RedmineDependingCustomFields
 
       child_ids  = mapping.keys.map(&:to_i)
       parent_ids = mapping.values.select do |info|
-        info[:parent_type] == 'custom_field' && PARENT_FORMATS.include?(info[:parent_format])
+        parent_type = info[:parent_type] || 'custom_field'
+        parent_format = info[:parent_format]
+        parent_type == 'custom_field' &&
+          (parent_format.nil? || PARENT_FORMATS.include?(parent_format))
       end.map { |info| info[:parent_id].to_i }.uniq - child_ids
       return [] if parent_ids.empty?
 
