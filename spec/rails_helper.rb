@@ -1,4 +1,36 @@
 ENV['RAILS_ENV'] ||= 'test'
+require 'logger' unless defined?(::Logger)
+
+require 'active_support'
+require 'active_support/dependencies'
+require 'active_support/lazy_load_hooks'
+
+require_relative '../lib/redmine_depending_custom_fields/helpers/menu_helper'
+if ActiveSupport::Dependencies.autoload_paths.frozen?
+  ActiveSupport::Dependencies.autoload_paths = ActiveSupport::Dependencies.autoload_paths.dup
+end
+if ActiveSupport::Dependencies.autoload_once_paths.frozen?
+  ActiveSupport::Dependencies.autoload_once_paths = ActiveSupport::Dependencies.autoload_once_paths.dup
+end
+if ActiveSupport.respond_to?(:on_load)
+  ActiveSupport.on_load(:active_record) do
+    singleton = ActiveRecord::Base.singleton_class
+    unless singleton.method_defined?(:open)
+      singleton.define_method(:open) { |_arg = nil| }
+    end
+    if defined?(ActiveRecord::Relation) && !ActiveRecord::Relation.method_defined?(:open)
+      ActiveRecord::Relation.define_method(:open) { |_arg = nil| }
+    end
+  end
+elsif defined?(ActiveRecord::Base)
+  singleton = ActiveRecord::Base.singleton_class
+  unless singleton.method_defined?(:open)
+    singleton.define_method(:open) { |_arg = nil| }
+  end
+  if defined?(ActiveRecord::Relation) && !ActiveRecord::Relation.method_defined?(:open)
+    ActiveRecord::Relation.define_method(:open) { |_arg = nil| }
+  end
+end
 require File.expand_path('../../../config/environment', __dir__)
 require 'rspec/rails'
 begin

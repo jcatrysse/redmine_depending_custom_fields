@@ -52,28 +52,3 @@
 
 * Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
 * Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)
-
-## 0.1.0
-
-* Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
-* Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)
-
-## 0.1.0
-
-* Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
-* Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)
-
-## 0.1.0
-
-* Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
-* Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)
-
-## 0.1.0
-
-* Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
-* Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)
-
-## 0.1.0
-
-* Allow depending fields to use standard Redmine fields as parents (project, tracker, status, etc.)
-* Add rule-based dependencies for non-enumerated parent fields (e.g., date and text matching)

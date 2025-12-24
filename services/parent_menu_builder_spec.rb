@@ -1,4 +1,4 @@
-require 'rails_helper'
+require_relative '../rails_helper'
 
 RSpec.describe RedmineDependingCustomFields::ParentMenuBuilder do
   describe '.build' do
@@ -14,14 +14,14 @@ RSpec.describe RedmineDependingCustomFields::ParentMenuBuilder do
     end
 
     before do
-      allow(ParentDetector).to receive(:for_issues).and_return([parent1, parent2])
+      allow(RedmineDependingCustomFields::ParentDetector).to receive(:for_issues).and_return([parent1, parent2])
       allow(Rails.cache).to receive(:fetch).with('depending_custom_fields/mapping').and_yield.and_return(mapping)
       allow(MappingBuilder).to receive(:build).and_return(mapping)
     end
 
     it 'detects parents using ParentDetector' do
       described_class.build(issues)
-      expect(ParentDetector).to have_received(:for_issues).with(issues)
+      expect(RedmineDependingCustomFields::ParentDetector).to have_received(:for_issues).with(issues)
     end
 
     it 'collects unique values for each parent from mapping' do

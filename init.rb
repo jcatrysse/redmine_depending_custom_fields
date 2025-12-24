@@ -3,6 +3,7 @@ require_relative 'lib/redmine_depending_custom_fields/patches/query_custom_field
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_controller_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
+require_relative 'lib/redmine_depending_custom_fields/helpers/menu_helper'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 
 Redmine::Plugin.register :redmine_depending_custom_fields do
@@ -14,24 +15,28 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   requires_redmine version_or_higher: '5.0'
 end
 
-RedmineDependingCustomFields.register_formats
-CustomField.safe_attributes(
-  'group_ids',
-  'exclude_admins',
-  'only_project_members',
-  'show_active',
-  'show_registered',
-  'show_locked',
-  'parent_custom_field_id',
-  'parent_field_type',
-  'parent_field_key',
-  'value_dependencies',
-  'default_value_dependencies',
-  'dependency_rules',
-  'hide_when_disabled'
-)
+Rails.configuration.to_prepare do
+  # registreer formats en voer patches uit nadat Redmine core klaar is
+  RedmineDependingCustomFields.register_formats
 
-QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch
-CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
-ContextMenusController.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
-IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch
+  CustomField.safe_attributes(
+    'group_ids',
+    'exclude_admins',
+    'only_project_members',
+    'show_active',
+    'show_registered',
+    'show_locked',
+    'parent_custom_field_id',
+    'parent_field_type',
+    'parent_field_key',
+    'value_dependencies',
+    'default_value_dependencies',
+    'dependency_rules',
+    'hide_when_disabled'
+  )
+
+  QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch
+  CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
+  ContextMenusController.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
+  IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch
+end
