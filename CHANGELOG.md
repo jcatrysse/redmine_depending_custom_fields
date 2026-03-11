@@ -47,3 +47,9 @@
 ## 0.0.9
 
 * Refactor table layout in formats
+
+## 0.0.10
+
+* Fix internal server error (500) when opening the edit page of a depending
+  enumeration custom field on Redmine 5.x/contexts where `sprite_icon` is not
+  available by falling back to a plain labelled link directly in the view.
