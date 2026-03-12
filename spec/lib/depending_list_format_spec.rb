@@ -90,5 +90,106 @@ RSpec.describe RedmineDependingCustomFields::DependingListFormat do
 
       expect(errors).to have_received(:add).with(:dependency_rules, I18n.t(:text_dependency_rules_invalid_json))
     end
+
+    context 'with core_field parent' do
+      let(:core_cf) do
+        build_custom_field(
+          parent_custom_field_id: nil,
+          parent_field_type: 'core_field',
+          parent_field_key: 'tracker_id',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          value_dependencies: {},
+          default_value_dependencies: {},
+          dependency_rules: [],
+          default_value: 'X'
+        )
+      end
+
+      before do
+        allow(core_cf).to receive(:parent_custom_field_id=)
+        allow(core_cf).to receive(:parent_field_type=)
+        allow(core_cf).to receive(:parent_field_key=)
+        allow(core_cf).to receive(:value_dependencies=)
+        allow(core_cf).to receive(:default_value_dependencies=)
+        allow(core_cf).to receive(:dependency_rules=)
+        allow(core_cf).to receive(:default_value=)
+      end
+
+      it 'explicitly sets parent_field_type to core_field when key is present' do
+        format.before_custom_field_save(core_cf)
+
+        expect(core_cf).to have_received(:parent_field_type=).with('core_field')
+        expect(core_cf).to have_received(:parent_custom_field_id=).with(nil)
+        expect(core_cf).to have_received(:default_value=).with(nil)
+      end
+    end
+
+    context 'when clearing parent (core_field with blank key)' do
+      let(:clearing_cf) do
+        build_custom_field(
+          parent_custom_field_id: nil,
+          parent_field_type: 'core_field',
+          parent_field_key: '',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          value_dependencies: {},
+          default_value_dependencies: {},
+          dependency_rules: [{ 'operator' => 'equals', 'value' => 'x', 'child_values' => ['a'] }],
+          default_value: nil
+        )
+      end
+
+      before do
+        allow(clearing_cf).to receive(:parent_custom_field_id=)
+        allow(clearing_cf).to receive(:parent_field_type=)
+        allow(clearing_cf).to receive(:parent_field_key=)
+        allow(clearing_cf).to receive(:value_dependencies=)
+        allow(clearing_cf).to receive(:default_value_dependencies=)
+        allow(clearing_cf).to receive(:dependency_rules=)
+        allow(clearing_cf).to receive(:default_value=)
+      end
+
+      it 'clears parent_field_type and dependency_rules' do
+        format.before_custom_field_save(clearing_cf)
+
+        expect(clearing_cf).to have_received(:parent_field_type=).with(nil)
+        expect(clearing_cf).to have_received(:parent_field_key=).with(nil)
+        expect(clearing_cf).to have_received(:dependency_rules=).with([])
+      end
+    end
+
+    context 'when clearing parent (custom_field with blank id)' do
+      let(:clearing_cf) do
+        build_custom_field(
+          parent_custom_field_id: '',
+          parent_field_type: 'custom_field',
+          parent_field_key: '',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          value_dependencies: { 'a' => ['1'] },
+          default_value_dependencies: {},
+          dependency_rules: [{ 'operator' => 'present', 'child_values' => ['b'] }],
+          default_value: nil
+        )
+      end
+
+      before do
+        allow(clearing_cf).to receive(:parent_custom_field_id=)
+        allow(clearing_cf).to receive(:parent_field_type=)
+        allow(clearing_cf).to receive(:parent_field_key=)
+        allow(clearing_cf).to receive(:value_dependencies=)
+        allow(clearing_cf).to receive(:default_value_dependencies=)
+        allow(clearing_cf).to receive(:dependency_rules=)
+        allow(clearing_cf).to receive(:default_value=)
+      end
+
+      it 'clears parent_field_type and dependency_rules' do
+        format.before_custom_field_save(clearing_cf)
+
+        expect(clearing_cf).to have_received(:parent_field_type=).with(nil)
+        expect(clearing_cf).to have_received(:dependency_rules=).with([])
+      end
+    end
   end
 end

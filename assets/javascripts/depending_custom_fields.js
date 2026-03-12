@@ -679,9 +679,6 @@
             const customBlocks = form.querySelectorAll('.depending-parent-custom');
             const coreBlocks = form.querySelectorAll('.depending-parent-core');
             const updateVisibility = () => {
-                if (!select.value) {
-                    select.value = 'custom_field';
-                }
                 const value = select.value;
                 customBlocks.forEach(block => { block.style.display = value === 'custom_field' ? '' : 'none'; });
                 coreBlocks.forEach(block => { block.style.display = value === 'core_field' ? '' : 'none'; });

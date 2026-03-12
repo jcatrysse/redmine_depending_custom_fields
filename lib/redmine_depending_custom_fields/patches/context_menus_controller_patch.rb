@@ -28,7 +28,7 @@ module RedmineDependingCustomFields
 
       def filter_depending_custom_fields
         mapping = Rails.cache.fetch('depending_custom_fields/mapping') { MappingBuilder.build }
-        ids = (mapping.keys + mapping.values.map { |v| v[:parent_id] }).map(&:to_i).uniq
+        ids = (mapping.keys + mapping.values.map { |v| v[:parent_id] }).compact.map(&:to_i).uniq
 
         if instance_variable_defined?(:@custom_fields) && @custom_fields
           @custom_fields = @custom_fields.reject { |cf| ids.include?(cf.id) }
@@ -39,6 +39,7 @@ module RedmineDependingCustomFields
           @options_by_custom_field.reject! { |field, _| ids.include?(field.id) }
         end
       end
+
       def remove_illegal_user_values
         return unless instance_variable_defined?(:@options_by_custom_field)
 

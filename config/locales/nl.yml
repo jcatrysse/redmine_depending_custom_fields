@@ -14,7 +14,7 @@ nl:
   label_parent_field_type_custom: "Aangepast veld"
   label_parent_field_type_core: "Standaardveld"
   field_dependency_rules: "Afhankelijkheidsregels (JSON)"
-  text_dependency_rules_info: "Geef een JSON-array met regels op met operator, value/value_to en child_values. Datums moeten ISO 8601 zijn (JJJJ-MM-DD of volledige ISO-tijdstempels)."
+  text_dependency_rules_info: "Geef een JSON-array met regels op met operator, value/value_to en child_values. Datums moeten ISO 8601 zijn (JJJJ-MM-DD of volledige ISO-tijdstempels). Omgekeerde 'between'-waarden worden automatisch genormaliseerd. Standaardwaarden worden alleen ondersteund voor genummerde hoofdvelden."
   text_dependency_rules_invalid_json: "Ongeldige JSON voor afhankelijkheidsregels."
   text_dependency_rules_invalid_date: "Datumregels vereisen ISO 8601-waarden (JJJJ-MM-DD of volledige ISO-tijdstempels)."
   text_dependency_rules_invalid_rule: "Regels moeten operator en child_values bevatten."

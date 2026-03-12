@@ -14,7 +14,7 @@ de:
   label_parent_field_type_custom: "Benutzerdefiniertes Feld"
   label_parent_field_type_core: "Standardfeld"
   field_dependency_rules: "Abhängigkeitsregeln (JSON)"
-  text_dependency_rules_info: "Geben Sie ein JSON-Array von Regeln mit operator, value/value_to und child_values an. Datumswerte müssen ISO 8601 sein. Regeln gelten, wenn ein übergeordneter Wert den Operator erfüllt. Umgekehrte 'between'-Werte werden normalisiert. Standardwerte werden nur für enumerierte Eltern unterstützt."
+  text_dependency_rules_info: "Geben Sie ein JSON-Array von Regeln mit operator, value/value_to und child_values an. Datumswerte müssen ISO 8601 sein (JJJJ-MM-TT oder vollständige ISO-Zeitstempel). Umgekehrte 'between'-Werte werden automatisch normalisiert. Standardwerte werden nur für enumerierte übergeordnete Felder unterstützt."
   text_dependency_rules_invalid_json: "Ungültiges JSON für Abhängigkeitsregeln."
   text_dependency_rules_invalid_date: "Datumsregeln erfordern ISO 8601-Werte (JJJJ-MM-TT oder vollständige ISO-Zeitstempel)."
   text_dependency_rules_invalid_rule: "Regeln müssen operator und child_values enthalten."

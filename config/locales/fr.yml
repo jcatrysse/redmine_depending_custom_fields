@@ -14,7 +14,7 @@ fr:
   label_parent_field_type_custom: "Champ personnalisé"
   label_parent_field_type_core: "Champ standard"
   field_dependency_rules: "Règles de dépendance (JSON)"
-  text_dependency_rules_info: "Fournissez un tableau JSON de règles avec operator, value/value_to et child_values. Les dates doivent être ISO 8601 (AAAA-MM-JJ ou horodatages ISO complets)."
+  text_dependency_rules_info: "Fournissez un tableau JSON de règles avec operator, value/value_to et child_values. Les dates doivent être ISO 8601 (AAAA-MM-JJ ou horodatages ISO complets). Les valeurs 'between' inversées sont automatiquement normalisées. Les valeurs par défaut ne sont prises en charge que pour les champs parents énumérés."
   text_dependency_rules_invalid_json: "JSON invalide pour les règles de dépendance."
   text_dependency_rules_invalid_date: "Les règles de date exigent des valeurs ISO 8601 (AAAA-MM-JJ ou horodatages ISO complets)."
   text_dependency_rules_invalid_rule: "Les règles doivent inclure operator et child_values."

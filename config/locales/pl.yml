@@ -14,7 +14,7 @@ pl:
   label_parent_field_type_custom: "Pole niestandardowe"
   label_parent_field_type_core: "Pole standardowe"
   field_dependency_rules: "Reguły zależności (JSON)"
-  text_dependency_rules_info: "Podaj tablicę JSON reguł z operator, value/value_to i child_values. Daty muszą być w formacie ISO 8601 (RRRR-MM-DD lub pełnych znaczników czasu ISO)."
+  text_dependency_rules_info: "Podaj tablicę JSON reguł z operator, value/value_to i child_values. Daty muszą być w formacie ISO 8601 (RRRR-MM-DD lub pełnych znaczników czasu ISO). Odwrócone wartości 'between' są automatycznie normalizowane. Wartości domyślne są obsługiwane tylko dla enumerowanych pól nadrzędnych."
   text_dependency_rules_invalid_json: "Nieprawidłowy JSON dla reguł zależności."
   text_dependency_rules_invalid_date: "Reguły dat wymagają wartości ISO 8601 (RRRR-MM-DD lub pełnych znaczników czasu ISO)."
   text_dependency_rules_invalid_rule: "Reguły muszą zawierać operator i child_values."

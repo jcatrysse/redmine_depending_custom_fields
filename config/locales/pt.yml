@@ -14,7 +14,7 @@ pt:
   label_parent_field_type_custom: "Campo personalizado"
   label_parent_field_type_core: "Campo padrão"
   field_dependency_rules: "Regras de dependência (JSON)"
-  text_dependency_rules_info: "Indique um array JSON de regras com operator, value/value_to e child_values. As datas devem ser ISO 8601 (AAAA-MM-DD ou carimbos de data/hora ISO completos)."
+  text_dependency_rules_info: "Indique um array JSON de regras com operator, value/value_to e child_values. As datas devem ser ISO 8601 (AAAA-MM-DD ou carimbos de data/hora ISO completos). Os valores 'between' invertidos são normalizados automaticamente. Os valores padrão são suportados apenas para campos pai enumerados."
   text_dependency_rules_invalid_json: "JSON inválido para regras de dependência."
   text_dependency_rules_invalid_date: "As regras de data exigem valores ISO 8601 (AAAA-MM-DD ou carimbos de data/hora ISO completos)."
   text_dependency_rules_invalid_rule: "As regras devem incluir operator e child_values."

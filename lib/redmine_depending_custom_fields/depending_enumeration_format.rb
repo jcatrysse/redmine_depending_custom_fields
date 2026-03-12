@@ -12,7 +12,10 @@ module RedmineDependingCustomFields
     include RedmineDependingCustomFields::DependingRulesSupport
     add 'depending_enumeration'
     self.form_partial = 'custom_fields/formats/depending_enumeration'
-    field_attributes :parent_custom_field_id, :parent_field_type, :parent_field_key,
+    # parent_field_type and parent_field_key are real DB columns (migration 001)
+    # and must NOT appear here. field_attributes stores values in the serialised
+    # `settings` hash which would conflict with the actual column accessors.
+    field_attributes :parent_custom_field_id,
                      :value_dependencies, :default_value_dependencies, :dependency_rules,
                      :hide_when_disabled
 
@@ -29,9 +32,12 @@ module RedmineDependingCustomFields
         custom_field.parent_custom_field_id = nil
         custom_field.parent_field_key = custom_field.parent_field_key.presence
         if custom_field.parent_field_key.present?
+          custom_field.parent_field_type = 'core_field'
           custom_field.default_value = nil
         else
           custom_field.parent_field_type = nil
+          custom_field.parent_field_key = nil
+          custom_field.dependency_rules = []
         end
       else
         parent_id = custom_field.parent_custom_field_id
@@ -45,8 +51,12 @@ module RedmineDependingCustomFields
           custom_field.parent_field_type = parent ? 'custom_field' : nil
           custom_field.parent_field_key = nil
           custom_field.default_value = nil if parent
+          custom_field.dependency_rules = [] unless parent
         else
-          custom_field.parent_field_type = nil if custom_field.parent_field_key.blank?
+          if custom_field.parent_field_key.blank?
+            custom_field.parent_field_type = nil
+            custom_field.dependency_rules = []
+          end
         end
       end
 

@@ -14,7 +14,7 @@ en:
   label_parent_field_type_custom: "Custom field"
   label_parent_field_type_core: "Standard field"
   field_dependency_rules: "Dependency rules (JSON)"
-  text_dependency_rules_info: "Provide a JSON array of rules with operator, value/value_to, and child_values. Dates must be ISO 8601 (YYYY-MM-DD or full ISO timestamps)."
+  text_dependency_rules_info: "Provide a JSON array of rules with operator, value/value_to, and child_values. Dates must be ISO 8601 (YYYY-MM-DD or full ISO timestamps). Reversed 'between' values are automatically normalized. Default values are only supported for enumerated parent fields."
   text_dependency_rules_invalid_json: "Invalid JSON for dependency rules."
   text_dependency_rules_invalid_date: "Date rules require ISO 8601 values (YYYY-MM-DD or full ISO timestamps)."
   text_dependency_rules_invalid_rule: "Rules must include an operator and child_values."
