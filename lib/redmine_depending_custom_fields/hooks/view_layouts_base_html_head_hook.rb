@@ -14,8 +14,10 @@ module RedmineDependingCustomFields
                       ''
                     end
 
+        mapping_json = ERB::Util.json_escape(mapping.to_json)
+
         script = <<~JS.html_safe
-          window.DependingCustomFieldData = #{mapping.to_json};
+          window.DependingCustomFieldData = #{mapping_json};
           window.ContextMenuWizardConfig = #{
             {
               basePath: base_path

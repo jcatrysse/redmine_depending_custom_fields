@@ -11,7 +11,7 @@
         <select class="dependencies-rules__operator">
           <option value=""></option>
           <% RedmineDependingCustomFields::Sanitizer::RULE_OPERATORS.each do |op| %>
-            <option value="<%= op %>"><%= op %></option>
+            <option value="<%= op %>"><%= l("label_rule_operator_#{op}".to_sym, default: op.humanize) %></option>
           <% end %>
         </select>
       </label>

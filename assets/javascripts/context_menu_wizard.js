@@ -106,24 +106,61 @@
       current = null;
     }
 
+    function showError(form, message){
+      if(!form) return;
+      let box = form.querySelector('.dcf-wizard-error');
+      if(!box){
+        box = document.createElement('div');
+        box.className = 'flash error dcf-wizard-error';
+        form.prepend(box);
+      }
+      box.textContent = message;
+    }
+
+    function clearError(form){
+      const box = form && form.querySelector('.dcf-wizard-error');
+      if(box) box.remove();
+    }
+
     function submitForm(form){
       if(!form) return Promise.resolve();
       const params = new URLSearchParams(new FormData(form));
       const url = (window.ContextMenuWizardConfig.basePath || '') + '/depending_custom_fields/save';
-      return fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
-      }).then(res => {
+      const submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
+      clearError(form);
+      if(submitButton) submitButton.disabled = true;
+
+      const timeoutMs = 15000;
+      const timeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('timeout')), timeoutMs);
+      });
+
+      return Promise.race([
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params.toString()
+        }),
+        timeout
+      ]).then(res => {
         if(res.ok){
           window.location.reload();
-        } else {
-          res.json().then(data => {
-            const msgs = (data && data.errors) ? data.errors.join('\n') : res.statusText;
-            alert(msgs);
-          });
-          throw new Error('save failed');
+          return;
         }
+
+        return res.json().then(data => {
+          const msgs = (data && data.errors) ? data.errors.join(' | ') : res.statusText;
+          showError(form, msgs);
+          throw new Error('save failed');
+        });
+      }).catch(err => {
+        if(err && err.message === 'timeout'){
+          showError(form, 'Request timed out. Please try again.');
+          return;
+        }
+        throw err;
+      }).finally(() => {
+        if(submitButton) submitButton.disabled = false;
       });
     }
   });

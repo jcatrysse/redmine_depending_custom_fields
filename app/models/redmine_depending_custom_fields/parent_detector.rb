@@ -28,10 +28,19 @@ module RedmineDependingCustomFields
       parents = CustomField.where(id: parent_ids, field_format: PARENT_FORMATS)
 
       user = User.current
+      available_fields_by_issue = issues.index_with do |issue|
+        begin
+          issue.available_custom_fields
+        rescue NoMethodError
+          nil
+        end
+      end
+
       parents = parents.select do |cf|
         issues.all? do |issue|
           begin
-            issue.available_custom_fields.include?(cf) &&
+            available = available_fields_by_issue[issue]
+            (available.nil? || available.include?(cf)) &&
               RedmineDependingCustomFields::CustomFieldVisibility.visible_to_user?(cf, issue.project, user)
           rescue NoMethodError
             true

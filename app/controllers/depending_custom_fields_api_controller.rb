@@ -37,7 +37,7 @@ class DependingCustomFieldsApiController < ApplicationController
       return render json: { errors: ['Invalid custom field type'] }, status: :unprocessable_entity
     end
 
-    @custom_field = klass.new(permitted_params.except(:enumerations, :type))
+    @custom_field = klass.new(custom_field_attributes.except(:enumerations, :type))
     dependency_errors = dependency_rules_errors
     if dependency_errors.any?
       return render json: { errors: { dependency_rules: dependency_errors } }, status: :unprocessable_entity
@@ -67,7 +67,7 @@ class DependingCustomFieldsApiController < ApplicationController
     end
 
     ActiveRecord::Base.transaction do
-      unless @custom_field.update(permitted_params.except(:enumerations, :type))
+      unless @custom_field.update(custom_field_attributes.except(:enumerations, :type))
         raise ActiveRecord::Rollback
       end
 
@@ -145,16 +145,23 @@ class DependingCustomFieldsApiController < ApplicationController
       :parent_custom_field_id,
       :parent_field_type,
       :parent_field_key,
-      :dependency_rules,
       :hide_when_disabled,
       :exclude_admins, :only_project_members, :show_active, :show_registered, :show_locked,
       possible_values: [],
       value_dependencies: {},
       default_value_dependencies: {},
-      dependency_rules: [:operator, :value, :value_to, { child_values: [] }],
       enumerations: [:id, :name, :position, :_destroy, :active],
       tracker_ids: [], project_ids: [], role_ids: [], group_ids: []
     )
+  end
+
+  def custom_field_attributes
+    attrs = permitted_params.to_h.symbolize_keys
+
+    rules = raw_dependency_rules_param
+    attrs[:dependency_rules] = rules unless rules.nil?
+
+    attrs
   end
 
   def find_custom_field
@@ -256,7 +263,7 @@ class DependingCustomFieldsApiController < ApplicationController
   end
 
   def assign_enumerations(custom_field)
-    enums = permitted_params[:enumerations]
+    enums = custom_field_attributes[:enumerations]
     return true unless enums
 
     existing_enumerations = custom_field.enumerations.index_by(&:id)
@@ -296,7 +303,7 @@ class DependingCustomFieldsApiController < ApplicationController
   end
 
   def dependency_rules_errors
-    rules = permitted_params[:dependency_rules]
+    rules = raw_dependency_rules_param
     return [] if rules.nil?
 
     parsed, error = RedmineDependingCustomFields::Sanitizer.parse_dependency_rules(rules)
@@ -328,6 +335,20 @@ class DependingCustomFieldsApiController < ApplicationController
     end
   rescue JSON::ParserError
     []
+  end
+
+  def raw_dependency_rules_param
+    raw = params.dig(:custom_field, :dependency_rules)
+    return nil if raw.nil?
+    return raw if raw.is_a?(String)
+
+    if raw.is_a?(Array)
+      return raw.map { |item| item.is_a?(ActionController::Parameters) ? item.to_unsafe_h : item }
+    end
+
+    return raw.to_unsafe_h if raw.is_a?(ActionController::Parameters)
+
+    nil
   end
 
   def collect_child_errors(parent, child)

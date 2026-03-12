@@ -8,6 +8,8 @@ RSpec.describe RedmineDependingCustomFields::ParentDetector do
   let(:issue2)   { instance_double(Issue, project: project, available_custom_fields: [parent1, parent2]) }
 
   before do
+    allow(issue1).to receive(:available_custom_fields).and_return([parent1, parent2])
+    allow(issue2).to receive(:available_custom_fields).and_return([parent1, parent2])
     allow(Rails.cache).to receive(:fetch).and_return({
       '31' => { parent_id: '10', map: {} },
       '32' => { parent_id: '12', map: {} }
@@ -41,4 +43,13 @@ RSpec.describe RedmineDependingCustomFields::ParentDetector do
     result = described_class.for_issues([issue1])
     expect(result).to eq([parent2])
   end
+
+
+  it 'reads available custom fields once per issue' do
+    described_class.for_issues([issue1, issue2])
+
+    expect(issue1).to have_received(:available_custom_fields).once
+    expect(issue2).to have_received(:available_custom_fields).once
+  end
+
 end

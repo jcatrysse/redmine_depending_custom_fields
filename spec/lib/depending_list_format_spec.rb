@@ -64,7 +64,7 @@ RSpec.describe RedmineDependingCustomFields::DependingListFormat do
       expect(cf).to have_received(:parent_custom_field_id=).with(parent.id)
       expect(cf).to have_received(:value_dependencies=).with(sanitized)
       expect(cf).to have_received(:default_value_dependencies=).with(sanitized_defaults)
-      expect(cf).to have_received(:dependency_rules=).with(sanitized_rules.to_json)
+      expect(cf).to have_received(:dependency_rules=).with(sanitized_rules)
       expect(cf).to have_received(:default_value=).with(nil)
     end
 

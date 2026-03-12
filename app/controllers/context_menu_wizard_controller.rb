@@ -82,7 +82,7 @@ class ContextMenuWizardController < ApplicationController
         ids_param.to_s.split(',')
       end
     ids = ids.map(&:to_i).reject(&:zero?)
-    @issues = Issue.where(id: ids)
+    @issues = Issue.visible.where(id: ids)
   end
 
   def parent_options(mapping)

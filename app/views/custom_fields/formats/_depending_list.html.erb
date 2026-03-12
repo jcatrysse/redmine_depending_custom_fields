@@ -20,7 +20,8 @@
 </p>
 <p class="depending-parent-field depending-parent-custom">
   <%= f.select :parent_custom_field_id,
-               CustomField.where(type: @custom_field.type)
+               CustomField.where(type: @custom_field.type,
+                                    field_format: ['list', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST])
                           .where.not(id: @custom_field.id)
                           .order(:position)
                           .map { |cf| [cf.name, cf.id.to_s] },

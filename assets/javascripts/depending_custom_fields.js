@@ -289,7 +289,7 @@
             case 'equals':
                 return normalizedValues.some(v => v === comparisonValue);
             case 'not_equals':
-                return normalizedValues.some(v => v !== comparisonValue);
+                return normalizedValues.every(v => v !== comparisonValue);
             case 'contains':
                 return normalizedValues.some(v => String(v).includes(String(rawValue)));
             case 'starts_with':
@@ -313,7 +313,9 @@
                 return normalizedValues.some(v => comparisonValue !== null && v >= comparisonValue);
             case 'between':
                 if (comparisonValue === null || comparisonValueTo === null) return false;
-                return normalizedValues.some(v => v >= comparisonValue && v <= comparisonValueTo);
+                const min = comparisonValue <= comparisonValueTo ? comparisonValue : comparisonValueTo;
+                const max = comparisonValue <= comparisonValueTo ? comparisonValueTo : comparisonValue;
+                return normalizedValues.some(v => v >= min && v <= max);
             default:
                 return false;
         }

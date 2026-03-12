@@ -86,7 +86,7 @@ module RedmineDependingCustomFields
       when 'equals'
         normalized_values.any? { |v| v == value }
       when 'not_equals'
-        normalized_values.any? { |v| v != value }
+        normalized_values.none? { |v| v == value }
       when 'contains'
         normalized_values.any? { |v| v.to_s.include?(value.to_s) }
       when 'starts_with'

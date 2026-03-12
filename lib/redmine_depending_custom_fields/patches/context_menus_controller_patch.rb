@@ -12,8 +12,11 @@ module RedmineDependingCustomFields
            params[:controller] == 'context_menus' &&
            params[:action] == 'issues'
           begin
-            filter_depending_custom_fields
-            remove_illegal_user_values
+            unless @dcf_context_menu_filtered
+              @dcf_context_menu_filtered = true
+              filter_depending_custom_fields
+              remove_illegal_user_values
+            end
           rescue => e
             Rails.logger.warn "[DCF] context menu filtering failed: #{e.class} - #{e.message}"
           end

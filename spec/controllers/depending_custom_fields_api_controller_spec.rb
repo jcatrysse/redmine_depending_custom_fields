@@ -63,4 +63,54 @@ RSpec.describe DependingCustomFieldsApiController, type: :controller do
       expect(controller.send(:custom_field_class)).to eq(CustomField)
     end
   end
+
+
+  describe 'dependency_rules parameter handling' do
+    it 'accepts dependency_rules as JSON string' do
+      controller.params = ActionController::Parameters.new(
+        custom_field: {
+          name: 'CF',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          dependency_rules: '[{"operator":"equals","value":"A","child_values":["B"]}]'
+        }
+      )
+
+      attrs = controller.send(:custom_field_attributes)
+      expect(attrs[:dependency_rules]).to be_a(String)
+      expect(controller.send(:dependency_rules_errors)).to eq([])
+    end
+
+    it 'accepts dependency_rules as nested array' do
+      controller.params = ActionController::Parameters.new(
+        custom_field: {
+          name: 'CF',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          dependency_rules: [
+            { operator: 'equals', value: 'A', child_values: ['B'] }
+          ]
+        }
+      )
+
+      attrs = controller.send(:custom_field_attributes)
+      expect(attrs[:dependency_rules]).to be_a(Array)
+      expect(controller.send(:dependency_rules_errors)).to eq([])
+    end
+
+    it 'returns validation error for invalid dependency_rules JSON' do
+      controller.params = ActionController::Parameters.new(
+        custom_field: {
+          name: 'CF',
+          type: 'IssueCustomField',
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+          dependency_rules: '{invalid json'
+        }
+      )
+
+      errors = controller.send(:dependency_rules_errors)
+      expect(errors).to include(:base)
+    end
+  end
+
 end

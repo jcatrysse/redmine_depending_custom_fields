@@ -12,7 +12,7 @@ module RedmineDependingCustomFields
         base.after_save :dispatch_after_custom_field_save
         if base.table_exists?
           if base.columns_hash.key?('dependency_rules')
-            base.serialize :dependency_rules, JSON
+            base.serialize :dependency_rules, coder: JSON
           end
         end
       rescue ActiveRecord::NoDatabaseError, PG::ConnectionBad

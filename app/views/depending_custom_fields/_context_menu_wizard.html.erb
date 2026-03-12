@@ -9,6 +9,14 @@
   fields_by_id ||= CustomField.where(id: field_ids).index_by(&:id)
   parent_cf = fields_by_id[parent_id]
 
+  available_fields_by_issue = issues.index_with do |issue|
+    begin
+      issue.available_custom_fields
+    rescue NoMethodError
+      nil
+    end
+  end
+
   fields_hierarchy = []
   current = [parent_cf.id]
   while current.any?
@@ -16,7 +24,8 @@
     fields = current.map { |cid| fields_by_id[cid] }.compact.select do |cf|
       visible = issues.all? do |issue|
         begin
-          issue.available_custom_fields.include?(cf) &&
+          available = available_fields_by_issue[issue]
+          (available.nil? || available.include?(cf)) &&
             RedmineDependingCustomFields::CustomFieldVisibility.visible_to_user?(cf, issue.project, User.current)
         rescue NoMethodError
           true

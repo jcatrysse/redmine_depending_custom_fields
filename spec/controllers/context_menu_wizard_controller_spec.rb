@@ -6,7 +6,9 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     let(:mapping) { { '1' => { parent_id: '2', map: {} } } }
 
     before do
-      allow(Issue).to receive(:where).and_return(issues_relation)
+      visible_scope = double('visible_scope')
+      allow(Issue).to receive(:visible).and_return(visible_scope)
+      allow(visible_scope).to receive(:where).and_return(issues_relation)
       allow(Rails.cache).to receive(:fetch).and_return(mapping)
     end
 
@@ -35,7 +37,9 @@ RSpec.describe ContextMenuWizardController, type: :controller do
 
     before do
       allow(relation).to receive(:find_each).and_yield(issue1).and_yield(issue2)
-      allow(Issue).to receive(:where).and_return(relation)
+      visible_scope = double('visible_scope')
+      allow(Issue).to receive(:visible).and_return(visible_scope)
+      allow(visible_scope).to receive(:where).and_return(relation)
       allow(issue1).to receive(:custom_field_values=)
       allow(issue1).to receive(:save)
       allow(issue1).to receive(:errors).and_return(double(any?: false, full_messages: []))

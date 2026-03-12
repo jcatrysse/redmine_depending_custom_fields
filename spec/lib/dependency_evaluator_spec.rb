@@ -38,7 +38,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyEvaluator do
       expect(result.has_mapping).to be(true)
     end
 
-    it 'matches not_equals when any parent value differs' do
+    it 'does not match not_equals when any parent value equals the rule value' do
       parent = build_custom_field(id: 4, field_format: 'list')
       child = build_custom_field(
         parent_custom_field_id: 4,
@@ -52,7 +52,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyEvaluator do
 
       result = described_class.evaluate(child, customized)
 
-      expect(result.allowed).to eq(['B'])
+      expect(result.allowed).to eq([])
     end
 
     it 'matches equals when any parent value matches' do

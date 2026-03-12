@@ -41,7 +41,7 @@ module RedmineDependingCustomFields
       },
       'category_id' => {
         label: :field_category,
-        klass: -> { IssueCategory.order(:name) },
+        klass: -> { IssueCategory.where(project_id: Project.visible(User.current).select(:id)).order(:name) },
         enumerated: true,
         format: 'list'
       },

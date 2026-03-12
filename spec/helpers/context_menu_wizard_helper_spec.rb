@@ -42,5 +42,15 @@ RSpec.describe ContextMenuWizardHelper do
       html = helper_object.render_custom_field(cf, issues)
       expect(html).to include("data-field-id='5'")
     end
+
+
+    it 'injects data-field-id into each select element' do
+      allow(helper_object).to receive(:custom_field_tag_for_bulk_edit)
+        .with('issue', cf, issues, cf.default_value)
+        .and_return("<div><select name='a'></select><select name='b'></select></div>")
+
+      html = helper_object.render_custom_field(cf, issues)
+      expect(html.scan("data-field-id='5'").size).to eq(2)
+    end
   end
 end

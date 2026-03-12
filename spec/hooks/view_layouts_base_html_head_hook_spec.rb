@@ -19,9 +19,18 @@ RSpec.describe RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook 
 
   it 'assigns mapping to the expected global variable' do
     html = hook.view_layouts_base_html_head
-    expect(html).to include(
-      "window.DependingCustomFieldData = #{mapping.to_json};"
-    )
+    escaped = ERB::Util.json_escape(mapping.to_json)
+    expect(html).to include("window.DependingCustomFieldData = #{escaped};")
+  end
+
+  it 'escapes potentially dangerous script-closing content in mapping JSON' do
+    dangerous_mapping = { '1' => { parent_id: '</script><script>alert(1)</script>', map: {} } }
+    allow(Rails.cache).to receive(:fetch).and_return(dangerous_mapping)
+
+    html = hook.view_layouts_base_html_head
+
+    expect(html).to include('\\u003c/script\\u003e')
+    expect(html).not_to include('</script><script>alert(1)</script>')
   end
 
   it 'provides JSON with the expected structure' do

@@ -1,4 +1,5 @@
 require_relative 'sanitizer'
+require_relative 'depending_rules_support'
 
 # Field format for enumeration custom fields that depend on the value of
 # another custom field. It filters possible values according to the configured
@@ -8,6 +9,7 @@ require_relative 'sanitizer'
 
 module RedmineDependingCustomFields
   class DependingEnumerationFormat < Redmine::FieldFormat::EnumerationFormat
+    include RedmineDependingCustomFields::DependingRulesSupport
     add 'depending_enumeration'
     self.form_partial = 'custom_fields/formats/depending_enumeration'
     field_attributes :parent_custom_field_id, :parent_field_type, :parent_field_key,
@@ -37,7 +39,7 @@ module RedmineDependingCustomFields
           parent = CustomField.find_by(
             id: parent_id.to_i,
             type: custom_field.type,
-            field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION]
+            field_format: ['list', 'enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION]
           )
           custom_field.parent_custom_field_id = parent&.id
           custom_field.parent_field_type = parent ? 'custom_field' : nil
@@ -51,29 +53,13 @@ module RedmineDependingCustomFields
       custom_field.value_dependencies = RedmineDependingCustomFields::Sanitizer.sanitize_dependencies(custom_field.value_dependencies)
       custom_field.default_value_dependencies = RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(custom_field.default_value_dependencies)
 
-      parsed_rules, error = RedmineDependingCustomFields::Sanitizer.parse_dependency_rules(custom_field.dependency_rules)
-      if error
-        custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_json))
-      end
       parent_reference = if parent_type == 'core_field'
                            key = custom_field.parent_field_key.to_s
                            key.present? ? RedmineDependingCustomFields::ParentReference.new(type: 'core_field', key: key) : nil
                          elsif parent
                            RedmineDependingCustomFields::ParentReference.new(type: 'custom_field', custom_field: parent)
                          end
-      if parent_reference&.format == 'date' &&
-         RedmineDependingCustomFields::Sanitizer.invalid_date_rules?(parsed_rules)
-        custom_field.errors.add(:dependency_rules, ::I18n.t(:text_dependency_rules_invalid_date))
-      end
-      schema_errors = RedmineDependingCustomFields::Sanitizer.rule_schema_errors(parsed_rules)
-      schema_errors.each do |error|
-        custom_field.errors.add(
-          :dependency_rules,
-          ::I18n.t(:text_dependency_rules_invalid_rule_index, index: error[:index] + 1)
-        )
-      end
-      sanitized_rules = RedmineDependingCustomFields::Sanitizer.sanitize_dependency_rules(parsed_rules)
-      custom_field.dependency_rules = sanitized_rules.to_json
+      sanitize_and_validate_dependency_rules(custom_field, parent_reference)
     end
 
     def possible_values_options(custom_field, object = nil)
@@ -132,14 +118,10 @@ module RedmineDependingCustomFields
 
     def after_custom_field_save(_custom_field)
       Rails.cache.delete('depending_custom_fields/mapping')
-      Rails.cache.delete_matched('dcf/*')
     end
 
     def validate_custom_value(custom_value)
       cf = custom_value.custom_field
-      sanitized = Array(custom_value.value).map(&:to_s).reject(&:blank?)
-      custom_value.value = cf.multiple? ? sanitized : sanitized.first
-
       errors = super
       customized = custom_value.customized
       return errors unless customized
@@ -151,7 +133,7 @@ module RedmineDependingCustomFields
 
       child_vals = Array(custom_value.value).map(&:to_s)
       invalid = child_vals.reject(&:blank?) - allowed
-      errors << ::I18n.t('activerecord.errors.messages.invalid') if invalid.any?
+      errors << ::I18n.t(:text_dependency_value_not_allowed) if invalid.any?
       errors
     end
 

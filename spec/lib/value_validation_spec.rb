@@ -40,12 +40,24 @@ RSpec.describe 'Depending field value validation' do
       end
     end
 
+
+
+    context 'without mutating custom_value during validation' do
+      let(:parent_value) { 'A' }
+
+      it 'keeps the original value unchanged' do
+        cv = make_value(['a', ''])
+        original = cv.value
+        format.validate_custom_value(cv)
+        expect(cv.value).to eq(original)
+      end
+    end
     context 'with disallowed value' do
       let(:parent_value) { 'B' }
 
       it 'adds exactly one invalid error' do
         expect(format.validate_custom_value(make_value('a'))).to eq(
-                                                                   [I18n.t('activerecord.errors.messages.invalid')]
+                                                                   [I18n.t(:text_dependency_value_not_allowed)]
                                                                  )
       end
     end
@@ -94,12 +106,24 @@ RSpec.describe 'Depending field value validation' do
       end
     end
 
+
+
+    context 'without mutating custom_value during validation' do
+      let(:parent_value) { '1' }
+
+      it 'keeps the original value unchanged' do
+        cv = make_value(['2', ''])
+        original = cv.value
+        format.validate_custom_value(cv)
+        expect(cv.value).to eq(original)
+      end
+    end
     context 'with disallowed value' do
       let(:parent_value) { '1' }
 
       it 'adds at least one invalid error for wrong value' do
         errors = format.validate_custom_value(make_value('3'))
-        invalid_msg = I18n.t('activerecord.errors.messages.invalid')
+        invalid_msg = I18n.t(:text_dependency_value_not_allowed)
         expect(errors).to include(invalid_msg)
       end
     end
