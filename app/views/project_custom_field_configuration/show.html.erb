@@ -1,0 +1,157 @@
+<% enum_family = RedmineDependingCustomFields::FieldRelevance.enum_family?(@field) %>
+<% scope = dcf_field_scope(@field, @project) %>
+
+<div class="contextual">
+  <%= link_to l(:button_back), settings_project_path(@project, tab: 'custom_field_configuration'),
+              class: 'icon icon-cancel' %>
+  <% if @dependency_capable %>
+    <%= link_to l(:label_custom_field_dependencies),
+                custom_field_configuration_field_dependencies_path(@project, @field),
+                class: 'icon icon-list' %>
+  <% end %>
+</div>
+
+<h2><%= h(@field.name) %> <em class="info">(<%= dcf_format_label(@field) %>)</em></h2>
+
+<% unless scope == :project %>
+  <div class="flash warning">
+    <%= scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning) %>
+  </div>
+<% end %>
+
+<% if @impact %>
+  <%= render partial: 'confirm_panel',
+             locals: { impact: @impact, pending_action: @pending_action, pending_params: @pending_params } %>
+<% end %>
+
+<div class="box">
+  <% if enum_family %>
+    <% if @enumerations.empty? %>
+      <p class="nodata"><%= l(:text_no_values) %></p>
+    <% else %>
+      <table class="list">
+        <thead>
+          <tr>
+            <th><%= l(:label_dcf_value) %></th>
+            <th><%= l(:field_active) %></th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @enumerations.each_with_index do |enum, idx| %>
+            <tr>
+              <td>
+                <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
+                  <%= hidden_field_tag :enumeration_id, enum.id %>
+                  <%= hidden_field_tag :state_hash, @state_hash %>
+                  <%= text_field_tag :new_value, enum.name, size: 30 %>
+                  <%= submit_tag l(:button_save), name: nil, class: 'small' %>
+                <% end %>
+              </td>
+              <td><%= enum.active? ? l(:general_text_Yes) : l(:general_text_No) %></td>
+              <td><%= render partial: 'reorder_buttons',
+                             locals: { ids: @enumerations.map(&:id).map(&:to_s), index: idx } %></td>
+              <td>
+                <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
+                              method: :delete,
+                              params: { enumeration_id: enum.id, state_hash: @state_hash },
+                              data: { confirm: l(:text_are_you_sure) }, class: 'small' %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  <% else %>
+    <% if @list_values.empty? %>
+      <p class="nodata"><%= l(:text_no_values) %></p>
+    <% else %>
+      <table class="list">
+        <thead>
+          <tr>
+            <th><%= l(:label_dcf_value) %></th>
+            <% if @show_usage %>
+              <th><%= l(:label_usage_this_project) %></th>
+              <th><%= l(:label_usage_other_projects) %></th>
+              <th><%= l(:label_dependency_references) %></th>
+            <% end %>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @list_values.each_with_index do |value, idx| %>
+            <tr>
+              <td>
+                <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
+                  <%= hidden_field_tag :old_value, value %>
+                  <%= hidden_field_tag :state_hash, @state_hash %>
+                  <%= text_field_tag :new_value, value, size: 30 %>
+                  <%= submit_tag l(:button_save), name: nil, class: 'small' %>
+                <% end %>
+              </td>
+              <% if @show_usage %>
+                <td><%= RedmineDependingCustomFields::UsageCalculator.usage_here(@field, value, @project) %></td>
+                <td><%= RedmineDependingCustomFields::UsageCalculator.usage_other(@field, value, @project) %></td>
+                <td><%= RedmineDependingCustomFields::UsageCalculator.own_dep_refs(@field, value) +
+                        RedmineDependingCustomFields::UsageCalculator.parent_key_refs(@field, value) %></td>
+              <% end %>
+              <td><%= render partial: 'reorder_buttons',
+                             locals: { ids: @list_values.map(&:to_s), index: idx } %></td>
+              <td>
+                <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
+                              method: :delete,
+                              params: { value: value, state_hash: @state_hash },
+                              data: { confirm: l(:text_are_you_sure) }, class: 'small' %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  <% end %>
+
+  <p>
+    <% unless @show_usage || enum_family %>
+      <%= link_to l(:label_show_usage),
+                  custom_field_configuration_field_path(@project, @field, show_usage: 1),
+                  class: 'icon icon-stats' %>
+    <% end %>
+  </p>
+</div>
+
+<% if @field.parent_custom_field_id.blank? %>
+  <fieldset class="box">
+    <legend><%= l(:label_dcf_default_value) %></legend>
+    <%= form_tag(custom_field_configuration_set_default_value_path(@project, @field), method: :patch) do %>
+      <%= hidden_field_tag :state_hash, @state_hash %>
+      <% default_options = enum_family ?
+           @enumerations.select(&:active?).map { |e| [e.name, e.id.to_s] } :
+           @list_values.map { |v| [v.to_s, v.to_s] } %>
+      <p>
+        <label><%= l(:label_dcf_default) %></label>
+        <%= select_tag :default_value,
+                       options_for_select([[l(:text_dcf_no_default), '']] + default_options,
+                                          @field.default_value.to_s) %>
+        <%= submit_tag l(:label_dcf_set_default) %>
+      </p>
+    <% end %>
+  </fieldset>
+<% end %>
+
+<fieldset class="box">
+  <legend><%= l(:label_add_value) %></legend>
+  <%= form_tag(custom_field_configuration_add_value_path(@project, @field), method: :post) do %>
+    <%= hidden_field_tag :state_hash, @state_hash %>
+    <p>
+      <label><%= l(:label_dcf_value) %></label>
+      <%= text_field_tag :value, nil, size: 30 %>
+      <% unless enum_family %>
+        <label><%= l(:label_dcf_position) %></label>
+        <%= number_field_tag :position, nil, min: 0, size: 3 %>
+      <% end %>
+      <%= submit_tag l(:button_add) %>
+    </p>
+  <% end %>
+</fieldset>

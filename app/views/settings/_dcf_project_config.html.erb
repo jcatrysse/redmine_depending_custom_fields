@@ -1,0 +1,20 @@
+<% settings = @settings || {} %>
+<p>
+  <%= hidden_field_tag 'settings[manage_standard_custom_fields]', '0', id: nil %>
+  <label>
+    <%= check_box_tag 'settings[manage_standard_custom_fields]', '1',
+          settings['manage_standard_custom_fields'].nil? ? true :
+            ActiveModel::Type::Boolean.new.cast(settings['manage_standard_custom_fields']) %>
+    <%= l(:label_manage_standard_custom_fields) %>
+  </label>
+  <em class="info"><%= l(:text_manage_standard_custom_fields_info) %></em>
+</p>
+<p>
+  <%= hidden_field_tag 'settings[block_removal_when_used]', '0', id: nil %>
+  <label>
+    <%= check_box_tag 'settings[block_removal_when_used]', '1',
+          ActiveModel::Type::Boolean.new.cast(settings['block_removal_when_used']) %>
+    <%= l(:label_block_removal_when_used) %>
+  </label>
+  <em class="info"><%= l(:text_block_removal_when_used_info) %></em>
+</p>

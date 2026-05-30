@@ -1,0 +1,36 @@
+<div class="contextual">
+  <%= link_to l(:button_back), settings_project_path(@project, tab: 'custom_field_configuration'),
+              class: 'icon icon-cancel' %>
+</div>
+
+<h2><%= l(:label_custom_field_config_audit) %></h2>
+
+<% if @events.empty? %>
+  <p class="nodata"><%= l(:text_no_audit_events) %></p>
+<% else %>
+  <table class="list dcf-audit-list">
+    <thead>
+      <tr>
+        <th><%= l(:label_dcf_audit_when) %></th>
+        <th><%= l(:label_dcf_audit_actor) %></th>
+        <th><%= l(:field_name) %></th>
+        <th><%= l(:label_dcf_audit_action) %></th>
+        <th><%= l(:field_status) %></th>
+        <th><%= l(:label_dcf_audit_summary) %></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @events.each do |event| %>
+        <tr>
+          <td><%= format_time(event.created_at) %></td>
+          <td><%= h(event.acting_user_name) %></td>
+          <td><%= h(event.custom_field_name) %></td>
+          <td><%= h(event.action) %></td>
+          <td class="<%= dcf_audit_status_class(event.status) %>"><%= h(event.status) %></td>
+          <td><%= h(event.changes_summary.presence || event.error_message) %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+  <span class="pagination"><%= pagination_links_full @paginator %></span>
+<% end %>

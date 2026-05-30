@@ -43,6 +43,7 @@ unless defined?(ActiveRecord::QueryRecorder)
   end
 end
 require_relative 'support/custom_field_factory'
+require_relative 'support/dcf_config_helpers'
 
 RSpec.configure do |config|
   fixture_path = File.expand_path('fixtures', __dir__)

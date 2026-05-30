@@ -1,0 +1,13 @@
+<%# No-JS reorder: each button submits the full ordered set with two items swapped. %>
+<% if index.positive? %>
+  <% up = ids.dup; up[index - 1], up[index] = up[index], up[index - 1] %>
+  <%= button_to l(:label_dcf_move_up), custom_field_configuration_reorder_values_path(@project, @field),
+                method: :patch, params: { ordered_values: up, state_hash: @state_hash },
+                class: 'small', title: l(:label_dcf_move_up) %>
+<% end %>
+<% if index < ids.length - 1 %>
+  <% down = ids.dup; down[index], down[index + 1] = down[index + 1], down[index] %>
+  <%= button_to l(:label_dcf_move_down), custom_field_configuration_reorder_values_path(@project, @field),
+                method: :patch, params: { ordered_values: down, state_hash: @state_hash },
+                class: 'small', title: l(:label_dcf_move_down) %>
+<% end %>

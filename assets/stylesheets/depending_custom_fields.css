@@ -110,3 +110,15 @@
   gap: 4px;
 }
 
+
+/* Project-level custom field configuration */
+.dcf-scope-badge { display: inline-block; padding: 0 .4em; border-radius: 3px; font-size: .85em; }
+.dcf-scope-global { background: #c62828; color: #fff; }
+.dcf-scope-shared { background: #ef6c00; color: #fff; }
+.dcf-scope-project { background: #2e7d32; color: #fff; }
+.dcf-confirm-panel ul { margin: .5em 0; }
+.dcf-status-success { color: #2e7d32; }
+.dcf-status-failed { color: #c62828; }
+.dcf-status-neutral { color: #555; }
+.dcf-inline-form { display: inline; }
+.dcf-dependencies-matrix td.center { text-align: center; }

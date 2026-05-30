@@ -1,0 +1,55 @@
+<div class="contextual">
+  <%= link_to l(:button_back), custom_field_configuration_field_path(@project, @field),
+              class: 'icon icon-cancel' %>
+</div>
+
+<h2><%= h(@field.name) %> <em class="info">(<%= l(:label_custom_field_dependencies) %>)</em></h2>
+
+<% if @parent %>
+  <p class="info"><%= l(:field_parent_custom_field_id) %>: <strong><%= h(@parent.name) %></strong></p>
+<% end %>
+<p><em><%= l(:text_dependency_matrix_help, default: l(:label_custom_field_dependencies)) %></em></p>
+
+<% if @parent_keys.empty? || @child_values.empty? %>
+  <p class="nodata"><%= l(:text_no_values) %></p>
+<% else %>
+  <%= form_tag(custom_field_configuration_update_dependencies_path(@project, @field), method: :patch) do %>
+    <%= hidden_field_tag :state_hash, @state_hash %>
+    <div class="autoscroll">
+      <table class="list dcf-dependencies-matrix">
+        <thead>
+          <tr>
+            <th><%= h(@parent&.name) %></th>
+            <% @child_values.each do |_ck, cl| %><th><%= h(cl) %></th><% end %>
+            <th><%= l(:label_dcf_default) %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @parent_keys.each do |pk, pl| %>
+            <% allowed = Array(@value_dependencies[pk]).map(&:to_s) %>
+            <% dflt = Array(@default_value_dependencies[pk]).map(&:to_s) %>
+            <tr>
+              <th><%= h(pl) %></th>
+              <% @child_values.each do |ck, _cl| %>
+                <td class="center">
+                  <%= check_box_tag "value_dependencies[#{pk}][]", ck, allowed.include?(ck.to_s) %>
+                </td>
+              <% end %>
+              <td>
+                <% default_name = "default_value_dependencies[#{pk}]" %>
+                <% default_name += '[]' if @field.multiple? %>
+                <%= select_tag default_name,
+                               options_for_select([['', '']] + @child_values.map { |ck, cl| [cl, ck.to_s] }, dflt),
+                               multiple: @field.multiple? %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+    <p class="buttons">
+      <%= submit_tag l(:button_save) %>
+      <%= link_to l(:button_cancel), custom_field_configuration_field_path(@project, @field) %>
+    </p>
+  <% end %>
+<% end %>

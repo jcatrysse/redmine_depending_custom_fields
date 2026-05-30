@@ -258,6 +258,74 @@ Child Field: Keyboard
 Invalid combinations are rejected just like when using the API.
 
 
+## Project-level custom field configuration
+
+By default, all custom field configuration lives under **Administration → Custom
+fields** and requires the global `admin` flag. This plugin adds a way to delegate
+a **narrow, safe** subset of that work to trusted project members.
+
+### Permission
+
+Grant the project permission **"Manage custom fields"**
+(`manage_project_custom_field_configuration`) to a role
+(Administration → Roles and permissions). The permission is module-independent,
+so administrators always have access in every project, and it can never be
+assigned to the *Non member* / *Anonymous* roles. Members holding it gain a
+**Project → Settings → Custom field configuration** tab.
+
+### What can be managed
+
+For custom fields **relevant to the current project** (issue custom fields in the
+project plus all project custom fields) in a supported format:
+
+* **Standard `list`** and **standard `enumeration`** — values and the field's
+  default value.
+* **`depending_list`** and **`depending_enumeration`** — values **plus** the
+  parent/child dependency matrix. Fields without a parent expose a plain default
+  value; child fields configure per-parent default values in the matrix.
+
+Add, rename, remove and reorder values; manage enumeration values; set the
+field's default value; and edit the dependency matrix. For `multiple` fields the
+per-parent default selectors allow choosing several values. The feature
+**cannot** create or delete fields, or change a field's type, visibility,
+required flag, tracker or project applicability.
+
+### Safety
+
+* Renaming a list value rewrites existing issue values, the field default, the
+  field's own dependency entries and the parent keys of every dependent field —
+  all in one transaction. Removing a value never deletes issue data (list values
+  are left orphaned; in-use enumeration values are deactivated rather than
+  destroyed).
+* Editing a field shared with, or global to, other projects is allowed but
+  surfaced with scope badges, a warning banner, an impact panel and a required
+  confirmation checkbox.
+* Every change — and every rejected attempt — is recorded in an append-only
+  audit log, written in the same transaction as the change. Project managers see
+  the audit for their project in the settings tab; administrators can view the
+  global log at `/dcf_config_audit`.
+
+### Settings
+
+Two plugin settings (Administration → Plugins → Configure):
+
+* **Allow managing standard list / key-value fields** (`manage_standard_custom_fields`,
+  default **on**) — turn off to restrict delegation to the plugin's depending
+  formats only.
+* **Block removing values that are still in use** (`block_removal_when_used`,
+  default off) — hardens value removal.
+
+### Migration
+
+The feature adds the plugin's first migration (the `dcf_config_audit_events`
+audit table). Run `rake redmine:plugins:migrate` after upgrading. If the table
+is missing the feature fails closed rather than applying un-audited changes.
+
+> Note on archived vs. closed projects: in Redmine, **closed** projects are
+> read-only (the tab and audit remain viewable; write actions are blocked),
+> while **archived** projects are inaccessible at the core level.
+
+
 ## Thank you
 
 Many thanks to ChatGPT for helping to create this plugin.

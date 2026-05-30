@@ -1,0 +1,29 @@
+<div class="flash warning dcf-confirm-panel">
+  <p><strong><%= l(:text_confirm_cross_project_change) %></strong></p>
+  <ul>
+    <li><%= l(:label_usage_this_project) %>: <%= impact.usage_here %></li>
+    <li><%= l(:label_usage_other_projects) %>: <%= impact.usage_other %></li>
+    <li><%= l(:label_dependency_references) %>: <%= impact.own_dep_refs + impact.parent_key_refs %></li>
+    <% if impact.affected_child_fields.any? %>
+      <li><%= l(:label_affected_child_fields) %>:
+        <%= impact.affected_child_fields.map(&:name).join(', ') %></li>
+    <% end %>
+  </ul>
+
+  <% url, method = dcf_confirm_target(pending_action) %>
+  <%= form_tag(url, method: method) do %>
+    <% pending_params.each do |k, v| %>
+      <% next if k.to_s == 'confirm' %>
+      <% if v.is_a?(Array) %>
+        <% v.each do |item| %><%= hidden_field_tag "#{k}[]", item %><% end %>
+      <% else %>
+        <%= hidden_field_tag k, v %>
+      <% end %>
+    <% end %>
+    <p>
+      <label><%= check_box_tag :confirm, '1', false, required: true %>
+        <%= l(:text_dcf_confirm_understand) %></label>
+    </p>
+    <%= submit_tag l(:button_apply) %>
+  <% end %>
+</div>

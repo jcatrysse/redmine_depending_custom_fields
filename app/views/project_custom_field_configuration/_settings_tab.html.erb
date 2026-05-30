@@ -1,0 +1,50 @@
+<% fields = dcf_relevant_custom_fields(@project) %>
+<div class="box dcf-config-overview">
+  <div class="contextual">
+    <%= link_to l(:label_custom_field_config_audit),
+                custom_field_configuration_audit_path(@project), class: 'icon icon-history' %>
+  </div>
+
+  <% if fields.empty? %>
+    <p class="nodata"><%= l(:text_no_manageable_custom_fields) %></p>
+  <% else %>
+    <table class="list dcf-config-fields">
+      <thead>
+        <tr>
+          <th><%= l(:field_name) %></th>
+          <th><%= l(:field_field_format) %></th>
+          <th><%= l(:label_dcf_scope) %></th>
+          <th><%= l(:label_dcf_projects) %></th>
+          <th><%= l(:label_dcf_values) %></th>
+          <th><%= l(:label_dcf_shared) %></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% fields.each do |field| %>
+          <tr>
+            <td><%= link_to field.name, custom_field_configuration_field_path(@project, field) %></td>
+            <td><%= dcf_format_label(field) %></td>
+            <td><%= dcf_scope_badge(field, @project) %></td>
+            <td><%= dcf_project_usage_count(field) %></td>
+            <td><%= dcf_value_count(field) %></td>
+            <td>
+              <% unless dcf_field_scope(field, @project) == :project %>
+                <span class="icon icon-warning" title="<%= l(:text_shared_field_warning) %>"></span>
+              <% end %>
+            </td>
+            <td class="buttons">
+              <%= link_to l(:label_custom_field_values),
+                          custom_field_configuration_field_path(@project, field), class: 'icon icon-edit' %>
+              <% if dcf_dependency_capable?(field) %>
+                <%= link_to l(:label_custom_field_dependencies),
+                            custom_field_configuration_field_dependencies_path(@project, field),
+                            class: 'icon icon-list' %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</div>
