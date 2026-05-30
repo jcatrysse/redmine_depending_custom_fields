@@ -53,3 +53,15 @@
 * Fix internal server error (500) when opening the edit page of a depending
   enumeration custom field on Redmine 5.x/contexts where `sprite_icon` is not
   available by falling back to a plain labelled link directly in the view.
+
+
+## 0.0.11
+
+* Fix: required depending child fields no longer block saves when the parent's
+  current value maps to zero allowed child options.  The suppression now applies
+  at the `CustomField` model level (via `CustomFieldPatch#validate_custom_value`)
+  so the independent `is_required?` guard in `CustomField#validate_custom_value`
+  is correctly bypassed.  A non-blank value submitted despite no options being
+  available is still rejected as invalid.
+* Add admin warning in the custom-field edit view when a required depending field
+  has parent values that carry no allowed child options.

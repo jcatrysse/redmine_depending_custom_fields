@@ -9,3 +9,4 @@ en:
   label_depending_enumeration: "Key/Value list (depending)"
   field_parent_custom_field_id: "Depends on"
   field_hide_when_disabled: "Hide when no valid options"
+  warning_required_child_no_options: "Warning: this required field has no allowed options for one or more parent values. When no options are available the required constraint is not enforced."

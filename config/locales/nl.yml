@@ -9,3 +9,4 @@ nl:
   label_depending_enumeration: "Sleutel/Waarde-lijst (afhankelijk)"
   field_parent_custom_field_id: "Afhankelijk van"
   field_hide_when_disabled: "Verbergen wanneer er geen geldige opties beschikbaar zijn"
+  warning_required_child_no_options: "Waarschuwing: dit verplichte veld heeft geen toegelaten opties voor een of meer bovenliggende waarden. Wanneer er geen opties beschikbaar zijn, wordt de verplichte controle niet toegepast."

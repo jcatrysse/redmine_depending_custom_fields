@@ -28,6 +28,16 @@
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
   <%= render partial: 'custom_fields/formats/default_dependencies',
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+  <% if @custom_field.is_required? && parent_cf %>
+    <% dcf_mapping    = @custom_field.value_dependencies.to_h %>
+    <% dcf_uncovered  = parent_cf.possible_values_options
+                                  .map { |pv| (pv.is_a?(Array) ? pv[1] : pv).to_s }
+                                  .reject(&:blank?)
+                                  .select { |pv| Array(dcf_mapping[pv]).empty? } %>
+    <% if dcf_uncovered.any? %>
+      <p class="icon icon-warning"><%= l(:warning_required_child_no_options) %></p>
+    <% end %>
+  <% end %>
 <% end %>
 <p><%= f.check_box :hide_when_disabled, label: :field_hide_when_disabled %></p>
 <p><%= edit_tag_style_tag f %></p>

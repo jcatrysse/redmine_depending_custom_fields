@@ -94,21 +94,30 @@ module RedmineDependingCustomFields
       sanitized = Array(custom_value.value).map(&:to_s).reject(&:blank?)
       custom_value.value = cf.multiple? ? sanitized : sanitized.first
 
-      errors = super
       customized = custom_value.customized
-      return errors unless cf.parent_custom_field_id.present? && customized
+      if cf.parent_custom_field_id.present? && customized
+        parent = CustomField.find_by(id: cf.parent_custom_field_id)
+        if parent
+          mapping     = cf.value_dependencies || {}
+          parent_vals = Array(customized.custom_field_value(parent)).map(&:to_s)
+          allowed     = parent_vals.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s)
 
-      parent = CustomField.find_by(id: cf.parent_custom_field_id)
-      return errors unless parent
+          # When no options are available for the current parent value the field
+          # cannot be filled in, so the required constraint must not block saves.
+          if allowed.empty?
+            child_vals = Array(custom_value.value).map(&:to_s).reject(&:blank?)
+            return child_vals.any? ? [::I18n.t('activerecord.errors.messages.invalid')] : []
+          end
 
-      mapping = cf.value_dependencies || {}
-      parent_vals = Array(customized.custom_field_value(parent)).map(&:to_s)
-      allowed = parent_vals.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s)
+          errors     = super
+          child_vals = Array(custom_value.value).map(&:to_s)
+          invalid    = child_vals.reject(&:blank?) - allowed
+          errors << ::I18n.t('activerecord.errors.messages.invalid') if invalid.any?
+          return errors
+        end
+      end
 
-      child_vals = Array(custom_value.value).map(&:to_s)
-      invalid = child_vals.reject(&:blank?) - allowed
-      errors << ::I18n.t('activerecord.errors.messages.invalid') if invalid.any?
-      errors
+      super
     end
 
     def value_from_keyword(custom_field, keyword, customized = nil, **_options)

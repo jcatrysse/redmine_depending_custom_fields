@@ -9,3 +9,4 @@ de:
   label_depending_enumeration: "Schlüssel/Wert-Liste (abhängig)"
   field_parent_custom_field_id: "Abhängig von"
   field_hide_when_disabled: "Ausblenden, wenn keine gültigen Optionen vorhanden sind"
+  warning_required_child_no_options: "Warnung: Dieses Pflichtfeld hat für einen oder mehrere übergeordnete Werte keine erlaubten Optionen. Wenn keine Optionen verfügbar sind, wird die Pflichtfeld-Prüfung nicht angewendet."
