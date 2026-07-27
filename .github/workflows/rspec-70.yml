@@ -1,0 +1,87 @@
+name: Plugin Specs (Redmine 7.0)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: RSpec tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: redmine
+          POSTGRES_PASSWORD: redmine
+          POSTGRES_DB: redmine_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgres://redmine:redmine@localhost:5432/redmine_test
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Clone Redmine 7.0
+        run: |
+          git clone --depth 1 --branch 7.0-stable https://github.com/redmine/redmine.git redmine
+          mkdir -p redmine/plugins/$(basename "$GITHUB_WORKSPACE")
+          rsync -a --exclude redmine/ --exclude .git/ ./ redmine/plugins/$(basename "$GITHUB_WORKSPACE")/
+
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y build-essential libpq-dev nodejs
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.5
+          bundler-cache: false
+          working-directory: redmine
+
+      - name: Configure test database
+        run: |
+          cat > config/database.yml <<EOF
+          test:
+            adapter: postgresql
+            database: redmine_test
+            host: localhost
+            username: redmine
+            password: redmine
+            encoding: unicode
+          EOF
+        working-directory: redmine
+
+      - name: Configure pg build flags
+        run: bundle config build.pg --with-pg-config=/usr/bin/pg_config
+        working-directory: redmine
+
+      - name: Install gems
+        run: bundle install
+        working-directory: redmine
+
+      - name: Populate test database
+        run: |
+          bundle exec rake db:drop
+          bundle exec rake db:create
+          bundle exec rake db:migrate
+        working-directory: redmine
+
+      - name: Migrate plugins
+        run: bundle exec rake redmine:plugins:migrate
+        working-directory: redmine
+
+      - name: Run RSpec tests
+        run: |
+          mkdir -p tmp/test-results
+          bundle exec rspec plugins/$(basename "$GITHUB_WORKSPACE")/spec \
+            --format progress
+        working-directory: redmine

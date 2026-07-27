@@ -91,3 +91,17 @@
 * Adds one additive migration (the plugin's first). The settings-tab is added via
   `alias_method` (no `prepend`, no `Rails.configuration.to_prepare`). The existing
   admin-only API is untouched.
+
+## 0.0.13
+
+* **Redmine 7.0 compatibility.** Fix a `LoadError`/`NameError` on boot under
+  Redmine 7.0 (Rails 8.1 / Zeitwerk). The plugin's patch files used
+  `require_dependency '<app class>'`, a classic-autoloader idiom that no longer
+  resolves for controllers under Zeitwerk. These are removed; the target classes
+  are now autoloaded by referencing their constants, which continues to work on
+  Redmine 5.x and 6.x.
+* Adapt to Redmine 7.0's split of `ContextMenusController#issues` into the
+  namespaced `ContextMenus::IssuesController#index`. `init.rb` prepends onto
+  whichever controller the running version provides, and the context-menu filter
+  now recognises both routings.
+* Add a GitHub Actions workflow running the plugin specs against Redmine 7.0.

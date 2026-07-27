@@ -1,5 +1,3 @@
-require_dependency 'issue_import'
-
 module RedmineDependingCustomFields
   module Patches
     module IssueImportPatch

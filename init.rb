@@ -11,7 +11,7 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   author 'Jan Catrysse'
   description 'Provides depending / cascading custom field formats.'
   url 'https://github.com/jcatrysse/redmine_depending_custom_fields'
-  version '0.0.12'
+  version '0.0.13'
   requires_redmine version_or_higher: '5.0'
 
   settings default: { 'manage_standard_custom_fields' => true,
@@ -52,7 +52,23 @@ CustomField.safe_attributes(
   'hide_when_disabled'
 )
 
+# QueryCustomFieldColumn is a top-level class defined inside Redmine's
+# app/models/query.rb; there is no query_custom_field_column.rb for Zeitwerk to
+# map, so the constant only exists once query.rb is loaded. Referencing Query
+# (which Zeitwerk maps to query.rb) forces that load before we prepend.
+Query
 QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch
 CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
-ContextMenusController.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
+# The issue context menu controller was namespaced in Redmine 7.0
+# (ContextMenus::IssuesController#index); Redmine 5.x/6.x used the flat
+# ContextMenusController#issues. Prepend onto whichever the running version
+# provides. Referencing the constant lets Zeitwerk autoload it; the older
+# constant does not exist on 7.0, so we try the namespaced one first.
+context_menu_controller =
+  begin
+    ContextMenus::IssuesController
+  rescue NameError
+    ContextMenusController
+  end
+context_menu_controller.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
 IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch

@@ -1,5 +1,3 @@
-require_dependency 'custom_fields_helper'
-
 # View hook that injects a mini wizard for depending custom fields into the
 # issue context menu. Only shown when the current user is allowed to edit all
 # selected issues.
