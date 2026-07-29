@@ -54,6 +54,42 @@ RSpec.describe RedmineDependingCustomFields::FieldRelevance do
     end
   end
 
+  describe '.relevant_fields' do
+    it 'returns supported issue and project custom fields without raising (GitHub #13)' do
+      issue_field   = dcf_list_field(format: 'list', name: 'IssueList', is_for_all: true)
+      project_field = dcf_list_field(format: 'list', name: 'ProjectList', type: ProjectCustomField)
+
+      result = nil
+      expect { result = described_class.relevant_fields(project) }.not_to raise_error
+
+      ids = result.map(&:id)
+      expect(ids).to include(issue_field.id, project_field.id)
+    end
+
+    it 'preloads :projects for issue fields without touching ProjectCustomField' do
+      dcf_list_field(format: 'list', name: 'IssueList', is_for_all: true)
+      dcf_list_field(format: 'list', name: 'ProjectList', type: ProjectCustomField)
+
+      # A ProjectCustomField in the set previously blew up the STI-base
+      # includes(:projects); assert the preload no longer issues per-row
+      # project queries either.
+      fields = described_class.relevant_fields(project)
+      issue_field = fields.find { |f| f.is_a?(IssueCustomField) }
+      recorder = ActiveRecord::QueryRecorder.new { issue_field.projects.to_a }
+      expect(recorder.count).to eq(0)
+    end
+
+    it 'excludes standard formats when the kill-switch is off' do
+      dcf_list_field(format: 'list', name: 'IssueList', is_for_all: true)
+      depending = dcf_list_field(format: 'depending_list', name: 'Dep', is_for_all: true)
+      allow(Setting).to receive(:plugin_redmine_depending_custom_fields)
+        .and_return('manage_standard_custom_fields' => '0')
+
+      ids = described_class.relevant_fields(project).map(&:id)
+      expect(ids).to eq([depending.id])
+    end
+  end
+
   describe '.dependency_capable?' do
     it 'is true only for a depending format with a parent' do
       parent = dcf_list_field(name: 'Parent')

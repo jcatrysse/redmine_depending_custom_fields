@@ -64,17 +64,33 @@ module RedmineDependingCustomFields
 
     # All supported, project-relevant fields, with :projects and :enumerations
     # preloaded so the overview avoids N+1 (independent-review fix #13).
+    #
+    # The two field types are queried separately on purpose: +:projects+ is a
+    # habtm defined only on IssueCustomField, so preloading it on the STI base
+    # (a mix of IssueCustomField and ProjectCustomField) raises
+    # AssociationNotFoundError under Rails 7 / Redmine 6, where the preloader
+    # groups records by concrete class and requires the association on each
+    # (GitHub #13). +:enumerations+ lives on the CustomField base, so both
+    # queries can preload it.
     def relevant_fields(project)
-      issue_ids   = project.all_issue_custom_fields.map(&:id)
-      project_ids = ProjectCustomField.pluck(:id)
-      ids = (issue_ids + project_ids).uniq
-      return [] if ids.empty?
+      issue_ids = project.all_issue_custom_fields.map(&:id)
 
-      CustomField.where(id: ids)
-                 .where(field_format: SUPPORTED_VALUE_FORMATS)
-                 .includes(:projects, :enumerations)
-                 .select { |f| supported_format?(f) }
-                 .sort_by { |f| [f.position || 0, f.id] }
+      issue_fields = if issue_ids.any?
+                       IssueCustomField.where(id: issue_ids)
+                                       .where(field_format: SUPPORTED_VALUE_FORMATS)
+                                       .includes(:projects, :enumerations).to_a
+                     else
+                       []
+                     end
+
+      # Project custom fields are not per-project scoped, so every one is a
+      # candidate; query them directly by format (no id round trip).
+      project_fields = ProjectCustomField.where(field_format: SUPPORTED_VALUE_FORMATS)
+                                         .includes(:enumerations).to_a
+
+      (issue_fields + project_fields)
+        .select { |f| supported_format?(f) }
+        .sort_by { |f| [f.position || 0, f.id] }
     end
 
     # Depending child fields that name +field+ as their parent. Applies to

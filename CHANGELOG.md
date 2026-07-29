@@ -105,3 +105,17 @@
   whichever controller the running version provides, and the context-menu filter
   now recognises both routings.
 * Add a GitHub Actions workflow running the plugin specs against Redmine 7.0.
+
+## 0.0.14
+
+* **Fix `AssociationNotFoundError` on the project custom-field configuration
+  tab (GitHub #13).** `FieldRelevance.relevant_fields` preloaded `:projects`
+  and `:enumerations` from the `CustomField` STI base while the result set
+  mixed `IssueCustomField` and `ProjectCustomField` records. Since `:projects`
+  is a habtm defined only on `IssueCustomField`, the Rails 7 preloader (Redmine
+  6+) — which groups records by concrete class and requires the association on
+  each — raised `Association named 'projects' was not found on
+  ProjectCustomField`, producing a 500 on the settings tab. The two field types
+  are now queried separately so `:projects` is preloaded only where it exists,
+  keeping the N+1 optimisation intact.
+
