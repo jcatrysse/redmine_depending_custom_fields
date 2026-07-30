@@ -122,3 +122,12 @@
 .dcf-status-neutral { color: #555; }
 .dcf-inline-form { display: inline; }
 .dcf-dependencies-matrix td.center { text-align: center; }
+/* Drag handle is only useful once the sortable is initialised, so it stays
+   hidden until the JS enables it rather than sitting there inert. Icon and
+   cursor come from core .icon-sort-handle. */
+.dcf-values .dcf-sort-handle { display: none; }
+.dcf-values-sortable .dcf-sort-handle {
+  display: inline-block;
+  vertical-align: middle;
+  cursor: move;
+}

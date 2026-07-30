@@ -11,7 +11,7 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   author 'Jan Catrysse'
   description 'Provides depending / cascading custom field formats.'
   url 'https://github.com/jcatrysse/redmine_depending_custom_fields'
-  version '0.0.14'
+  version '0.0.15'
   requires_redmine version_or_higher: '5.0'
 
   settings default: { 'manage_standard_custom_fields' => true,

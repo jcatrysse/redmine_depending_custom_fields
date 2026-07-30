@@ -285,7 +285,10 @@ project plus all project custom fields) in a supported format:
   value; child fields configure per-parent default values in the matrix.
 
 Add, rename, remove and reorder values; manage enumeration values; set the
-field's default value; and edit the dependency matrix. For `multiple` fields the
+field's default value; and edit the dependency matrix. Values are reordered by
+dragging the handle to the target position — the same drag handle, and the same
+single control, that Redmine itself uses for enumeration values in
+Administration. For `multiple` fields the
 per-parent default selectors allow choosing several values. The feature
 **cannot** create or delete fields, or change a field's type, visibility,
 required flag, tracker or project applicability.

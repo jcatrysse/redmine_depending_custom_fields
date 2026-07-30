@@ -121,12 +121,56 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(field.reload.possible_values).to eq(%w[A B C])
     end
 
-    it 'reorders without JS via a form submit (T-UI-2)' do
+    # The sortable submits a plain form PATCH, so this covers the endpoint
+    # contract independently of any JS driver (T-UI-2).
+    it 'reorders via a form submit (T-UI-2)' do
       as(dcf_manager(project))
       patch custom_field_configuration_reorder_values_path(project, field),
             params: { ordered_values: %w[B A] }
       expect(response).to have_http_status(:redirect)
       expect(field.reload.possible_values).to eq(%w[B A])
+    end
+
+    # Regression for the UX defect this change fixes: moving a value across
+    # several positions used to need one round trip per step. A drag submits the
+    # whole target order at once — one request, one audit event (T-ORD-6).
+    it 'moves a value across several positions in a single request (T-ORD-6)' do
+      long = dcf_list_field(values: %w[A B C D E], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      patch custom_field_configuration_reorder_values_path(project, long),
+            params: { ordered_values: %w[E A B C D],
+                      state_hash: RedmineDependingCustomFields::BaseService.state_hash(long) }
+      expect(response).to redirect_to(custom_field_configuration_field_path(project, long))
+      expect(long.reload.possible_values).to eq(%w[E A B C D])
+    end
+
+    it 'moves an enumeration value across several positions in one request (T-ORD-7)' do
+      enum = dcf_enum_field(names: %w[X Y Z])
+      ids = enum.enumerations.order(:position).map { |e| e.id.to_s }
+      as(dcf_manager(project))
+      patch custom_field_configuration_reorder_values_path(project, enum),
+            params: { ordered_values: [ids[2], ids[0], ids[1]],
+                      state_hash: RedmineDependingCustomFields::BaseService.state_hash(enum) }
+      expect(response).to have_http_status(:redirect)
+      expect(enum.reload.enumerations.order(:position).map(&:name)).to eq(%w[Z X Y])
+    end
+
+    it 'rejects a drag submitted against a stale state_hash (T-CONC-1)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_reorder_values_path(project, field),
+            params: { ordered_values: %w[B A], state_hash: 'stale' }
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include(I18n.t(:error_stale_edit))
+      expect(field.reload.possible_values).to eq(%w[A B])
+    end
+
+    it 'rejects an incomplete order without touching the values (T-ORD-3)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_reorder_values_path(project, field),
+            params: { ordered_values: %w[B] }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t(:error_reorder_mismatch))
+      expect(field.reload.possible_values).to eq(%w[A B])
     end
 
     it 'sets a default value via a form submit and redirects back (T-DEF-3)' do
@@ -251,6 +295,81 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.body).to include(I18n.t(:text_dcf_confirm_understand))
       expect(field.reload.possible_values).to eq(%w[A B])
+    end
+  end
+
+  # --- Drag-and-drop reorder markup (T-ORD-8..12) ------------------------
+  # No JS driver is available (Test Plan §"no test may depend on a JS driver"),
+  # so the sortable is covered by asserting the hooks it needs.
+  describe 'reorder affordances on the values screen' do
+    it 'renders drag handles, the reorder form and the sortable script (T-ORD-8)' do
+      field = dcf_list_field(values: %w[A B C], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/dcf_value_reorder.*\.js/)
+      expect(response.body).to include('class="list dcf-values"')
+      expect(response.body).to include('dcf-reorder-form')
+      expect(response.body.scan('dcf-sort-handle').length).to eq(3)
+      expect(response.body).to include('data-dcf-value="A"')
+    end
+
+    # The drag handle is the only reorder control, exactly as in core — no
+    # Redmine version ships up/down reorder buttons (`reorder_links` does not
+    # exist in 5.1-7.0; only `reorder_handle` does).
+    it 'renders no per-row up/down reorder buttons (T-ORD-13)' do
+      field = dcf_list_field(values: %w[A B C], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      # One reorder form for the sortable; no button_to forms posting to it.
+      expect(response.body.scan('dcf-reorder-form').length).to eq(1)
+      expect(response.body.scan(%r{class="button_to"[^>]*action="[^"]*values/reorder"}).length).to eq(0)
+      expect(response.body).not_to include('Move up')
+      expect(response.body).not_to include('Move down')
+    end
+
+    it 'identifies enumeration rows by id (T-ORD-9)' do
+      enum = dcf_enum_field(names: %w[X Y])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum)
+      expect(response).to have_http_status(:ok)
+      enum.enumerations.each { |e| expect(response.body).to include(%(data-dcf-value="#{e.id}")) }
+      expect(response.body.scan('dcf-sort-handle').length).to eq(2)
+    end
+
+    it 'omits the handle and the reorder form when there is nothing to reorder (T-ORD-10)' do
+      field = dcf_list_field(values: %w[Only], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include('dcf-sort-handle')
+      expect(response.body).not_to include('dcf-reorder-form')
+    end
+
+    # The drag target form is submitted natively by the sortable, so it must
+    # carry its own CSRF token. Forgery protection is disabled in the test env,
+    # which would hide a missing token until production (T-ORD-12).
+    it 'includes an authenticity token in the drag target form (T-ORD-12)' do
+      original = ActionController::Base.allow_forgery_protection
+      ActionController::Base.allow_forgery_protection = true
+      field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      form = response.body[%r{<form[^>]*dcf-reorder-form.*?</form>}m]
+      expect(form).to be_present
+      expect(form).to include('name="authenticity_token"')
+    ensure
+      ActionController::Base.allow_forgery_protection = original
+    end
+
+    it 'escapes value identifiers in the row data attribute (T-ORD-11)' do
+      field = dcf_list_field(values: ['A', '"><script>alert(1)</script>'],
+                             is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include('<script>alert(1)</script>')
+      expect(response.body).to include('data-dcf-value="&quot;&gt;&lt;script&gt;')
     end
   end
 

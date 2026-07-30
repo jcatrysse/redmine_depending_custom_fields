@@ -119,3 +119,7 @@
   are now queried separately so `:projects` is preloaded only where it exists,
   keeping the N+1 optimisation intact.
 
+## 0.0.15
+
+* Drag-and-drop value ordering on the project custom-field configuration
+  page

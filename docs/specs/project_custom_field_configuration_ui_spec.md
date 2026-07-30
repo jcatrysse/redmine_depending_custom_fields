@@ -66,10 +66,25 @@ affect them too."
 Sections:
 1. **Impact summary box** (lazy): projects using the field (count; names if
    visible to viewer, else "+N other projects"); total values.
+   > **Not implemented yet.** The values screen renders no such box. The pieces
+   > exist: `dcf_visible_project_names` produces the visibility-filtered names
+   > with the "+N other projects" tail (fix #3.8) and is unit-tested, and the
+   > settings-tab overview shows a project count via `dcf_project_usage_count`.
+   > What is missing is a box on the `show` screen that renders them, plus its
+   > `label_affected_projects` heading. Either wire it up or drop this item —
+   > tracked so the unused helper and locale key are not mistaken for dead code.
 2. **Possible values table** (`table.list`):
    | Value | Usage (this project) | Usage (other projects) | Dependency refs | Actions |
-   - Inline **Rename** (text field + Save), **Remove** (with confirm), drag or
-     up/down **Reorder** controls.
+   - Inline **Rename** (text field + Save), **Remove** (with confirm), and a
+     drag **Reorder** handle.
+   - The drag control reuses Redmine's own affordance: a
+     `span.icon-only.icon-sort-handle.sort-handle` per row driving a jQuery UI
+     sortable on the `tbody`, exactly as core does for
+     `custom_field_enumerations#index` and `table.enumerations tbody`. Each row
+     carries its identifier in `data-dcf-value`; dropping a row writes the
+     resulting order into `form.dcf-reorder-form` as `ordered_values[]` and
+     submits it, so one drag = one reorder operation (same permutation +
+     `state_hash` contract as the buttons, one audit event).
    - Usage columns lazy-loaded or shown behind a "Show usage" toggle to avoid
      heavy queries on render.
 3. **Add value** form: text input + optional position + Add button.
@@ -126,9 +141,16 @@ Labels: `label_project_custom_field_configuration`,
 `label_custom_field_values`, `label_custom_field_dependencies`,
 `label_custom_field_config_audit`, `label_scope_global`, `label_scope_shared`,
 `label_scope_project`, `label_usage_this_project`, `label_usage_other_projects`,
-`label_dependency_references`, `label_add_value`, `label_rename_value`,
-`label_remove_value`, `label_reorder_values`, `label_show_usage`,
+`label_dependency_references`, `label_add_value`, `label_show_usage`,
 `label_affected_projects`.
+
+> **Drift note.** Three labels planned here were never needed and have been
+> deleted from all four locales: `label_rename_value` and `label_remove_value`
+> (the value rows use core's `button_save` / `button_delete`, which is the better
+> parity choice) and `label_reorder_values` (the drag handle carries core's own
+> `title`, so the reorder form needs no visible label of its own).
+> `label_affected_projects` is **kept but currently unused** — it belongs to the
+> §4 item 1 impact summary box, which is not rendered yet; see the note there.
 Permission: `permission_manage_project_custom_field_configuration`.
 Notices: `notice_value_added/renamed/removed`, `notice_values_reordered`,
 `notice_dependencies_saved`.
@@ -136,10 +158,21 @@ Errors: as listed in §7.
 Warnings: `text_shared_field_warning`, `text_global_field_warning`,
 `text_confirm_cross_project_change`.
 
-## 9. Accessibility / no-JS fallback
+## 9. Accessibility / no-JS behaviour
 
-- Reorder must also work without drag-and-drop (up/down buttons submit a form),
-  so the feature degrades gracefully and is testable without a JS driver.
+- Reordering is drag-only, matching core exactly: no Redmine version from 5.1
+  to 7.0 ships an up/down reorder control (`reorder_links` does not exist;
+  `reorder_handle` is the single affordance in all six reorderable core views,
+  and the leftover `table.list td.reorder` CSS rule is used by none of them).
+  The handle is pointer-only, as core's is, so reordering requires JavaScript
+  and a pointer — a deliberate parity decision, revisit only if core does.
+- The handle is hidden until the sortable initialises, so a client without
+  JavaScript sees no inert control rather than a dead one. Every other
+  operation on the screen (add / rename / remove / default value) remains a
+  plain form submit and still works without JavaScript.
+- Reorder stays testable without a JS driver: the sortable submits an ordinary
+  form PATCH, so the endpoint contract is covered by request specs (T-UI-2) and
+  the client hooks by markup assertions (T-ORD-8..13).
 - All destructive actions are real form submissions (POST) with confirm dialogs
   using Redmine's `data: { confirm: ... }` pattern.
 

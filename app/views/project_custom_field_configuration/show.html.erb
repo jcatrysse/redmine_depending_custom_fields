@@ -1,5 +1,12 @@
 <% enum_family = RedmineDependingCustomFields::FieldRelevance.enum_family?(@field) %>
 <% scope = dcf_field_scope(@field, @project) %>
+<%# Row identifiers in current display order — the reorder contract expects an
+    exact permutation of this set (enumeration ids, or the list values). %>
+<% row_ids = enum_family ? @enumerations.map { |e| e.id.to_s } : @list_values.map(&:to_s) %>
+
+<% content_for :header_tags do %>
+  <%= javascript_include_tag 'dcf_value_reorder', plugin: 'redmine_depending_custom_fields' %>
+<% end %>
 
 <div class="contextual">
   <%= link_to l(:button_back), settings_project_path(@project, tab: 'custom_field_configuration'),
@@ -29,7 +36,7 @@
     <% if @enumerations.empty? %>
       <p class="nodata"><%= l(:text_no_values) %></p>
     <% else %>
-      <table class="list">
+      <table class="list dcf-values">
         <thead>
           <tr>
             <th><%= l(:label_dcf_value) %></th>
@@ -39,8 +46,8 @@
           </tr>
         </thead>
         <tbody>
-          <% @enumerations.each_with_index do |enum, idx| %>
-            <tr>
+          <% @enumerations.each do |enum| %>
+            <tr data-dcf-value="<%= enum.id %>">
               <td>
                 <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
                   <%= hidden_field_tag :enumeration_id, enum.id %>
@@ -50,8 +57,7 @@
                 <% end %>
               </td>
               <td><%= enum.active? ? l(:general_text_Yes) : l(:general_text_No) %></td>
-              <td><%= render partial: 'reorder_buttons',
-                             locals: { ids: @enumerations.map(&:id).map(&:to_s), index: idx } %></td>
+              <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
               <td>
                 <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
                               method: :delete,
@@ -67,7 +73,7 @@
     <% if @list_values.empty? %>
       <p class="nodata"><%= l(:text_no_values) %></p>
     <% else %>
-      <table class="list">
+      <table class="list dcf-values">
         <thead>
           <tr>
             <th><%= l(:label_dcf_value) %></th>
@@ -81,8 +87,8 @@
           </tr>
         </thead>
         <tbody>
-          <% @list_values.each_with_index do |value, idx| %>
-            <tr>
+          <% @list_values.each do |value| %>
+            <tr data-dcf-value="<%= value %>">
               <td>
                 <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
                   <%= hidden_field_tag :old_value, value %>
@@ -97,8 +103,7 @@
                 <td><%= RedmineDependingCustomFields::UsageCalculator.own_dep_refs(@field, value) +
                         RedmineDependingCustomFields::UsageCalculator.parent_key_refs(@field, value) %></td>
               <% end %>
-              <td><%= render partial: 'reorder_buttons',
-                             locals: { ids: @list_values.map(&:to_s), index: idx } %></td>
+              <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
               <td>
                 <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
                               method: :delete,
@@ -111,6 +116,8 @@
       </table>
     <% end %>
   <% end %>
+
+  <%= render partial: 'reorder_form' if row_ids.length > 1 %>
 
   <p>
     <% unless @show_usage || enum_family %>

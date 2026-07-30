@@ -126,7 +126,8 @@ No production code exists yet; these packages produce it.
   `dcf_relevant_custom_fields(@project)` helper (fix #5, no controller ivars);
   `show` (values, full page) and `audit` (full page) views + partials; Redmine
   markup; scope badges (project CF always Global, fix #7); impact panel showing
-  **affected child fields** (fix #1/#2); no-JS reorder; confirmations; Format
+  **affected child fields** (fix #1/#2); no-JS reorder *(superseded — see Review
+  Log Amendment A2: reorder is drag-only, as in core)*; confirmations; Format
   column label derived from the field-format registry (fix #14); N+1-safe
   overview (fix #13); I18n wiring.
 - **Files:** `app/views/project_custom_field_configuration/*` (incl.

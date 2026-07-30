@@ -48,6 +48,23 @@ RSpec.describe ProjectCustomFieldConfigurationHelper, type: :helper do
     end
   end
 
+  describe '#dcf_sort_handle' do
+    it 'uses the core sort-handle classes so Redmine styles the drag handle' do
+      html = helper.dcf_sort_handle
+      expect(html).to include('icon-only')
+      expect(html).to include('icon-sort-handle')
+      expect(html).to include('sort-handle')
+      expect(html).to include('dcf-sort-handle')
+      expect(html).to include(%(title="#{I18n.t(:button_sort)}"))
+    end
+
+    it 'falls back to an empty span when sprite_icon is unavailable (Redmine 5.x)' do
+      allow(helper).to receive(:respond_to?).and_call_original
+      allow(helper).to receive(:respond_to?).with(:sprite_icon).and_return(false)
+      expect(helper.dcf_sort_handle).to match(%r{<span[^>]*></span>})
+    end
+  end
+
   describe '#dcf_visible_project_names' do
     it 'summarises invisible projects without leaking names (T-USE-3)' do
       other = dcf_create_project(name: 'Secret')

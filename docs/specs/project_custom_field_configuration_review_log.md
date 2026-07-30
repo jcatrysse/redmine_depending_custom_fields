@@ -41,6 +41,7 @@ Findings & resolutions:
   → Stated as non-goals NG2/NG3 and reinforced in UI "out of scope" (UI §10).
 - **F2.4** Practicality: empty states and no-JS reorder make it usable on minimal
   setups. → Added (UI §9, Product §11).
+  **— The no-JS reorder half is superseded by Amendment A2 below.**
 - **F2.5 (new)** PMs should see *what changed* in their project → project-scoped
   audit view in the same tab (Audit §2/§8).
 
@@ -104,6 +105,7 @@ Findings & resolutions:
 - Cross-project warnings, confirmation gate, visible-name filtering.
 - List vs enumeration handling separated; CustomValue rewrite on list rename.
 - Optimistic concurrency; lazy/capped usage counts; no-JS reorder.
+  **— The no-JS reorder item is superseded by Amendment A2 below.**
 - Standard list/enum fields excluded by default (setting-gated for later).
   **— Superseded by the Amendment below.**
 
@@ -170,3 +172,46 @@ P1 = Redmine-API correctness, P2 = hardening/quality.
 delegated edits of `is_for_all`/global fields entirely. Logged as a non-blocking
 idea; the current confirmation gate + audit + `manage_standard_custom_fields`
 kill-switch are deemed sufficient for v1.
+
+## Amendment A2 — Reorder is drag-only (Redmine core parity)
+
+Product direction changed after the feature shipped in a first form. The values
+screen originally offered **both** a drag handle and per-row **Move up / Move
+down** buttons, the latter mandated by UI §9 as a no-JS and keyboard fallback
+(review finding F2.4). Feedback on the running screen: the two controls together
+make each row noisy, and Redmine itself does not work that way.
+
+Source check across every supported version (5.1, 6.0, 6.1, 7.0-stable):
+
+- There is **no `reorder_links` helper** — it does not exist in any of them.
+- `reorder_handle` is the **single** reorder affordance, used in all six
+  reorderable core views: `custom_fields/_index`, `enumerations/index`,
+  `trackers/index`, `issue_statuses/index`, `roles/index`,
+  `projects/settings/_boards`.
+- No `move_higher` / `move_lower` / `:highest` / `:lowest` UI anywhere.
+- The rule `table.list td.reorder` still sits in core's stylesheet but is
+  referenced by **no core view** — leftover CSS from the era when Redmine did
+  have up/down links, since removed. Core deliberately dropped this pattern.
+
+Decision: the up/down buttons are removed; the drag handle is the only reorder
+control, matching core exactly.
+
+Accepted cost, recorded deliberately: as in core, reordering now requires
+JavaScript and a pointer. There is no keyboard or no-JS path to reorder. Every
+other value operation (add, rename, remove, default value) remains a plain form
+submit and still works without JavaScript, and the handle is hidden until the
+sortable initialises so a no-JS client is never shown a dead control. Revisit
+only if core introduces a keyboard-accessible handle.
+
+Resulting spec changes:
+
+- **UI §4** — "drag or up/down Reorder controls" → a drag Reorder handle.
+- **UI §9** — retitled *Accessibility / no-JS behaviour*; the no-JS reorder
+  requirement is replaced by this parity decision and its cost.
+- **Test Plan §1/§8** — the "View / system" row and the harness note no longer
+  rest on a no-JS reorder path; T-UI-2 is reframed as the endpoint contract that
+  the sortable submits; **T-ORD-13** added to guard that the buttons do not
+  return; **T-CMP-4** added for the manual drag smoke test.
+- **Agent Plan, Agent 6** — the "no-JS reorder" scope item is marked superseded.
+- Locale keys `label_dcf_move_up` / `label_dcf_move_down` deleted from en, nl,
+  fr and de as no code references them any more.

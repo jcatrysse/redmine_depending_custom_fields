@@ -74,6 +74,17 @@ module ProjectCustomFieldConfigurationHelper
     end
   end
 
+  # Drag handle for the values table, markup-identical to core's
+  # +reorder_handle+ / custom_field_enumerations#index so the existing Redmine
+  # icon and cursor styling applies on 5.1 through 7.0. Empty content on 5.x
+  # (the .icon-sort-handle background image supplies the glyph there).
+  def dcf_sort_handle
+    icon = respond_to?(:sprite_icon) ? sprite_icon('reorder', '') : ''.html_safe
+    content_tag(:span, icon,
+                class: 'icon-only icon-sort-handle sort-handle dcf-sort-handle',
+                title: l(:button_sort))
+  end
+
   # URL + HTTP method to re-submit a pending destructive operation with confirm.
   def dcf_confirm_target(action)
     case action.to_sym

@@ -1,0 +1,8 @@
+<%# Target form for the drag-and-drop reorder: dcf_value_reorder.js fills it
+    with one ordered_values[] input per row and submits it, so dragging reuses
+    the exact same server contract (full permutation + state_hash) as the
+    no-JS up/down buttons. Empty and inert without JavaScript. %>
+<%= form_tag(custom_field_configuration_reorder_values_path(@project, @field),
+             method: :patch, class: 'dcf-reorder-form') do %>
+  <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+<% end %>

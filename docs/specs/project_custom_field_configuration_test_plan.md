@@ -14,7 +14,7 @@ use request specs (`spec/requests`).
 | Service | each operation service (A–G), `FieldRelevance`, `UsageCalculator`, `AuditRecorder` |
 | Controller / request | authorization, routing, params filtering, flash/redirects |
 | Helper | scope badge, visible-name filtering, icon guard |
-| View / system | tab visibility, forms render, no-JS reorder; matrix screen |
+| View / system | tab visibility, forms render, drag-reorder hooks; matrix screen |
 | Security | bypass attempts, mass-assignment, cross-project, API isolation |
 | Audit | event written per success/failure; transactional rollback |
 | Compatibility | runs on 5.1 (mandatory) and 6.1 (if harness available) |
@@ -76,7 +76,9 @@ confirm; T-RM-3 with `block_removal_when_used` → 422; T-RM-4 enumeration/
 standard-enumeration remove deactivates/destroys (+ prunes id refs only for
 `depending_enumeration`).
 Reorder: T-ORD-1 works (list order); T-ORD-2 enumeration positions;
-T-ORD-3 missing value → 422; T-ORD-4 extra value → 422; T-ORD-5 duplicate → 422.
+T-ORD-3 missing value → 422; T-ORD-4 extra value → 422; T-ORD-5 duplicate → 422;
+T-ORD-6 a multi-position move (e.g. last → first) applies in **one** request
+(list); T-ORD-7 same for enumeration positions.
 Dependencies: T-DEP-1 valid mapping saves; T-DEP-2 unknown child → 422;
 T-DEP-3 wrong/unknown parent key → 422; T-DEP-4 orphan prevented;
 T-DEP-5 default dependency must be an allowed child; T-DEP-6 matrix uses existing
@@ -155,11 +157,26 @@ Enumeration removal semantics (independent-review fix #9):
 > stack (only `spec/` request/model/lib specs + a `test/` unit harness). Write
 > these as **request specs** (assert rendered HTML / redirects / status), **not**
 > Capybara system specs, unless Agent 9 confirms and adds a system-test stack.
-> No test may depend on a JS driver; the no-JS reorder path makes this possible.
+> No test may depend on a JS driver. Since Amendment A2 (reorder is drag-only)
+> this no longer rests on a no-JS reorder path but on the fact that the sortable
+> submits an **ordinary form PATCH**: the endpoint is covered by request specs
+> and the client-side hooks by markup assertions. Drag behaviour itself is
+> therefore verified manually — see T-CMP-4 in §10.
 
 - T-UI-1 Tab renders for authorized users (request spec asserts the tab link in
   `projects/settings`).
-- T-UI-2 Reorder works without JS (up/down form submit → redirect + new order).
+- T-UI-2 Reorder endpoint works as a plain form PATCH (→ redirect + new order),
+  which is what the sortable submits, so it needs no JS driver.
+- Drag-and-drop reorder (no JS driver available, so the hooks the sortable needs
+  are asserted in the rendered HTML instead): T-ORD-8 handles, the target
+  `form.dcf-reorder-form` and the `dcf_value_reorder` script include all render;
+  T-ORD-9 enumeration rows are identified by id;
+  T-ORD-10 a single-value field renders neither handle nor reorder form;
+  T-ORD-11 row identifiers are HTML-escaped in `data-dcf-value`; T-ORD-12 the
+  drag target form carries a CSRF token (asserted with forgery protection
+  temporarily enabled, since the test env disables it); T-ORD-13 no per-row
+  up/down reorder buttons are rendered — the handle is the only control, as in
+  core.
 - T-UI-3 Destructive action shows confirm; cross-project shows required checkbox
   (assert the confirm markup / required field in the rendered HTML).
 - T-UI-4 Matrix screen renders for depending fields with a parent only; absent
@@ -186,6 +203,15 @@ Enumeration removal semantics (independent-review fix #9):
   otherwise a documented manual smoke test (tab loads, add/rename/remove/reorder,
   matrix save, audit view) on 6.1.
 - T-CMP-3 Icon helper guarded (`respond_to?(:sprite_icon)`) — render test on both.
+- T-CMP-4 **Drag reorder smoke test** (manual or ad-hoc browser automation; not
+  in the suite, since the harness has no JS driver). Since Amendment A2 the
+  handle is the only reorder control, so this is the only way its behaviour is
+  observed. Check on a list **and** an enumeration field: the handle is visible
+  and shows a move cursor; dragging a row to a distant position applies that
+  order in **one** request with `notice_values_reordered`; a single-value field
+  shows no handle; with JavaScript disabled no handle is visible while the
+  rename/add forms still work; the browser console stays clean.
+  Last verified: Redmine 6.1 / Chromium, plugin 0.0.15.
 
 ## 11. Fixtures / factories
 
