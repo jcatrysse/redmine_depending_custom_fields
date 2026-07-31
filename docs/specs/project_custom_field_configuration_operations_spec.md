@@ -197,20 +197,77 @@ Params: `ordered_values` (array of existing value identifiers).
    `CustomValue` rewrite — reorder changes display order only, not value
    identity, so no key/string references change.
 
-## E. Manage enumeration values (batch, optional)
+## E. Update enumerations (batch — ENUM_FAMILY only)
 
-If a batch editor is used (mirroring the API's `enumerations` array with
-`id`/`name`/`position`/`_destroy`):
+Params: `enumerations` => `{ "<id>" => { name:, position:, active: } }`.
+
+This is the **only** write path for enumeration names, positions and active
+flags from the project screen, and it mirrors core's
+`CustomFieldEnumerations#update_each`: one form for the whole table, one Save,
+everything applied together in one transaction and one audit event.
+
+> **Why batch and not per row.** Core has two reorder/submit models and this
+> screen uses one of each, per family. `custom_field_enumerations#index` — the
+> screen we are copying — stages everything in a single form: its sortable's
+> `update` handler only rewrites the hidden `position` inputs and submits
+> nothing. Core's *other* model (`reorder_handle` + `positionedItems`, used by
+> trackers / issue statuses / roles / enumerations) persists each drop
+> immediately by AJAX; that is the one the list family follows (§D). Amendment
+> A2 originally applied the second model to both families — see the review log.
+
 1. Preamble.
-2. For each item: create (no id), rename/reposition (id), or destroy
-   (`_destroy: true`).
-3. Validate names non-blank and unique among active; positions form a valid set.
-4. Prune dependency id-refs for destroyed enumerations.
-5. `field.save!`; audit `update_enumerations`.
+2. Reject `LIST_FAMILY` → `error_format_unsupported`: `possible_values` are plain
+   strings with no id, position or active flag; lists keep §A–§D.
+3. The submitted id set must equal the field's enumeration id set exactly →
+   else `error_reorder_mismatch`. A partial or tampered payload is refused
+   whole rather than applied in part; a concurrent add/delete is already caught
+   by the state hash, so this never fires on a legitimate save.
+4. `normalize` each name; any blank → `error_value_blank`.
+5. Duplicate check on the **resulting** state: no two rows that end up `active`
+   may share a name → `error_value_duplicate`. This catches both a rename onto
+   a sibling's name and a reactivation onto a name meanwhile taken. Core has no
+   such validation, but §A and §B enforce it, so this path must not be a way
+   around them. A name duplicating an **inactive** value stays allowed.
+6. Order rows by submitted `position` (ties → current position, then input
+   order) and assign contiguous positions `1..N`.
+7. Apply name / position / active per changed row via `enum.update!`. Model
+   validation failures (e.g. name over 60 chars) roll the **whole** save back.
+8. If any row went active → inactive and `field.default_value` is that id, clear
+   it (`field.save!`). The format only offers `enumerations.active`, so a default
+   pointing at a deactivated value is unreachable *and* invisible on the values
+   screen — the picker there lists active values only. Recorded in the audit
+   summary as `default value cleared`.
+9. Audit `update_enumerations` once, with a compact delta (renamed / activated /
+   deactivated names, capped at 20 with a `(+N more)` tail, plus a `reordered`
+   flag) and `affected_values_count` = summed `UsageCalculator.usage_total` of
+   the deactivated ids — the stored values now pointing at an inactive option.
 
+**No parent-side cascade and no own-dependency prune.** Enumeration renames are
+id-stable (§B), and deactivation is a reversible visibility flag: existing
+`CustomValue` ids still resolve to the (inactive) name, and keeping the
+dependency entries is what lets a record already on a deactivated **parent**
+value keep its allowed child options. Pruning would leave such a record with no
+selectable child. `default_value_dependencies` are likewise left intact: the
+project-level matrix lists **all** enumerations (`value_options`), so an entry
+pointing at a deactivated value stays visible and editable there — unlike the
+plain default of step 8, which would silently disappear from its picker.
+
+For the same reason — reversible, destroys nothing — this operation needs **no
+confirmation panel** on shared/global fields; the scope badge and warning banner
+on the screen already state the blast radius. Delete (§C) keeps its panel: it is
+the operation that prunes and destroys.
+
+> Asymmetry to know about: Remove (§C) deactivates an in-use enumeration *and*
+> prunes it as a parent key from depending children. Reactivating such a value
+> here restores the value but **not** the pruned mappings — the two are not
+> inverses, by design.
+>
 > Enumeration-backed fields are **not** treated like string arrays: they use ids
-> and positions via `CustomFieldEnumeration`. Verified against plugin API
-> behaviour (README enumeration examples).
+> and positions via `CustomFieldEnumeration`.
+
+The single-value endpoints §B (`rename_value`) and §D (`reorder_values`) still
+accept enumeration params — the list family shares them — but the project screen
+no longer routes enumeration edits through them.
 
 ## F. Dependency mapping
 
@@ -262,6 +319,8 @@ Params: `default_value_dependencies` (hash).
 | Blank value | 422 | error_value_blank |
 | Duplicate value | 422 | error_value_duplicate |
 | Reorder mismatch | 422 | error_reorder_mismatch |
+| Batch save: name taken by another active value | 422 | error_value_duplicate |
+| Batch save: submitted ids do not cover the value set | 422 | error_reorder_mismatch |
 | Invalid dependency | 422 | error_invalid_dependency |
 | In-use (when blocking enabled) | 422 | error_value_in_use |
 | Stale edit | 409/422 | error_stale_edit |

@@ -288,7 +288,11 @@ Add, rename, remove and reorder values; manage enumeration values; set the
 field's default value; and edit the dependency matrix. Values are reordered by
 dragging the handle to the target position — the same drag handle, and the same
 single control, that Redmine itself uses for enumeration values in
-Administration. For `multiple` fields the
+Administration. Key/value (enumeration) values are edited exactly as
+Administration edits them: the table is one form with a single **Save** that
+applies renames, reordering and the **Active** checkbox together — unticking
+Active hides the value from every picker without deleting anything, and ticking
+it again brings the value back. For `multiple` fields the
 per-parent default selectors allow choosing several values. The feature
 **cannot** create or delete fields, or change a field's type, visibility,
 required flag, tracker or project applicability.
@@ -300,6 +304,12 @@ required flag, tracker or project applicability.
   all in one transaction. Removing a value never deletes issue data (list values
   are left orphaned; in-use enumeration values are deactivated rather than
   destroyed).
+* Deactivating an enumeration value is reversible and destroys nothing: stored
+  issue values keep resolving to the (inactive) name and the dependency matrix is
+  left untouched, so reactivating restores the previous behaviour — including for
+  issues already sitting on a deactivated parent value. The only thing it changes
+  besides the flag is the field's default value, which is cleared if it pointed
+  at the value being deactivated.
 * Editing a field shared with, or global to, other projects is allowed but
   surfaced with scope badges, a warning banner, an impact panel and a required
   confirmation checkbox.

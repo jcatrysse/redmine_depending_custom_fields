@@ -58,6 +58,7 @@ nl:
   notice_value_added: "Waarde toegevoegd."
   notice_value_renamed: "Waarde hernoemd."
   notice_value_removed: "Waarde verwijderd."
+  notice_values_saved: "Waarden opgeslagen."
   notice_values_reordered: "Waarden geherordend."
   notice_dependencies_saved: "Afhankelijkheidskoppeling opgeslagen."
   notice_default_value_set: "Standaardwaarde opgeslagen."

@@ -36,38 +36,52 @@
     <% if @enumerations.empty? %>
       <p class="nodata"><%= l(:text_no_values) %></p>
     <% else %>
-      <table class="list dcf-values">
-        <thead>
-          <tr>
-            <th><%= l(:label_dcf_value) %></th>
-            <th><%= l(:field_active) %></th>
-            <th></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <% @enumerations.each do |enum| %>
-            <tr data-dcf-value="<%= enum.id %>">
-              <td>
-                <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
-                  <%= hidden_field_tag :enumeration_id, enum.id %>
-                  <%= hidden_field_tag :state_hash, @state_hash %>
-                  <%= text_field_tag :new_value, enum.name, size: 30 %>
-                  <%= submit_tag l(:button_save), name: nil, class: 'small' %>
-                <% end %>
-              </td>
-              <td><%= enum.active? ? l(:general_text_Yes) : l(:general_text_No) %></td>
-              <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
-              <td>
-                <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
-                              method: :delete,
-                              params: { enumeration_id: enum.id, state_hash: @state_hash },
-                              data: { confirm: l(:text_are_you_sure) }, class: 'small' %>
-              </td>
+      <%# One form for the whole table with a single Save, exactly as core's
+          custom_field_enumerations#index does: names, positions and active flags
+          are staged in the form and committed together. The drag handle only
+          rewrites the hidden position inputs (dcf_value_reorder.js), it does not
+          submit. Delete is a link rather than a button_to because forms cannot
+          nest — again core's own choice on this screen (delete_link). %>
+      <%= form_tag(custom_field_configuration_update_enumerations_path(@project, @field),
+                   method: :patch, class: 'dcf-enumerations-form') do %>
+        <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+        <table class="list dcf-values">
+          <thead>
+            <tr>
+              <th><%= l(:label_dcf_value) %></th>
+              <th><%= l(:field_active) %></th>
+              <th></th>
+              <th></th>
             </tr>
-          <% end %>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <% @enumerations.each_with_index do |enum, idx| %>
+              <tr data-dcf-value="<%= enum.id %>">
+                <td>
+                  <%= hidden_field_tag "enumerations[#{enum.id}][position]", idx + 1,
+                                       id: nil, class: 'dcf-position' %>
+                  <%= text_field_tag "enumerations[#{enum.id}][name]", enum.name, size: 30, id: nil %>
+                </td>
+                <%# Core's control: a checkbox backed by a hidden "0" so unticking
+                    submits. The column header already reads "Active", so the
+                    checkbox carries its accessible name in the attributes rather
+                    than repeating the word in every row. %>
+                <td class="dcf-active">
+                  <%= hidden_field_tag "enumerations[#{enum.id}][active]", 0, id: nil %>
+                  <%= check_box_tag "enumerations[#{enum.id}][active]", 1, enum.active?, id: nil,
+                                    title: l(:field_active), 'aria-label': l(:field_active) %>
+                </td>
+                <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
+                <td>
+                  <%= delete_link(custom_field_configuration_remove_value_path(
+                        @project, @field, enumeration_id: enum.id, state_hash: @state_hash)) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+        <p class="buttons"><%= submit_tag l(:button_save) %></p>
+      <% end %>
     <% end %>
   <% else %>
     <% if @list_values.empty? %>
@@ -117,7 +131,10 @@
     <% end %>
   <% end %>
 
-  <%= render partial: 'reorder_form' if row_ids.length > 1 %>
+  <%# The list family still reorders by submitting a drag straight away, so it
+      needs the separate target form. The enumeration table stages positions in
+      its own batch form instead. %>
+  <%= render partial: 'reorder_form' if !enum_family && row_ids.length > 1 %>
 
   <p>
     <% unless @show_usage || enum_family %>

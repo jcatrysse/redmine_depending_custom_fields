@@ -9,12 +9,12 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   before_action :authorize
   before_action :ensure_audit_table
   before_action :find_field, only: %i[show add_value rename_value remove_value
-                                       reorder_values set_default_value
+                                       reorder_values update_enumerations set_default_value
                                        edit_dependencies update_dependencies]
   before_action :require_dependency_capable, only: %i[edit_dependencies update_dependencies]
   before_action :require_active_project, only: %i[add_value rename_value remove_value
-                                                  reorder_values set_default_value
-                                                  update_dependencies]
+                                                  reorder_values update_enumerations
+                                                  set_default_value update_dependencies]
 
   # Overview lives inline in the Project → Settings tab; the canonical URL just
   # redirects there so there is a single overview surface (Integration §4).
@@ -44,6 +44,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   def reorder_values
     perform_value_operation(RedmineDependingCustomFields::ReorderValuesService,
                             action: :reorder_values, notice: :notice_values_reordered)
+  end
+
+  # Batch save of the enumeration table: names + positions + active flags in one
+  # request, the way core's CustomFieldEnumerations#update_each works.
+  def update_enumerations
+    perform_value_operation(RedmineDependingCustomFields::UpdateEnumerationsService,
+                            action: :update_enumerations, notice: :notice_values_saved)
   end
 
   def set_default_value
@@ -184,8 +191,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   end
 
   def value_params
+    # `enumerations` arrives as a hash of hashes keyed by enumeration id; permit
+    # only the three editable attributes per row (same shape core permits in
+    # CustomFieldEnumerationsController#update_each_params).
     params.permit(:value, :position, :old_value, :new_value, :enumeration_id,
-                  :default_value, :confirm, :state_hash, ordered_values: []).to_h.symbolize_keys
+                  :default_value, :confirm, :state_hash,
+                  ordered_values: [],
+                  enumerations: %i[name position active]).to_h.symbolize_keys
   end
 
   def dependency_params

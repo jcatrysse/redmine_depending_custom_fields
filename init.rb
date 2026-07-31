@@ -29,8 +29,8 @@ Redmine::AccessControl.map do |map|
   map.permission :manage_project_custom_field_configuration,
                  { project_custom_field_configuration:
                      %i[index show add_value rename_value remove_value
-                        reorder_values set_default_value edit_dependencies
-                        update_dependencies audit],
+                        reorder_values update_enumerations set_default_value
+                        edit_dependencies update_dependencies audit],
                    # Grant access to the project settings page itself so a
                    # permission holder can reach the tab (mirrors how core
                    # settings-tab permissions list projects/settings).

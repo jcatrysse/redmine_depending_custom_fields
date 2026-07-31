@@ -123,3 +123,5 @@
 
 * Drag-and-drop value ordering on the project custom-field configuration
   page
+* Edit key-value (enumeration) values the way Redmine's own Administration
+  screen does.

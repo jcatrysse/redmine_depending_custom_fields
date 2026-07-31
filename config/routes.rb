@@ -30,6 +30,9 @@ RedmineApp::Application.routes.draw do
     patch  'custom_field_configuration/fields/:field_id/values/reorder',
            to: 'project_custom_field_configuration#reorder_values',
            as: 'custom_field_configuration_reorder_values'
+    patch  'custom_field_configuration/fields/:field_id/enumerations',
+           to: 'project_custom_field_configuration#update_enumerations',
+           as: 'custom_field_configuration_update_enumerations'
     patch  'custom_field_configuration/fields/:field_id/default_value',
            to: 'project_custom_field_configuration#set_default_value',
            as: 'custom_field_configuration_set_default_value'

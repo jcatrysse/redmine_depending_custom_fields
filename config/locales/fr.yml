@@ -58,6 +58,7 @@ fr:
   notice_value_added: "Valeur ajoutée."
   notice_value_renamed: "Valeur renommée."
   notice_value_removed: "Valeur supprimée."
+  notice_values_saved: "Valeurs enregistrées."
   notice_values_reordered: "Valeurs réordonnées."
   notice_dependencies_saved: "Mappage des dépendances enregistré."
   notice_default_value_set: "Valeur par défaut enregistrée."

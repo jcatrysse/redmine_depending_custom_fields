@@ -102,6 +102,22 @@ module DcfConfigHelpers
     issue
   end
 
+  # An issue whose custom field values go through Redmine's real validation,
+  # unlike dcf_issue_with_value / dcf_custom_value which write the CustomValue
+  # row directly. +values+ maps CustomField => value; each field must be linked
+  # to the tracker or Issue#available_custom_fields ignores it and nothing is
+  # stored.
+  def dcf_real_issue(project, values)
+    tracker, status, priority = dcf_issue_infra(project)
+    values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+    tracker.save!
+    issue = Issue.new(project: project, tracker: tracker, subject: 'S',
+                      author: dcf_admin, status: status, priority: priority)
+    issue.custom_field_values = values.transform_keys(&:id)
+    issue.save!
+    issue
+  end
+
   # A bare CustomValue row (no real issue) — enough to test the value rewrite,
   # which is scoped by custom_field_id + value (no project join).
   def dcf_custom_value(field, value, customized_id: 999_999)

@@ -72,7 +72,8 @@ right to see what changed in that project.
 | `rename_value` | value / enumeration renamed |
 | `remove_value` | value / enumeration removed |
 | `reorder_values` | order/position changed |
-| `update_enumerations` | batched enumeration changes (if used) |
+| `update_enumerations` | batched enumeration save: names / positions / active flags |
+| `set_default_value` | the field's plain `default_value` set or cleared |
 | `update_dependencies` | value dependency mapping changed |
 | `update_default_dependencies` | default value dependencies changed |
 | `cleanup_invalid_dependencies` | orphan mappings cleaned |

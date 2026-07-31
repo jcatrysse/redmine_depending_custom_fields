@@ -201,6 +201,204 @@ RSpec.describe 'Project custom field configuration', type: :request do
     end
   end
 
+  # --- Enumeration batch editor (T-ACT) ----------------------------------
+  describe 'enumeration values screen' do
+    let(:enum_field) { dcf_enum_field(names: %w[X Y]) }
+    let(:first_value) { enum_field.enumerations.order(:position).first }
+
+    # Attribute order differs between Rails versions, so match on the tag's
+    # attributes rather than on a literal rendering.
+    def inputs(body, type, name)
+      body.scan(/<input\b[^>]*>/)
+          .select { |i| i.include?(%(name="#{name}")) && i.include?(%(type="#{type}")) }
+    end
+
+    def payload(field, overrides = {})
+      params = {}
+      field.enumerations.order(:position).each_with_index do |enum, idx|
+        over = overrides[enum.id] || {}
+        params[enum.id.to_s] = {
+          name: over.fetch(:name, enum.name),
+          position: over.fetch(:position, idx + 1).to_s,
+          active: (over.key?(:active) ? over[:active] : enum.active?) ? '1' : '0'
+        }
+      end
+      params
+    end
+
+    it 'renders one batch form with a single Save for the whole table (T-ACT-13)' do
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum_field)
+      expect(response).to have_http_status(:ok)
+      form = response.body[%r{<form[^>]*dcf-enumerations-form.*?</form>}m]
+      expect(form).to be_present
+      expect(form).to include('/enumerations')
+      # Exactly one submit button in the whole table form — core's shape.
+      expect(form.scan(/<input[^>]*type="submit"/).length).to eq(1)
+      # Per row: a hidden position, a hidden active "0" and the checkbox.
+      enum_field.enumerations.each do |e|
+        expect(form).to include(%(name="enumerations[#{e.id}][position]"))
+        expect(form).to include(%(name="enumerations[#{e.id}][name]"))
+        expect(inputs(form, 'hidden', "enumerations[#{e.id}][active]").first).to include('value="0"')
+        expect(inputs(form, 'checkbox', "enumerations[#{e.id}][active]").length).to eq(1)
+      end
+      # The static Yes/No readout is replaced by the control itself.
+      expect(response.body).not_to include("<td>#{I18n.t(:general_text_Yes)}</td>")
+    end
+
+    it 'reflects the current state in the checkboxes (T-ACT-13)' do
+      first_value.update!(active: false)
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum_field)
+      boxes = enum_field.enumerations.order(:position).map do |e|
+        inputs(response.body, 'checkbox', "enumerations[#{e.id}][active]").first
+      end
+      expect(boxes.compact.length).to eq(2)
+      expect(boxes.count { |b| b.include?('checked') }).to eq(1)
+    end
+
+    # Delete must be a link, not a nested form: forms cannot nest, and this is
+    # exactly what core's delete_link does on the same screen.
+    it 'renders Delete as a link inside the batch form (T-ACT-25)' do
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum_field)
+      form = response.body[%r{<form[^>]*dcf-enumerations-form.*?</form>}m]
+      expect(form.scan('<form').length).to eq(1)    # the outer form only, none nested
+      expect(form).to include('data-method="delete"')
+      expect(form).to include(%(enumeration_id=#{first_value.id}))
+    end
+
+    # The enumeration table stages positions in its own form; only the list
+    # family still submits a drag straight away.
+    it 'stages positions instead of shipping a reorder form (T-ACT-26)' do
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum_field)
+      expect(response.body).to include('class="dcf-position"')
+      expect(response.body).not_to include('dcf-reorder-form')
+      expect(response.body.scan('dcf-sort-handle').length).to eq(2)
+    end
+
+    it 'leaves the list family on its per-row forms and live drag (T-ACT-26)' do
+      field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, field)
+      expect(response.body).not_to include('dcf-enumerations-form')
+      expect(response.body).not_to include('class="dcf-position"')
+      expect(response.body).to include('dcf-reorder-form')
+    end
+
+    it 'saves a deactivation and reports it in the flash (T-ACT-1)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }),
+                      state_hash: RedmineDependingCustomFields::BaseService.state_hash(enum_field) }
+      expect(response).to redirect_to(custom_field_configuration_field_path(project, enum_field))
+      expect(flash[:notice]).to eq(I18n.t(:notice_values_saved))
+      expect(first_value.reload.active).to be false
+    end
+
+    it 'saves a rename, a deactivation and a reorder together (T-ACT-20)' do
+      x, y = enum_field.enumerations.order(:position).to_a
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field,
+                                            x.id => { name: 'X2', position: 2, active: false },
+                                            y.id => { position: 1 }) }
+      expect(response).to have_http_status(:redirect)
+      expect(enum_field.reload.enumerations.order(:position).map(&:name)).to eq(%w[Y X2])
+      expect(x.reload.active).to be false
+    end
+
+    it 'drops a deactivated value from the default-value picker (T-ACT-14)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }) }
+      get custom_field_configuration_field_path(project, enum_field)
+      picker = response.body[%r{<select[^>]*name="default_value".*?</select>}m]
+      expect(picker).to be_present
+      expect(picker).not_to include(%(value="#{first_value.id}"))
+      expect(picker).to include(%(value="#{enum_field.enumerations.order(:position).last.id}"))
+    end
+
+    # Empty-state guard: every value can legitimately be switched off, and the
+    # screen (rows, default picker, add form) must still render.
+    it 'still renders the screen when every value is deactivated (T-ACT-16)' do
+      enum_field.enumerations.update_all(active: false)
+      as(dcf_manager(project))
+      get custom_field_configuration_field_path(project, enum_field)
+      expect(response).to have_http_status(:ok)
+      boxes = enum_field.enumerations.map { |e| inputs(response.body, 'checkbox', "enumerations[#{e.id}][active]").first }
+      expect(boxes.compact.length).to eq(2)
+      expect(boxes.none? { |b| b.include?('checked') }).to be true
+      expect(response.body).to include(I18n.t(:text_dcf_no_default))
+      expect(response.body).to include(I18n.t(:label_add_value))
+    end
+
+    it 'returns 422 on a list field (T-ACT-3)' do
+      field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, field),
+            params: { enumerations: {} }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t(:error_format_unsupported))
+    end
+
+    it 'returns 422 for a submit that does not cover every row (T-ACT-21)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field).except(first_value.id.to_s) }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t(:error_reorder_mismatch))
+    end
+
+    it 'returns 422 and keeps everything on a blank name (T-ACT-22)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { name: '  ' }) }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t(:error_value_blank))
+      expect(first_value.reload.name).to eq('X')
+    end
+
+    it 'returns 409 on a stale state_hash (T-ACT-9)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }),
+                      state_hash: 'stale' }
+      expect(response).to have_http_status(:conflict)
+      expect(response.body).to include(I18n.t(:error_stale_edit))
+      expect(first_value.reload.active).to be true
+    end
+
+    it 'returns 403 for a user without the permission (T-ACT-12)' do
+      as(dcf_create_user('outsider'))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }) }
+      expect(response).to have_http_status(:forbidden)
+      expect(first_value.reload.active).to be true
+    end
+
+    it 'forbids the save on a closed project (T-ACT-15)' do
+      closed = dcf_create_project(name: 'ClosedAct', status: :closed)
+      as(dcf_manager(closed))
+      patch custom_field_configuration_update_enumerations_path(closed, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }) }
+      expect(response).to have_http_status(:forbidden)
+      expect(first_value.reload.active).to be true
+    end
+
+    it 'ignores out-of-scope params on the batch save (T-SEC-1)' do
+      as(dcf_manager(project))
+      patch custom_field_configuration_update_enumerations_path(project, enum_field),
+            params: { enumerations: payload(enum_field, first_value.id => { active: false }),
+                      field_format: 'bool', is_for_all: '0', is_required: '1' }
+      enum_field.reload
+      expect(enum_field.field_format).to eq('enumeration')
+      expect(enum_field.is_for_all).to be true
+      expect(enum_field.is_required).to be false
+    end
+  end
+
   describe 'screen rendering' do
     it 'renders the values screen for a list field with an add form' do
       field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])

@@ -95,9 +95,32 @@ Sections:
 Buttons: `<p class="buttons">` Save / Cancel (Cancel returns to overview).
 
 ### Enumeration variant
-Same layout, but rows are `CustomFieldEnumeration` records; Rename is safe
-(id-stable) — the warning notes that rename does not affect stored issue values,
-while Remove deactivates/destroys and warns about historical references.
+Same layout, but rows are `CustomFieldEnumeration` records and the **submit model
+is core's own for this screen** (`custom_field_enumerations#index`): the whole
+table sits in **one** form with a **single Save** at the bottom, and per row a
+hidden `position`, the name field, and an **Active** checkbox preceded by a
+hidden `active=0` so unticking submits. The drag handle only rewrites the hidden
+`position` inputs; nothing is submitted until Save. One Save = one
+`update_enumerations` operation = one audit event (Operations §E).
+
+- Delete stays per-row but is a **link** (core's `delete_link`), not a
+  `button_to` — forms cannot nest, which is exactly why core uses a link here.
+  It carries `enumeration_id` + `state_hash` in the query string and still
+  routes through Remove (§C), so its impact panel and confirmation are unchanged.
+  Pending, unsaved edits are lost when Delete navigates away — also core's
+  behaviour.
+- Rename is safe (id-stable): it does not affect stored issue values. Delete
+  deactivates or destroys and warns about historical references.
+- Unticking Active removes the value from every picker without deleting
+  anything; inactive rows stay listed, renameable and draggable so they can be
+  switched back on.
+- Core pairs its checkbox with a visible `l(:field_active)` label because its
+  values are a flat `<ul>`; here the column header already reads "Active", so the
+  checkbox carries the same string as `title`/`aria-label` instead of repeating
+  it in every row.
+- The `list` family has **no** Active column and keeps the per-row rename form,
+  the per-row Delete button and the live drag of §D — plain string values have no
+  id, position or active flag, and core has no table UI for them to copy.
 
 ## 5. Screen 3 — Dependency mapping (action `edit_dependencies`)
 
@@ -153,6 +176,7 @@ Labels: `label_project_custom_field_configuration`,
 > §4 item 1 impact summary box, which is not rendered yet; see the note there.
 Permission: `permission_manage_project_custom_field_configuration`.
 Notices: `notice_value_added/renamed/removed`, `notice_values_reordered`,
+`notice_values_saved` (the enumeration batch Save),
 `notice_dependencies_saved`.
 Errors: as listed in §7.
 Warnings: `text_shared_field_warning`, `text_global_field_warning`,
@@ -164,6 +188,10 @@ Warnings: `text_shared_field_warning`, `text_global_field_warning`,
   to 7.0 ships an up/down reorder control (`reorder_links` does not exist;
   `reorder_handle` is the single affordance in all six reorderable core views,
   and the leftover `table.list td.reorder` CSS rule is used by none of them).
+  Core has two *submit* models behind that one affordance and this screen uses
+  one per family: staged-until-Save for the enumeration table
+  (`custom_field_enumerations#index`), submit-on-drop for the list table
+  (`positionedItems`). See Amendment A3 in the review log.
   The handle is pointer-only, as core's is, so reordering requires JavaScript
   and a pointer — a deliberate parity decision, revisit only if core does.
 - The handle is hidden until the sortable initialises, so a client without

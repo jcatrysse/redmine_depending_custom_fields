@@ -58,6 +58,7 @@ de:
   notice_value_added: "Wert hinzugefügt."
   notice_value_renamed: "Wert umbenannt."
   notice_value_removed: "Wert entfernt."
+  notice_values_saved: "Werte gespeichert."
   notice_values_reordered: "Werte neu angeordnet."
   notice_dependencies_saved: "Abhängigkeitszuordnung gespeichert."
   notice_default_value_set: "Standardwert gespeichert."

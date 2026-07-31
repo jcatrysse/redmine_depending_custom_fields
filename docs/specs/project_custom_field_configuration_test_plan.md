@@ -107,6 +107,62 @@ Enumeration removal semantics (independent-review fix #9):
   (`active=false`); existing `CustomValue` ids still resolve to the name.
 - T-ENU-2 Removing an **unused** enumeration value hard-destroys it.
 
+Enumeration batch editor (Operations Spec §E):
+- T-ACT-1 Unticking Active clears the flag and drops the value from
+  `possible_values_options` (standard **and** `depending_enumeration`).
+- T-ACT-2 Re-ticking it restores the value.
+- T-ACT-3 The operation is rejected on a `list`/`depending_list` field
+  (422 `error_format_unsupported`); that screen renders no batch form.
+- T-ACT-4 A payload naming an enumeration of **another** field → 422
+  `error_reorder_mismatch`, and that record is untouched.
+- T-ACT-5 Deactivating the value that is `default_value` clears the default;
+  deactivating any other value leaves it alone.
+- T-ACT-6 Reactivating a value whose name is meanwhile held by an **active**
+  value → 422 `error_value_duplicate`.
+- T-ACT-7 The save leaves the field's own `value_dependencies` and its
+  children's parent keys untouched (contrast T-CAS-3/T-CAS-4).
+- T-ACT-8 Existing `CustomValue` rows survive and still resolve to the name.
+- T-ACT-9 Stale `state_hash` → 409; a hash captured before an earlier save is
+  stale afterwards (the digest covers name, position and active).
+- T-ACT-10 One `update_enumerations` audit event per Save, summarising what
+  changed (`renamed n, deactivated n, reordered`, plus `default value cleared`),
+  with `affected_values_count` = stored values now pointing at a deactivated
+  option.
+- T-ACT-11 A row omitting `active` counts as unticked; a Save that changes
+  nothing succeeds and says so.
+- T-ACT-12 No permission → 403, nothing changed (service **and** request level).
+- T-ACT-13 One form for the table with exactly **one** submit button; per row a
+  hidden position, a hidden `active=0` and a checkbox ticked iff active; no
+  static Yes/No readout.
+- T-ACT-14 A deactivated value disappears from the default-value picker.
+- T-ACT-15 The save is forbidden on a closed/archived project.
+- T-ACT-16 The screen still renders when every value is deactivated.
+- T-ACT-20 One Save applies a rename **and** a deactivation **and** a reorder,
+  writing exactly one audit event.
+- T-ACT-21 A submit not covering every row is refused whole (422), applying none
+  of it.
+- T-ACT-22 A blank name is refused and nothing else in the same Save is applied;
+  a name the model rejects (over 60 chars) rolls the whole Save back.
+- T-ACT-23 Submitted positions are applied.
+- T-ACT-24 A rename colliding with a sibling **inside the same Save** → 422;
+  a name duplicating an **inactive** value is allowed.
+- T-ACT-25 Delete renders as a link (`data-method="delete"`) inside the batch
+  form — no nested form — carrying `enumeration_id` + `state_hash`.
+- T-ACT-26 The enumeration table ships `input.dcf-position` and **no**
+  `dcf-reorder-form` (staged drag); the list table ships the reorder form and no
+  batch form (submit-on-drop).
+
+The production contract of "deactivate, don't delete", exercised through
+Redmine's real `Issue` validation (`dcf_real_issue`, not a bare `CustomValue`
+row) — these are the guard against a future prune being added to §E:
+- T-ACT-17 An issue holding a deactivated value re-saves, keeps the value, and
+  still casts to its name; core re-adds the stored value to that record's
+  options (`possible_custom_value_options`) so an edit cannot silently drop it.
+- T-ACT-18 A **new** issue cannot select the deactivated value.
+- T-ACT-19 An issue already on a deactivated **parent** value re-saves and its
+  child field keeps exactly the options it had — true only because §E does not
+  prune the mapping.
+
 ## 5. Impact / usage tests
 
 - T-USE-1 per-value usage count (current project) correct.

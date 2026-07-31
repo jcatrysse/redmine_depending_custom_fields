@@ -215,3 +215,181 @@ Resulting spec changes:
 - **Agent Plan, Agent 6** — the "no-JS reorder" scope item is marked superseded.
 - Locale keys `label_dcf_move_up` / `label_dcf_move_down` deleted from en, nl,
   fr and de as no code references them any more.
+
+## Amendment A3 — Enumeration values can be activated / deactivated
+
+The values screen showed the `active` flag of an enumeration value as a
+read-only "Yes" / "No", so the only way to switch a value off was to go to
+Administration — exactly the round trip this feature exists to remove. The flag
+is now editable, with core's own control (Operations Spec §I, UI Spec §4).
+
+Adversarial findings raised while implementing, and how each is resolved:
+
+- **F-A3.1** A dedicated operation, or the `active` checkbox folded into the
+  existing rename form (core saves name + position + active with one button)?
+  → Folding them in would file a deactivation in the audit trail as
+  `rename_value`, which is unacceptable for an audit-first feature. Resolved
+  as a **separate operation** in a **separate inline form**, which is also the
+  pattern this screen already uses: one operation per editable cell.
+- **F-A3.2** Reactivating a value whose name was meanwhile taken by an active
+  value would create two active values with the same name — a state Add (§A)
+  and Rename (§B) both refuse to produce. Core has no such validation, but
+  inheriting that gap here would let the toggle bypass the plugin's own rule.
+  → **Resolved:** reactivation is rejected with `error_value_duplicate`
+  (T-ACT-6).
+- **F-A3.3** Deactivating the value that is the field's `default_value` leaves
+  the default pointing at an option no picker offers — and the values screen's
+  own default picker lists active values only, so the stale default is
+  invisible there and cannot be corrected by inspection. → **Resolved:** the
+  default is cleared as part of the operation and named in the audit summary
+  (T-ACT-5). `default_value_dependencies` are deliberately **not** pruned: the
+  project-level matrix lists all enumerations, so those entries stay visible
+  and editable, and pruning them would not survive a reactivation.
+- **F-A3.4** Should deactivation prune parent keys from depending children, as
+  Remove (§C) does? → **No.** Remove is terminal; deactivation is a reversible
+  visibility flag, and pruning would silently discard mappings that ticking the
+  box again cannot restore (T-ACT-7). The asymmetry — remove-then-reactivate is
+  not a round trip — is recorded in Operations §I.
+- **F-A3.5** Should a shared/global field require the confirmation panel before
+  a value is switched off? → **No.** The panel guards changes that destroy or
+  rewrite data; deactivation destroys nothing and is undone by ticking the box.
+  The scope badge and warning banner already state the blast radius.
+- **F-A3.6** A new controller action is unreachable until it is listed in
+  `Redmine::AccessControl.map`; `authorize` fails closed with 403 otherwise.
+  Caught by the request specs before review. → **Resolved:** `set_value_active`
+  added to the permission's action list in `init.rb`.
+- **F-A3.7** The state-hash digest already covers `active`, so a hash captured
+  before a toggle is stale afterwards — a second tab cannot silently re-toggle
+  (T-ACT-9). No change needed; locked in by a test.
+- **F-A3.8** Core renders a visible `l(:field_active)` label next to each
+  checkbox because its values are a flat `<ul>`. Here the table header already
+  carries that word. → Label dropped, string kept as `title`/`aria-label` so the
+  checkbox still has an accessible name (UI §4).
+
+Pre-existing behaviour noticed but deliberately **not** changed here: the
+project-level dependency matrix lists inactive enumerations as tickable child
+values (the controller's `value_options` does not filter on `active`, unlike the
+admin matrix partial, which goes through `possible_values_options`). Hiding them
+would silently drop existing mappings on the next save, so it needs its own
+change with its own migration story.
+
+### A3 red-team pass — measured, not argued
+
+Every claim in Amendment A3 was re-checked against a running Redmine (5.1, 6.0,
+6.1, 7.0 on sqlite) rather than reasoned about. What the probes showed:
+
+- The first round of probes was **vacuous**: the custom field was never linked
+  to the tracker, so `Issue#available_custom_fields` ignored it and nothing was
+  stored. "Existing values survive" had until then only been asserted at the
+  `CustomValue`-row level, never through `Issue` validation. `dcf_real_issue`
+  was added to the spec helpers to close that gap, and T-ACT-17/18/19 now
+  exercise the real path.
+- **Confirmed:** an issue holding a deactivated value re-saves cleanly, keeps
+  the value, and still casts to its name — core's
+  `RecordList#possible_custom_value_options` re-adds `value_was` for the record
+  that holds it. A **new** issue is refused ("is not included in the list").
+- **Confirmed:** an issue already on a deactivated **parent** value re-saves and
+  its child field keeps exactly its previous options — this only holds because
+  §I does not prune. Pruning would have left that issue with no allowed child.
+- **No stale-cache path.** `depending_custom_fields/mapping` holds only
+  `parent_id` / `map` / `defaults` / `hide_when_disabled`, all id-keyed and read
+  from the `CustomField` row, so an enumeration toggle cannot stale it. (The
+  `dcf/*` namespace is deleted in two places and written nowhere — dead, and
+  unrelated.)
+- **Page weight**, measured on 6.1: +840 bytes per row (per-row `<form>` +
+  `_method` + three hidden inputs + submit, plus a CSRF token in production).
+  10 values: 28.3 KB → 36.7 KB. 200 values: 351 KB → 520 KB (+48% on a page that
+  was already heavy). Irrelevant at the value counts this screen is built for;
+  the cheaper shape would be core's single `update_each` form for the whole
+  table, which this screen's one-form-per-cell design rules out.
+
+Residual risk accepted, **not** introduced here: deactivating the last active
+value of a **required** field blocks issue creation wherever the field applies
+("cannot be blank", measured). Delete already reached the same state — with a
+confirmation panel in front of it — so the toggle lowers the friction rather
+than opening a new hole. A warning when a field is left with zero active values
+would cover both operations and is the natural follow-up.
+
+## Amendment A4 — The enumeration table follows core's submit model
+
+Raised by the maintainer against Amendment A3: *"wel een beetje vreemd met een
+save knop per lijn… ik denk dat Redmine de move en de save niet live doet maar
+met een algemene save knop?"* Correct on both counts, and A3 was wrong to claim
+core parity for the whole control.
+
+**What core actually does.** There are **two** patterns, verified in 6.1 source:
+
+1. `reorder_handle` + `$.fn.positionedItems` (`application-legacy.js`) — used by
+   trackers, issue statuses, roles, enumerations, custom_fields index: a drop
+   fires an immediate AJAX `PUT` of that one item's new position. No Save button.
+2. `custom_field_enumerations#index` — **the screen this feature copies**: the
+   whole list is one `form_tag(..., method: 'put')`; per row a hidden `position`,
+   a name field, a hidden `active=0` + checkbox, and a `delete_link`; **one**
+   `submit_tag(l(:button_save))` at the bottom. Its sortable's `update` handler
+   only rewrites `input.position` and submits nothing.
+
+A3 copied core's *control* (checkbox + hidden `0`) but not its *submit model*,
+and A2 had already borrowed pattern 1 for both families. The screen ended up with
+a per-row rename Save, a live-submitting drag, and a second per-row Save for
+Active — three interaction models where core has one per screen.
+
+**Resolution.** The enumeration table now uses pattern 2 in full: one form, one
+Save, staged positions, `PATCH …/enumerations` → `UpdateEnumerationsService`
+(Operations §E, which had reserved `update_enumerations` for exactly this and was
+marked "optional"). The list family keeps pattern 1 — core has no table UI for
+plain string values to copy, and a field is only ever one family, so a user never
+sees both models at once.
+
+Consequences accepted:
+
+- **A2 is revised, not reversed.** "One drag = one operation = one audit event"
+  still holds for the list family. For the enumeration table one *Save* is the
+  unit instead, which is strictly closer to core.
+- **Audit granularity is coarser by design**: one `update_enumerations` event per
+  Save rather than separate `rename_value` / `reorder_values` / activation
+  events. The information is preserved in the delta — renamed / activated /
+  deactivated name lists (capped at 20 with a `(+N more)` tail) plus a
+  `reordered` flag — and the summary reads e.g. `Saved 3 enumeration value(s):
+  renamed 1, deactivated 1, reordered`.
+- `set_value_active` (the A3 route, action, service and its two locale keys) is
+  **removed** rather than left alongside: a nested form is impossible, so keeping
+  it would mean two ways to write the same flag with only one reachable. Its
+  semantics moved into §E and its tests with them.
+- Delete becomes a `delete_link`, because forms cannot nest — core's own choice
+  here. Its impact panel and confirmation are unchanged. Pending unsaved edits
+  are lost if Delete is clicked first, exactly as in core.
+- §B (`rename_value`) and §D (`reorder_values`) still accept enumeration params
+  because the list family shares those endpoints; the project screen simply no
+  longer routes enumeration edits through them.
+
+New guards the batch shape required, both tested:
+
+- **F-A4.1** The duplicate check must look at the **resulting** state, not the
+  stored one — one Save can rename row 1 onto row 2's name, or reactivate a row
+  whose name a sibling now holds. A per-row check would have missed both.
+- **F-A4.2** The submitted id set must equal the field's exactly, so a partial or
+  tampered payload is refused whole instead of applied in part (T-ACT-21). A real
+  concurrent add/delete is already caught by the state hash.
+- **F-A4.3** Atomicity now matters in a way it did not for single-row operations:
+  a blank name, a duplicate, or a name the model rejects must leave *every* row
+  untouched. Validated before the write loop, with the transaction covering the
+  rest (T-ACT-22).
+
+Measured side effects, on 6.1: the A3 findings F3 (page weight) and F4 (two
+identical Save buttons per row) are gone, and the page is now **lighter than
+before this feature existed** — one form replaces N. 10 values: 28.3 KB baseline
+→ 36.7 KB with per-row Saves → **25.5 KB**. 200 values: 351 KB → 520 KB →
+**293 KB**. The old duplicate DOM ids in the enumeration table
+(`id="enumeration_id"` etc. repeated per row) disappear too, since the inputs are
+now name-indexed and carry no ids.
+
+Two smaller cleanups the new shape allowed:
+
+- The `.dcf-values td.dcf-active { white-space: nowrap }` rule added by A3 existed
+  only to keep a per-row Save next to its checkbox. Removed with the button.
+- `_confirm_panel` re-emits the pending params as hidden fields and handled only
+  scalars and arrays. A nested hash — the batch payload's shape — would have been
+  serialised into a single `value="{...}"` field. No confirmable operation submits
+  one (§E needs no panel), but the panel now skips hashes so a future confirmable
+  batch operation fails loudly on the id-set check instead of silently
+  re-submitting a mangled payload.

@@ -58,6 +58,7 @@ en:
   notice_value_added: "Value added."
   notice_value_renamed: "Value renamed."
   notice_value_removed: "Value removed."
+  notice_values_saved: "Values saved."
   notice_values_reordered: "Values reordered."
   notice_dependencies_saved: "Dependency mapping saved."
   notice_default_value_set: "Default value saved."

@@ -14,6 +14,11 @@
   <%= form_tag(url, method: method) do %>
     <% pending_params.each do |k, v| %>
       <% next if k.to_s == 'confirm' %>
+      <%# A nested hash (the enumerations batch payload) cannot round-trip
+          through a scalar hidden field. No confirmable operation submits one
+          today; dropping it makes a future one fail loudly with a validation
+          error rather than silently re-submitting a mangled payload. %>
+      <% next if v.is_a?(Hash) %>
       <% if v.is_a?(Array) %>
         <% v.each do |item| %><%= hidden_field_tag "#{k}[]", item %><% end %>
       <% else %>
