@@ -1,20 +1,9 @@
+# Saves the values chosen in the context menu wizard. The former 'options'
+# action is removed (SD-14): no client used it and it had no visibility check.
 class ContextMenuWizardController < ApplicationController
-  include ContextMenuWizardHelper
   before_action :require_login
-  before_action :find_issues, only: %i[options save]
+  before_action :find_issues, only: :save
   before_action :check_edit_permission, only: :save
-
-  def options
-    mapping = Rails.cache.fetch('depending_custom_fields/mapping') do
-      RedmineDependingCustomFields::MappingBuilder.build
-    end
-
-    if params[:parent_id].present? && params[:parent_value]
-      render json: child_options(mapping)
-    else
-      render json: parent_options(mapping)
-    end
-  end
 
   def save
     values = extract_custom_field_values
@@ -86,59 +75,6 @@ class ContextMenuWizardController < ApplicationController
       end
     ids = ids.map(&:to_i).reject(&:zero?)
     @issues = Issue.where(id: ids)
-  end
-
-  def parent_options(mapping)
-    parent_ids    = mapping.values.map { |i| i[:parent_id].to_i }.uniq
-    fields_by_id  = CustomField.where(id: parent_ids).index_by(&:id)
-
-    parent_ids.map do |pid|
-      cf = fields_by_id[pid]
-      next unless cf
-
-      next unless issues_all? do |issue|
-        begin
-          issue.available_custom_fields.include?(cf) &&
-            RedmineDependingCustomFields::CustomFieldVisibility.visible_to_user?(cf, issue.project, User.current)
-        rescue NoMethodError
-          true
-        end
-      end
-
-      allowed = intersect_allowed_values(cf, @issues) || []
-
-      { id: cf.id, name: cf.name, values: allowed }
-    end.compact
-  end
-
-  def child_options(mapping)
-    pid     = params[:parent_id].to_s
-    pval    = params[:parent_value].to_s
-    childs  = mapping.select { |_, info| info[:parent_id].to_s == pid }
-    ids     = childs.keys.map(&:to_i)
-    fields  = CustomField.where(id: ids).index_by(&:id)
-
-    childs.map do |cid, info|
-      cf = fields[cid.to_i]
-      next unless cf
-
-      next unless issues_all? do |issue|
-        begin
-          issue.available_custom_fields.include?(cf) &&
-            RedmineDependingCustomFields::CustomFieldVisibility.visible_to_user?(cf, issue.project, User.current)
-        rescue NoMethodError
-          true
-        end
-      end
-
-      allowed_by_parent = Array(info[:map][pval]).map(&:to_s)
-      allowed = cf.possible_values_options(@issues).map do |o|
-        o.is_a?(Array) ? o[1].to_s : o.to_s
-      end
-      allowed &= allowed_by_parent if allowed_by_parent.any?
-
-      { id: cf.id, name: cf.name, values: allowed || [] }
-    end.compact
   end
 
   def check_edit_permission

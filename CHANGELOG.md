@@ -142,6 +142,12 @@
   every other custom field of the import. Before, a user allowed to import
   issues could set such fields that are hidden for their role or read-only by
   workflow by mapping them in the import settings.
+* **Security:** the unused context-menu wizard endpoint
+  `/depending_custom_fields/options` is removed. Through a non-JSON extension
+  (for example `.html`) any logged-in user could list the dependent field
+  names and option values available on issues they are not allowed to see.
+  No part of the plugin called it; the wizard only posts to
+  `/depending_custom_fields/save`, which is unchanged.
 * Fixed: saving a depending field no longer fails with an internal error (and
   a rolled back save) on MemCacheStore or other cache stores without
   `delete_matched`.

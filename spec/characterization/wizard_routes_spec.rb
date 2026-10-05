@@ -22,20 +22,19 @@ RSpec.describe 'Context menu wizard routing (characterization)', type: :routing 
       .not_to route_to(controller: 'context_menu_wizard', action: 'options')
   end
 
-  it 'generates the shadowed path for context_menu_wizard#options' do
-    path = Rails.application.routes.url_helpers
-                .url_for(controller: 'context_menu_wizard', action: 'options', only_path: true)
-
-    expect(path).to eq('/depending_custom_fields/options')
+  # Flipped by the SD-14 fix: the wizard options route is removed.
+  it 'has no route for context_menu_wizard#options (SD-14)' do
+    expect do
+      Rails.application.routes.url_helpers
+           .url_for(controller: 'context_menu_wizard', action: 'options', only_path: true)
+    end.to raise_error(ActionController::UrlGenerationError)
   end
 
-  # The API routes require format json, so any other extension falls through
-  # to the declared wizard route.
-  it 'routes the options path with a non-json extension to context_menu_wizard#options' do
-    expect(get: '/depending_custom_fields/options.html')
-      .to route_to(controller: 'context_menu_wizard', action: 'options', format: 'html')
-    expect(get: '/depending_custom_fields/options.js')
-      .to route_to(controller: 'context_menu_wizard', action: 'options', format: 'js')
+  # Flipped by the SD-14 fix: the API routes require format json, and the
+  # wizard route that other extensions fell through to is removed.
+  it 'does not route the options path with a non-json extension (SD-14)' do
+    expect(get: '/depending_custom_fields/options.html').not_to be_routable
+    expect(get: '/depending_custom_fields/options.js').not_to be_routable
   end
 
   it 'routes POST /depending_custom_fields/save to context_menu_wizard#save' do
@@ -92,10 +91,10 @@ RSpec.describe 'GET /depending_custom_fields/options requests (characterization)
     expect(response).to have_http_status(:forbidden)
   end
 
-  # SD-14 (security): reachable through the .html extension, with no edit
-  # permission and no issue visibility check. List options are plain strings,
-  # so map(&:last) returns the last character of each value.
-  it 'serves wizard parent options over .html to a non-member for an issue of a private project' do
+  # Flipped by the SD-14 fix. Before: reachable through the .html extension,
+  # with no edit permission and no issue visibility check (and list options
+  # reduced to their last character by map(&:last)).
+  it 'answers 404 over .html to a non-member for an issue of a private project (SD-14)' do
     issue = dcf_real_issue(project, parent => 'Alpha', child => 'a1')
     project.update_column(:is_public, false)
     expect(issue.reload.visible?(outsider)).to be false
@@ -103,8 +102,7 @@ RSpec.describe 'GET /depending_custom_fields/options requests (characterization)
 
     get '/depending_custom_fields/options.html', params: { issue_ids: issue.id.to_s }
 
-    expect(response).to have_http_status(:ok)
-    expect(response.media_type).to eq('application/json')
-    expect(JSON.parse(response.body)).to eq([{ 'id' => parent.id, 'name' => 'Parent', 'values' => %w[a a] }])
+    expect(response).to have_http_status(:not_found)
+    expect(response.body).not_to include('Parent')
   end
 end

@@ -142,6 +142,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-14: SECURITY: the wizard options action is reachable over non-JSON formats without visibility or edit checks
 
+**Status.** Fixed in 0.0.16 (own commit, same treatment as SD-01 and SD-13 per UD-03): the `options` route, the action and its private helpers are removed, so every format answers 404; the wizard save is unchanged. `spec/requests/wizard_options_endpoint_spec.rb` fails on the old code (7 of 8 examples) and passes with the fix; the SD-14 rows of `spec/characterization/wizard_routes_spec.rb` are flipped in the same commit.
+
 **Severity.** security (low)
 
 **Evidence.** Found by the WP-04 characterization (`spec/characterization/wizard_routes_spec.rb`). The API routes `depending_custom_fields/:id` carry `format: 'json'`, which acts as a requirement, so `GET /depending_custom_fields/options.html` (or `.js`, `.xml`) falls through to `context_menu_wizard#options` (`config/routes.rb:2-8`). That action only requires a login (`app/controllers/context_menu_wizard_controller.rb:3-5`): no issue visibility check and no edit permission. Any logged-in user can pass issue ids of a private project and gets the parent and child field names and option values available on those issues, which reveals that the issues exist, their tracker field configuration, and for chained parents the values allowed by the issue's stored grandparent value. No client uses the action: the wizard script posts only to `save`. For list parents the values are also wrong (`map(&:last)` on a String gives its last character).

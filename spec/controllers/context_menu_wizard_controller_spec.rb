@@ -1,33 +1,6 @@
 require_relative '../rails_helper'
 
 RSpec.describe ContextMenuWizardController, type: :controller do
-  describe '#options' do
-    let(:issues_relation) { double('relation', find_each: nil) }
-    let(:mapping) { { '1' => { parent_id: '2', map: {} } } }
-
-    before do
-      allow(Issue).to receive(:where).and_return(issues_relation)
-      allow(Rails.cache).to receive(:fetch).and_return(mapping)
-    end
-
-    it 'renders child options when parent params are present' do
-      allow(controller).to receive(:child_options).with(mapping).and_return([{ id: 1 }])
-
-      get :options, params: { issue_ids: '1,2', parent_id: '1', parent_value: '2' }
-
-      expect(response.media_type).to eq('application/json')
-      expect(response.body).to eq([{ id: 1 }].to_json)
-    end
-
-    it 'renders parent options when parent params are missing' do
-      allow(controller).to receive(:parent_options).with(mapping).and_return([{ id: 3 }])
-
-      get :options, params: { issue_ids: '1,2' }
-
-      expect(response.body).to eq([{ id: 3 }].to_json)
-    end
-  end
-
   describe '#save' do
     let(:issue1) { double('Issue') }
     let(:issue2) { double('Issue') }
@@ -104,46 +77,6 @@ RSpec.describe ContextMenuWizardController, type: :controller do
         post :save, params: { issue_ids: '1', fieldId: 1, value: '42' }
         expect(response).to have_http_status(:forbidden)
       end
-    end
-  end
-
-  describe 'query count' do
-    let(:issues_relation) { double('relation') }
-
-    before do
-      controller.instance_variable_set(:@issues, issues_relation)
-      allow(controller).to receive(:intersect_allowed_values).and_return([])
-    end
-
-    it 'loads parent custom fields with a single query' do
-      mapping = {
-        '10' => { parent_id: '2', map: {} },
-        '11' => { parent_id: '3', map: {} }
-      }
-      allow(CustomField).to receive(:where).and_return([])
-
-      recorder = ActiveRecord::QueryRecorder.new do
-        controller.send(:parent_options, mapping)
-      end
-
-      expect(recorder.count).to eq(1)
-    end
-
-    it 'loads child custom fields with a single query' do
-      mapping = {
-        '20' => { parent_id: '5', map: {} },
-        '21' => { parent_id: '6', map: {} }
-      }
-      controller.params[:parent_id] = '5'
-      controller.params[:parent_value] = 'a'
-      allow(CustomField).to receive(:where).and_return([])
-      allow_any_instance_of(CustomField).to receive(:possible_values_options).and_return([])
-
-      recorder = ActiveRecord::QueryRecorder.new do
-        controller.send(:child_options, mapping)
-      end
-
-      expect(recorder.count).to eq(1)
     end
   end
 end

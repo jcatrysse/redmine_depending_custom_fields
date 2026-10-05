@@ -66,7 +66,7 @@ Existing users of 0.0.15 must not break. This document lists what is guaranteed,
 | Depending fields rendered by third-party `select_tag` | filtered via DOM id/name scan | not filtered in the browser | 0.1.0 (M2) | yes | README documents the contract; server validates |
 | Bulk edit / wizard semantics | '(no change)' hidden but selected; wizard root preselected with default | per UD-09 / UD-11 | 0.1.0 (M2) | yes (documented) | CHANGELOG, README rewrite |
 | Context-menu hiding | every globally mapped child and parent | only children relevant to the selection and their parents | 0.1.0 (M2) | no | D4 |
-| Routes | `options` shadowed for JSON, reachable over `.html`/`.js` (SD-14, removed by its own security fix); `save` auto-named | `options` removed; `depending_custom_fields_save` named, same path | 0.1.0 (M2) | no | routing spec |
+| Routes | `options` shadowed for JSON, reachable over `.html`/`.js` (SD-14); `save` auto-named | `options` removed (0.0.16, SD-14); `depending_custom_fields_save` named, same path | 0.1.0 (M2) | no | routing spec |
 | MappingBuilder, ParentMenuBuilder, after_custom_field_save dispatch | public | removed (UD-14) | 0.1.0 (M2) | yes for third-party callers (none found) | CHANGELOG |
 | QueryCustomFieldColumnPatch | prepended, no effect | removed | 0.1.0 (M1) | no | verified no-op |
 | CustomFieldVisibility | used, fail open | unused, deprecated | 0.1.0 (M2) | no | see timetable |
