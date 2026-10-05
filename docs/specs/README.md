@@ -52,3 +52,11 @@ successful and rejected change is written to a new
 `dcf_config_audit_events` table inside the same DB transaction as the change, so
 an audit failure rolls the change back. The feature targets Redmine **5.1**
 (mandatory) and **6.1** (supported where it does not break 5.1).
+
+## Other spec sets in this directory
+
+- **large_lists**: per-field data attributes instead of the global inline script,
+  a new issue-form runtime, the scalable dependency editor with a single JSON
+  transport, CSV import and export, large-list support on the project pages and
+  MySQL/MariaDB storage safety. Start at
+  [`large_lists_README.md`](large_lists_README.md).
