@@ -44,10 +44,12 @@ echo "--- 2. Compat check (lines added since base)"
 # added lines count, so existing code is fixed by the WP that owns it.
 # Untracked files are checked too (as if added), so the gate also works before
 # the first git add.
-COMPAT_PATHS=(app lib config db init.rb spec assets ':!*.md' ':!spec/quality/**')
+COMPAT_PATHS=(app lib config db init.rb spec test assets ':!*.md' ':!spec/quality/**')
+# git diff --no-index exits 1 for "differs"; any other non-zero exit is a real
+# error and fails the gate.
 { git diff -U0 "$BASE" -- "${COMPAT_PATHS[@]}"
-  git ls-files --others --exclude-standard -- "${COMPAT_PATHS[@]}" \
-    | while read -r f; do git diff -U0 --no-index /dev/null "$f" || true; done  # exit 1 means "differs"
+  git ls-files -z --others --exclude-standard -- "${COMPAT_PATHS[@]}" \
+    | while IFS= read -r -d '' f; do git diff -U0 --no-index /dev/null "$f" || [ $? -eq 1 ]; done
 } | ruby "$DCF_SCRIPT_DIR/lib/compat_check.rb" || STATUS=1
 
 echo "--- 3. Ratchet (changed files vs $BASE)"

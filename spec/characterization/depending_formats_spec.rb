@@ -6,89 +6,18 @@ require_relative '../rails_helper'
 # including known defects, before the WP-05/WP-06 refactor. A later work
 # package may change an expectation here only as a listed flip; every other
 # example must stay unchanged. Planned flips:
-# - WP-08 (enumeration): "rejects a disallowed value on a new issue" (two
-#   errors become one) and "offers a stored disallowed value twice".
+# - WP-08 (enumeration): "rejects a disallowed value on a new issue" and
+#   "rejects an issue copy holding a legacy combination" (both through the
+#   shared parameter %w[inclusion invalid]: two errors become one), and
+#   "offers a stored disallowed value twice".
 # - WP-09: "rejects a stored child ... assigned unchanged", "rejects an issue
 #   copy holding a legacy combination", "silently skips an issue ... when the
 #   project is copied", "rejects adding an allowed value next to the legacy
 #   value". Not flipped by owner decision: the unavailable parent (UD-05).
 # - WP-10: "validates the members of a stored cycle against their mappings".
-module DcfFormatCharacterization
-  HIDDEN = { hidden: true, style: 'display:none;' }.freeze
-
-  # The stored value of +name+: the name itself for list fields, the
-  # enumeration id (String) for enumeration fields.
-  def kit_key(field, name)
-    return name if field.field_format.end_with?('list')
-
-    field.enumerations.detect { |e| e.name == name }.id.to_s
-  end
-
-  # Parent values A, B, C; A allows a1 and a2, B allows b1, C allows nothing.
-  def build_kit(kind, multiple: false, type: IssueCustomField, child_names: %w[a1 a2 b1])
-    if kind == :list
-      parent = dcf_list_field(values: %w[A B C], type: type)
-      child = dcf_list_field(format: 'depending_list', values: child_names, parent: parent,
-                             multiple: multiple, type: type)
-    else
-      parent = dcf_enum_field(names: %w[A B C], type: type)
-      child = dcf_enum_field(format: 'depending_enumeration', names: child_names, parent: parent, type: type)
-      child.update!(multiple: true) if multiple
-    end
-    dcf_set_dependencies(
-      child,
-      value_dependencies: { kit_key(parent, 'A') => [kit_key(child, 'a1'), kit_key(child, 'a2')],
-                            kit_key(parent, 'B') => [kit_key(child, 'b1')] },
-      default_value_dependencies: { kit_key(parent, 'A') => kit_key(child, 'a2') }
-    )
-    [parent, child.reload]
-  end
-
-  # What the core list or enumeration format offers for +field+.
-  def core_base(field)
-    return field.possible_values if field.field_format.end_with?('list')
-
-    field.enumerations.active.map { |e| [e.name, e.id.to_s] }
-  end
-
-  def pair(field, name, *extra)
-    [name, kit_key(field, name), *extra]
-  end
-
-  def kit_value(field, names)
-    keys = Array(names).map { |n| kit_key(field, n) }
-    field.multiple? ? keys : keys.first
-  end
-
-  # A persisted issue holding +values+ (field => name or names), stored without
-  # validation so legacy combinations can be set up. Reloaded, so value_was is
-  # what the database holds.
-  def kit_issue(project, values)
-    tracker, status, priority = dcf_issue_infra(project)
-    values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
-    issue = Issue.new(project: project, tracker: tracker, subject: 'S', author: dcf_admin,
-                      status: status, priority: priority)
-    issue.custom_field_values = values.to_h { |f, names| [f.id.to_s, kit_value(f, names)] }
-    issue.save!(validate: false)
-    Issue.find(issue.id)
-  end
-
-  def kit_new_issue(project, values)
-    tracker, status, priority = dcf_issue_infra(project)
-    values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
-    issue = Issue.new(project: project, tracker: tracker, subject: 'S', author: dcf_admin,
-                      status: status, priority: priority)
-    issue.custom_field_values = values.to_h { |f, names| [f.id.to_s, kit_value(f, names)] }
-    issue
-  end
-
-  # Core adds custom value errors under the field name (CustomFieldValue#validate_value).
-  def errors_for(record, field)
-    record.valid?
-    record.errors[field.name]
-  end
-end
-
+# - WP-15 (carries?): "hides every option when a Project is passed for an
+#   issue field" (the core list is returned for non-carrying objects).
+# Helpers: spec/support/dcf_format_characterization.rb.
 RSpec.describe 'Depending formats (characterization)' do
   include DcfFormatCharacterization
 
@@ -138,7 +67,7 @@ RSpec.describe 'Depending formats (characterization)' do
       it 'returns the core list for a record when the parent field no longer exists' do
         issue = kit_issue(project, parent => 'A')
         CustomField.where(id: parent.id).delete_all
-        expect(fmt.possible_values_options(child.reload, issue)).to eq(core_base(child))
+        expect(fmt.possible_values_options(CustomField.find(child.id), issue)).to eq(core_base(child))
       end
     end
 
@@ -258,6 +187,12 @@ RSpec.describe 'Depending formats (characterization)' do
         expect(errors_for(issue, child)).to eq([invalid])
       end
 
+      it 'validates the members of a stored cycle against their mappings' do
+        x, y = build_cycle(kind)
+        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y1'), y)).to eq([])
+        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y2'), y)).to eq(new_disallowed_errors)
+      end
+
       context 'with a multiple child holding a legacy value' do
         let(:kit) { build_kit(kind, multiple: true) }
 
@@ -292,38 +227,47 @@ RSpec.describe 'Depending formats (characterization)' do
     end
 
     describe 'before_custom_field_save' do
-      it 'keeps a valid parent id as an Integer and clears the core default value' do
+      it 'stores a valid parent id given as a String as an Integer and clears the core default value' do
+        child.parent_custom_field_id = parent.id.to_s
         child.default_value = kit_key(child, 'a1')
         child.save!
-        expect(child.reload.parent_custom_field_id).to eq(parent.id)
-        expect(child.default_value).to be_nil
+        expect(CustomField.find(child.id).parent_custom_field_id).to eq(parent.id)
+        expect(CustomField.find(child.id).default_value).to be_nil
+      end
+
+      it 'stores a blank parent id as an empty String and keeps the core default value' do
+        child.parent_custom_field_id = ''
+        child.default_value = kit_key(child, 'a1')
+        child.save!
+        expect(CustomField.find(child.id).parent_custom_field_id).to eq('')
+        expect(CustomField.find(child.id).default_value).to eq(kit_key(child, 'a1'))
       end
 
       it 'drops a parent id that names no field' do
         child.parent_custom_field_id = 0
         child.save!
-        expect(child.reload.parent_custom_field_id).to be_nil
+        expect(CustomField.find(child.id).parent_custom_field_id).to be_nil
       end
 
       it 'drops a parent of another custom field type' do
         other = kind == :list ? dcf_list_field(type: ProjectCustomField) : dcf_enum_field(type: ProjectCustomField)
         child.parent_custom_field_id = other.id
         child.save!
-        expect(child.reload.parent_custom_field_id).to be_nil
+        expect(CustomField.find(child.id).parent_custom_field_id).to be_nil
       end
 
       it 'drops a parent outside the format family' do
         other = kind == :list ? dcf_enum_field : dcf_list_field
         child.parent_custom_field_id = other.id
         child.save!
-        expect(child.reload.parent_custom_field_id).to be_nil
+        expect(CustomField.find(child.id).parent_custom_field_id).to be_nil
       end
 
       it 'keeps the core default value when no parent is set' do
         child.parent_custom_field_id = nil
         child.default_value = kit_key(child, 'a1')
         child.save!
-        expect(child.reload.default_value).to eq(kit_key(child, 'a1'))
+        expect(CustomField.find(child.id).default_value).to eq(kit_key(child, 'a1'))
       end
 
       it 'stores sanitized mappings: String keys, blank entries and empty rows removed' do
@@ -331,9 +275,9 @@ RSpec.describe 'Depending formats (characterization)' do
         child.value_dependencies = { kit_key(parent, 'A') => [a1, '', nil], '' => [a1], 'X' => ['', nil], 7 => a1 }
         child.default_value_dependencies = { kit_key(parent, 'A') => [a1, ''], 'B' => '', '' => a1, 'C' => a1 }
         child.save!
-        child.reload
-        expect(child.value_dependencies).to eq(kit_key(parent, 'A') => [a1], '7' => [a1])
-        expect(child.default_value_dependencies).to eq(kit_key(parent, 'A') => [a1], 'C' => a1)
+        stored = CustomField.find(child.id)
+        expect(stored.value_dependencies).to eq(kit_key(parent, 'A') => [a1], '7' => [a1])
+        expect(stored.default_value_dependencies).to eq(kit_key(parent, 'A') => [a1], 'C' => a1)
       end
     end
   end
@@ -368,18 +312,6 @@ RSpec.describe 'Depending formats (characterization)' do
         project.save!(validate: false)
         query = IssueQuery.new(name: '_', project: Project.find(project.id))
         expect(child.format.query_filter_values(child, query)).to eq([%w[a1 a1], %w[a2 a2], %w[b1 b1]])
-      end
-
-      it 'validates the members of a stored cycle against their mappings' do
-        x = dcf_list_field(format: 'depending_list', values: %w[x1 x2])
-        y = dcf_list_field(format: 'depending_list', values: %w[y1 y2], parent: x)
-        x.parent_custom_field_id = y.id
-        x.save!
-        dcf_set_dependencies(x, value_dependencies: { 'y1' => %w[x1] })
-        dcf_set_dependencies(y, value_dependencies: { 'x1' => %w[y1] })
-        expect(x.reload.parent_custom_field_id).to eq(y.id)
-        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y1'), y)).to eq([])
-        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y2'), y)).to eq([invalid])
       end
     end
   end
@@ -418,11 +350,14 @@ RSpec.describe 'Depending formats (characterization)' do
         expect(child.format.query_filter_values(child, query)).to eq([pair(child, 'a1'), pair(child, 'a2')])
       end
 
-      it 'stores mappings to inactive enumerations as they are' do
+      it 'keeps mappings to inactive enumerations when the field is saved (sanitize only)' do
         b1 = child.enumerations.detect { |e| e.name == 'b1' }
         b1.update!(active: false)
-        expect(child.reload.value_dependencies[kit_key(parent, 'B')]).to eq([b1.id.to_s])
-        expect(core_base(child).map(&:first)).to eq(%w[a1 a2])
+        field = CustomField.find(child.id)
+        field.name = "#{field.name} renamed"
+        field.save!
+        expect(CustomField.find(child.id).value_dependencies[kit_key(parent, 'B')]).to eq([b1.id.to_s])
+        expect(core_base(field).map(&:first)).to eq(%w[a1 a2])
       end
     end
   end

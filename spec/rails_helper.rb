@@ -46,6 +46,7 @@ require_relative 'support/custom_field_factory'
 require_relative 'support/dcf_config_helpers'
 require_relative 'support/query_counter'
 require_relative 'support/dcf_large_list'
+require_relative 'support/dcf_format_characterization'
 
 RSpec.configure do |config|
   fixture_path = File.expand_path('fixtures', __dir__)

@@ -4,7 +4,8 @@ require_relative '../rails_helper'
 
 # WP-04 characterization: pins how the context menu wizard routes resolve today
 # (0.0.16), including the options route shadowed by depending_custom_fields/:id.
-# Only WP-15 may change an expectation here, and only as a listed flip.
+# Only the SD-14 security fix (removes the unused options endpoint) and WP-15
+# may change an expectation here, and only as a listed flip.
 RSpec.describe 'Context menu wizard routing (characterization)', type: :routing do
   it 'routes GET /depending_custom_fields/options to the API show action with id "options"' do
     expect(get: '/depending_custom_fields/options')
@@ -91,9 +92,9 @@ RSpec.describe 'GET /depending_custom_fields/options requests (characterization)
     expect(response).to have_http_status(:forbidden)
   end
 
-  # Reachable through the .html extension: no edit permission and no issue
-  # visibility check, and list options are plain strings, so map(&:last)
-  # returns the last character of each value.
+  # SD-14 (security): reachable through the .html extension, with no edit
+  # permission and no issue visibility check. List options are plain strings,
+  # so map(&:last) returns the last character of each value.
   it 'serves wizard parent options over .html to a non-member for an issue of a private project' do
     issue = dcf_real_issue(project, parent => 'Alpha', child => 'a1')
     project.update_column(:is_public, false)

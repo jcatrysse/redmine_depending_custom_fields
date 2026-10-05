@@ -21,8 +21,12 @@ RSpec.describe 'Depending field value validation' do
     issue
   end
 
+  # Sets @value directly, as acts_as_customizable does when it loads stored
+  # values: CustomFieldValue#value= would turn nil into '' and [] into [''].
   def value_for(child, issue, value)
-    CustomFieldValue.new(custom_field: child, customized: issue, value: value)
+    custom_value = CustomFieldValue.new(custom_field: child, customized: issue)
+    custom_value.instance_variable_set(:@value, value)
+    custom_value
   end
 
   describe RedmineDependingCustomFields::DependingListFormat do

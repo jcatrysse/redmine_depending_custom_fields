@@ -524,7 +524,7 @@ New lib/redmine_depending_custom_fields/dependency_rules.rb (module_function, re
 
 - spec/lib/field_index_spec.rb: parent_id_from_raw for 12, '12', "12", '', nil, nested keys and block scalars; raw read leaves format_store undeserialized; ensure batches into one query; ancestor/descendant terminate on A->A, A<->B and long chains
 - spec/lib/dependency_rules_spec.rb: normalize_id, carries?, lookup_records 0 queries (invariance), allowed/default cases from rules_cases.json, mapping_problems, prune_mapping keeps inactive enum ids, value_options order and inactive handling
-- FieldRelevance.children_of returns the same records in the same order as before (characterization unchanged)
+- FieldRelevance.children_of returns the same set of records as before (characterization unchanged; today's query has no ORDER BY, the new one orders by position and id)
 - spec/lib/dependency_rules_spec.rb: parent_of returns nil for blank, dangling, wrong STI type, wrong family and self; returns the record otherwise; second call does not query (gap 2).
 
 **Acceptance**
@@ -641,13 +641,13 @@ Do not tag; revert the version bump commit.
 
 **Scope**
 
-DependingEnumerationFormat#possible_custom_value_options returns the unfiltered active list plus the stored value_was ids (inactive included) as 2-tuples, fixing the hidden 3-tuple plus visible duplicate caused by core RecordList using options.map(&:last) (core-7.0 lib/redmine/field_format.rb:789-806). validate_custom_value merges dependency errors with core errors as errors + (dep_errors - errors), so a disallowed new value gives exactly one 'is invalid'. A crafted inactive id that is not stored stays rejected (QA-21). Flips the two characterized enum rows.
+DependingEnumerationFormat#possible_custom_value_options returns the unfiltered active list plus the stored value_was ids (inactive included) as 2-tuples, fixing the hidden 3-tuple plus visible duplicate caused by core RecordList using options.map(&:last) (core-7.0 lib/redmine/field_format.rb:789-806). validate_custom_value merges dependency errors with core errors as errors + (dep_errors - errors), so a disallowed new value gives exactly one 'is invalid'. A crafted inactive id that is not stored stays rejected (QA-21). Flips the characterized enum rows: the duplicate option, and the double error through the shared parameter %w[inclusion invalid] (new disallowed value and issue copy).
 
 **Files**
 
 - `lib/redmine_depending_custom_fields/depending_enumeration_format.rb`
 - `lib/redmine_depending_custom_fields/depending_format_methods.rb`
-- spec/characterization/depending_formats_spec.rb (2 listed flips)
+- spec/characterization/depending_formats_spec.rb (listed flips: enum duplicate option, enum double error parameter)
 - `spec/lib/depending_format_methods_spec.rb`
 - `CHANGELOG.md`
 
@@ -1021,6 +1021,8 @@ New app/models/redmine_depending_custom_fields/selection_graph.rb: candidate fie
 - `spec/controllers/context_menu_wizard_controller_spec.rb`
 - `spec/helpers/context_menu_wizard_helper_spec.rb`
 - spec/characterization/context_menu_spec.rb (listed flips)
+- spec/characterization/wizard_routes_spec.rb (listed flips: options route and action)
+- spec/characterization/depending_formats_spec.rb (listed flip: carries?, the Project example)
 - `CHANGELOG.md`
 
 **Tests**
@@ -1134,7 +1136,7 @@ Rename the current script to assets/javascripts/depending_custom_fields_legacy.j
 - `test/js/runtime_bulk.test.js`
 - `test/js/runtime_wiring.test.js`
 - `test/js/contract_fixtures.test.js`
-- test/js/legacy_characterization.test.js (points at the legacy file)
+- test/js/support/legacy_dom.js (the asset path, line 11, points at the legacy file)
 
 **Tests**
 

@@ -27,9 +27,9 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 SPEC_DIR="plugins/$DCF_PLUGIN_NAME/spec"
 declare -A RESULT
 
-run_suite() { # name, command...
+run_suite() { # name, command... (the log file uses $LABEL when set)
   local name="$1"; shift
-  local log="$LOGS/$VER-$name-$STAMP.log"
+  local log="$LOGS/$VER-${LABEL:-$name}-$STAMP.log"
   dcf_log "suite $name -> $log"
   ( "$@" ) 2>&1 | tee "$log"
   RESULT[$name]="${PIPESTATUS[0]} $log"
@@ -47,17 +47,21 @@ for s in $SUITES; do
   case "$s" in
     rspec)
       needs_redmine
-      # Paths after "--" (relative to the plugin, e.g. spec/models/x_spec.rb)
-      # replace the full spec directory, so a subset can be run quickly.
-      TARGETS=(); OPTS=()
+      # Existing paths after "--" (relative to the plugin, e.g.
+      # spec/models/x_spec.rb or spec/models/x_spec.rb:12) replace the full
+      # spec directory, so a subset can be run quickly; its log is named
+      # rspec-subset so it cannot pass for a full run.
+      TARGETS=(); OPTS=(); LABEL=rspec
       for a in "${RSPEC_ARGS[@]}"; do
-        case "$a" in
-          spec/*) TARGETS+=("plugins/$DCF_PLUGIN_NAME/$a") ;;
-          *) OPTS+=("$a") ;;
-        esac
+        if [[ "$a" == spec/* ]] && [ -e "$DCF_PLUGIN_DIR/${a%%[:\[]*}" ]; then
+          TARGETS+=("plugins/$DCF_PLUGIN_NAME/$a")
+        else
+          OPTS+=("$a")
+        fi
       done
-      [ ${#TARGETS[@]} -gt 0 ] || TARGETS=("$SPEC_DIR")
-      run_suite rspec env -u DCF_SYSTEM_SPECS bundle exec rspec "${TARGETS[@]}" --format progress "${OPTS[@]}" ;;
+      if [ ${#TARGETS[@]} -gt 0 ]; then LABEL=rspec-subset; else TARGETS=("$SPEC_DIR"); fi
+      run_suite rspec env -u DCF_SYSTEM_SPECS bundle exec rspec "${TARGETS[@]}" --format progress "${OPTS[@]}"
+      LABEL= ;;
     system)
       needs_redmine
       # A chromedriver on PATH that does not match the browser breaks Selenium

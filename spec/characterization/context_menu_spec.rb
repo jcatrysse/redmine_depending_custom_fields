@@ -114,8 +114,8 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
       expect(patch_index).not_to be_nil
       expect(patch_index).to be < ancestors.index(controller.class)
       # 5.x/6.x: ContextMenusController#issues; 7.0: ContextMenus::IssuesController#index.
-      expect([%w[context_menus issues], %w[context_menus/issues index]])
-        .to include([controller.controller_path, controller.action_name])
+      expected = Redmine::VERSION::MAJOR >= 7 ? %w[context_menus/issues index] : %w[context_menus issues]
+      expect([controller.controller_path, controller.action_name]).to eq(expected)
     end
   end
 
@@ -128,7 +128,7 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
       folder = core_folder(open_menu, unrelated)
 
       expect(folder).not_to be_nil
-      expect(folder.css('ul li a').map { |a| a.text.strip }).to eq(%w[U1 U2 none])
+      expect(folder.css('ul li a').map { |a| a.text.strip }).to eq(['U1', 'U2', I18n.t(:label_none)])
     end
 
     it 'removes the list parent, the depending child and the depending grandchild' do
@@ -170,7 +170,7 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
 
       expect(folder).not_to be_nil
       links = folder_links(folder)
-      expect(links.map(&:first)).to eq(['<< me >>', dcf_admin.name, 'none'])
+      expect(links.map(&:first)).to eq(["<< #{I18n.t(:label_me)} >>", dcf_admin.name, I18n.t(:label_none)])
       expect(links.map(&:last).grep(/__group_/)).to be_empty
     end
   end

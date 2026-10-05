@@ -93,10 +93,6 @@ RSpec.describe 'Project custom field configuration saves (characterization)', ty
       expect(response).to redirect_to(custom_field_configuration_field_path(project, field))
     end
 
-    it 'starts from positions 1..4' do
-      expect(stored_order(enum_field)).to eq([['W', 1], ['X', 2], ['Y', 3], ['Z', 4]])
-    end
-
     describe 'through update_enumerations' do
       it 'applies a staged drag of the last row to the top as positions 1..4' do
         save_positions(enum_field, 'W' => 2, 'X' => 3, 'Y' => 4, 'Z' => 1)

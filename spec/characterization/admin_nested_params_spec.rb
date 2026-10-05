@@ -4,8 +4,9 @@ require_relative '../rails_helper'
 
 # WP-04 characterization: pins what the admin custom field form (core
 # CustomFieldsController#update) stores today (0.0.16) from the nested params
-# the plugin's dependency matrix posts, including known defects. Only WP-22 may
-# change an expectation here, and only as a listed flip.
+# the plugin's dependency matrix posts, including known defects. Only WP-22
+# (admin JSON transport) and WP-25 (editor replaces the matrix) may change an
+# expectation here, and only as a listed flip.
 RSpec.describe 'Admin custom field form dependency params (characterization)', type: :request do
   fixtures :users
 

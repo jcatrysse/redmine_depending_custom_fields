@@ -46,8 +46,12 @@ RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
     issue
   end
 
+  # Sets @value directly, as acts_as_customizable does when it loads stored
+  # values: CustomFieldValue#value= would turn nil into '' and [] into [''].
   def validate(child, customized, value)
-    child.validate_custom_value(CustomFieldValue.new(custom_field: child, customized: customized, value: value))
+    custom_value = CustomFieldValue.new(custom_field: child, customized: customized)
+    custom_value.instance_variable_set(:@value, value)
+    child.validate_custom_value(custom_value)
   end
 
   [
@@ -114,7 +118,7 @@ RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
       parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
       issue = issue_with_parent(parent, 'Z')
       CustomField.where(id: parent.id).delete_all
-      expect(validate(child.reload, issue, '')).to include(blank_msg)
+      expect(validate(CustomField.find(child.id), issue, '')).to include(blank_msg)
     end
   end
 

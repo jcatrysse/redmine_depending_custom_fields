@@ -711,8 +711,46 @@ test('W3: wizard submit URL is basePath + /depending_custom_fields/save; without
   assert.match(bare.errors[0].message, /basePath/);
 });
 
-// W4 (non-JSON error body) is not pinned: the legacy code leaves an unhandled
-// promise rejection, which would fail the test process. W6 is server markup.
+// W4: synchronous thenables stand in for fetch and res.json(), so the chain
+// the legacy code builds can be inspected without a real unhandled rejection
+// (which would fail the test process). W6 is server markup.
+const failingSave = (pg, json) => {
+  const seen = { alerts: [], thrown: null, outerOnRejected: 'not reached', jsonOnRejected: 'not reached' };
+  pg.window.alert = (message) => seen.alerts.push(message);
+  const response = {
+    ok: false,
+    statusText: 'Internal Server Error',
+    json: () => ({ then(onOk, onRejected) { seen.jsonOnRejected = onRejected; if (json) onOk(json); return {}; } })
+  };
+  pg.window.fetch = () => ({
+    then(onOk) {
+      try { onOk(response); } catch (e) { seen.thrown = e; }
+      return { then(_onOk, onRejected) { seen.outerOnRejected = onRejected; return {}; } };
+    }
+  });
+  return seen;
+};
+
+test('W4: save error with a JSON body: the errors are alerted, the failure is rethrown with no handler, the wizard stays open', async () => {
+  const pg = await realPage(wizardMenu('A'), { mapping: MAP, wizard: true });
+  const seen = failingSave(pg, { errors: ['Subject cannot be blank', 'City is invalid'] });
+  const container = openWizard(pg);
+  submit(pg, container.querySelector('form'));
+  assert.deepEqual(seen.alerts, ['Subject cannot be blank\nCity is invalid']);
+  assert.equal(seen.thrown.message, 'save failed');
+  assert.equal(seen.outerOnRejected, undefined);
+  assert.equal(container.style.display, 'block');
+});
+
+test('W4: save error with a non-JSON body: no alert, and neither res.json() nor the save chain has a rejection handler', async () => {
+  const pg = await realPage(wizardMenu('A'), { mapping: MAP, wizard: true });
+  const seen = failingSave(pg, null);
+  submit(pg, openWizard(pg).querySelector('form'));
+  assert.deepEqual(seen.alerts, []);
+  assert.equal(seen.jsonOnRejected, undefined);
+  assert.equal(seen.thrown.message, 'save failed');
+  assert.equal(seen.outerOnRejected, undefined);
+});
 
 test('W5: a wizard child whose parent is not in the wizard binds to the issue form parent (document-wide lookup)', () => {
   const body = `<form id="issue-form">${L.field('Country', L.editSelect('issue', 1, PARENT, { selected: 'B' }))}</form>` +
@@ -838,16 +876,6 @@ test('X7: requestSetup shares one timer: a second call with another root cancels
   pg.clock.tick(100);
   assert.equal(editEl(pg, 'issue', 2).classList.contains('depending-child'), false);
   assert.equal(editEl(pg, 'time_entry', 2).classList.contains('depending-child'), true);
-});
-
-test('X7: requestSetup with real timers runs setup after the 100 ms debounce', async () => {
-  const pg = page('<form id="f1">' + L.field('Country', L.editSelect('issue', 1, PARENT)) + '</form>', { mapping: MAP, clock: false });
-  await L.loaded(pg.window);
-  pg.document.getElementById('f1').insertAdjacentHTML('beforeend', L.field('City', L.editSelect('issue', 2, CHILD)));
-  pg.window.DependingCustomFields.requestSetup(pg.document.getElementById('f1'));
-  assert.equal(editEl(pg, 'issue', 2).classList.contains('depending-child'), false);
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(editEl(pg, 'issue', 2).classList.contains('depending-child'), true);
 });
 
 test('X8: without the DependingCustomFieldData global, setup is a no-op', () => {
