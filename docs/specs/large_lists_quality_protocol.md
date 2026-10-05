@@ -898,7 +898,7 @@ Every change an existing 0.0.15 user can notice has one CHANGELOG line. G9 check
 | UN-38 | "Show usage" counts are exact | C U | WP-28 (0.1.0 (M3)) | PC-59 |
 | UN-39 | Redirects keep `q` and `page` | C | WP-28 (0.1.0 (M3)) | PC-59 |
 | UN-40 | Globals `DependingCustomFieldData` and `ContextMenuWizardConfig` removed; `setup`/`requestSetup` and `CustomFieldVisibility` deprecated in 0.1.0 (removable no earlier than 0.2.0) | R D U | WP-15, WP-18 (0.1.0 (M2)) | PC-41, PC-42 |
-| UN-41 | Removed: `MappingBuilder`, `ParentMenuBuilder`, `QueryCustomFieldColumnPatch`, `ContextMenuWizardController#options`, the `after_custom_field_save` dispatch, `data-depending-*` attributes, `depending_cf_N` ids, hidden mirror inputs | R U | WP-06 (0.1.0 (M1), QueryCustomFieldColumnPatch); WP-15, WP-18 (0.1.0 (M2)) | PC-04, PC-42 |
+| UN-41 | Removed: `MappingBuilder`, `ParentMenuBuilder`, `QueryCustomFieldColumnPatch`, the `after_custom_field_save` dispatch, `data-depending-*` attributes, `depending_cf_N` ids, hidden mirror inputs | R U | WP-06 (0.1.0 (M1), QueryCustomFieldColumnPatch); WP-15, WP-18 (0.1.0 (M2)) | PC-04, PC-42 |
 | UN-42 | Project nested params deprecated in 0.1.0 (accepted throughout 0.1.x, removable no earlier than 0.2.0); admin nested safe attributes kept permanently (UD-15) | D U | WP-22, WP-27 (0.1.0 (M3)) | PC-63 |
 | UN-43 | Cache key `depending_custom_fields/mapping` no longer used; rollback note | R U | WP-18 (0.1.0 (M2)) | PC-43 |
 | UN-44 | New asset files; restart (and on 5.1 `rake redmine:plugins:assets`) needed | U | WP-18 (0.1.0 (M2)); WP-25 (0.1.0 (M3)) | PC-43, PC-65 |

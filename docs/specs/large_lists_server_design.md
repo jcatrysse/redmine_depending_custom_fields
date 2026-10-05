@@ -613,7 +613,7 @@ Details:
 ### 7.1 Removed
 
 - the inline `<script>` with `window.DependingCustomFieldData` and `window.ContextMenuWizardConfig` (D5; 0.1.0 (M2), WP-18);
-- every `Rails.cache` use: the head hook, ContextMenuHook, ContextMenusControllerPatch, ParentDetector, ParentMenuBuilder and ContextMenuWizardController#options (0.1.0 (M2): the context-menu paths in WP-15, the head hook and every remaining use in WP-18);
+- every `Rails.cache` use: the head hook, ContextMenuHook, ContextMenusControllerPatch, ParentDetector and ParentMenuBuilder (ContextMenuWizardController#options and its cache use were removed in 0.0.16 by the SD-14 fix) (0.1.0 (M2): the context-menu paths in WP-15, the head hook and every remaining use in WP-18);
 - both formats' `after_custom_field_save`, including `delete_matched('dcf/*')`, which raises NotImplementedError on MemCacheStore and rolls back every depending save. The `delete_matched` call is removed first, as a hotfix in the legacy code (0.0.16, WP-03, UD-02); the plain `Rails.cache.delete('depending_custom_fields/mapping')` and the callbacks go in 0.1.0 (M2) (WP-18);
 - the CustomFieldPatch `after_save` dispatch (0.1.0 (M2), WP-18; deleted outright, UD-14).
 
@@ -1030,7 +1030,7 @@ Removed:
 - `window.DependingCustomFieldData` and `window.ContextMenuWizardConfig` [0.1.0 (M2), WP-18];
 - `MappingBuilder` [0.1.0 (M2), WP-18] and `ParentMenuBuilder` [0.1.0 (M2), WP-15] (UD-14);
 - `QueryCustomFieldColumnPatch` (it had no effect) [0.1.0 (M1), WP-06];
-- `ContextMenuWizardController#options` [0.1.0 (M2), WP-15];
+- `ContextMenuWizardController#options` [removed in 0.0.16 by the SD-14 fix];
 - the `after_custom_field_save` dispatch [0.1.0 (M2), WP-18];
 - the regex-injected `data-field-id` [0.1.0 (M2), WP-18].
 

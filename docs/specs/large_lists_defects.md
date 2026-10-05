@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-14)
+1. Defects tracked separately (SD-01 to SD-15)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -29,6 +29,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-12 | minor | No report of stored invalid combinations and stored cycles |
 | SD-13 | security (medium) | SECURITY: CSV import of extended_user fields bypasses the editable filter |
 | SD-14 | security (low) | SECURITY: the wizard options action is reachable over non-JSON formats without visibility or edit checks |
+| SD-15 | security (low) | SECURITY: the full dependency mapping is embedded in every page, including the login page |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
 
@@ -142,13 +143,21 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-14: SECURITY: the wizard options action is reachable over non-JSON formats without visibility or edit checks
 
-**Status.** Fixed in 0.0.16 (own commit, same treatment as SD-01 and SD-13 per UD-03): the `options` route, the action and its private helpers are removed, so every format answers 404; the wizard save is unchanged. `spec/requests/wizard_options_endpoint_spec.rb` fails on the old code (7 of 8 examples) and passes with the fix; the SD-14 rows of `spec/characterization/wizard_routes_spec.rb` are flipped in the same commit.
+**Status.** Fixed in 0.0.16 (own commit, same treatment as SD-01 and SD-13 per UD-03): the `options` route, the action and its private helpers are removed, so every non-JSON format answers 404; the bare and `.json` paths still reach the admin-only API#show, as before; the wizard save is unchanged. `spec/requests/wizard_options_endpoint_spec.rb` fails on the old code (7 of 8 examples) and passes with the fix; the SD-14 rows of `spec/characterization/wizard_routes_spec.rb` are flipped in the same commit.
 
 **Severity.** security (low)
 
 **Evidence.** Found by the WP-04 characterization (`spec/characterization/wizard_routes_spec.rb`). The API routes `depending_custom_fields/:id` carry `format: 'json'`, which acts as a requirement, so `GET /depending_custom_fields/options.html` (or `.js`, `.xml`) falls through to `context_menu_wizard#options` (`config/routes.rb:2-8`). That action only requires a login (`app/controllers/context_menu_wizard_controller.rb:3-5`): no issue visibility check and no edit permission. Any logged-in user can pass issue ids of a private project and gets the parent and child field names and option values available on those issues, which reveals that the issues exist, their tracker field configuration, and for chained parents the values allowed by the issue's stored grandparent value. No client uses the action: the wizard script posts only to `save`. For list parents the values are also wrong (`map(&:last)` on a String gives its last character).
 
-**Recommendation.** Same treatment as SD-01 and SD-13 (UD-03): its own small commit now, not waiting for WP-15. Remove the `options` route, the action and its private helpers (`parent_options`, `child_options`), so every format gives 404. WP-15 still deletes `intersect_allowed_values` and `ParentMenuBuilder`. Flip the SD-14 rows of `spec/characterization/wizard_routes_spec.rb` in that commit. CHANGELOG Security entry.
+**Recommendation.** Same treatment as SD-01 and SD-13 (UD-03): its own small commit now, not waiting for WP-15. Remove the `options` route, the action and its private helpers (`parent_options`, `child_options`), so every non-JSON format gives 404 (the bare and `.json` paths keep reaching the admin-only API#show). WP-15 still deletes `intersect_allowed_values` and `ParentMenuBuilder`. Flip the SD-14 rows of `spec/characterization/wizard_routes_spec.rb` in that commit. CHANGELOG Security entry.
+
+### SD-15: SECURITY: the full dependency mapping is embedded in every page, including the login page
+
+**Severity.** security (low)
+
+**Evidence.** Found by the independent review of SD-14. `lib/redmine_depending_custom_fields/hooks/view_layouts_base_html_head_hook.rb:7-18` writes `window.DependingCustomFieldData` into the head of every page, also for anonymous users on `/login`. It holds every depending field's id, its parent id, every parent value with its allowed child values, the defaults and the hide flag. It carries no field names and no link to any issue, but option values of fields the viewer may not see are exposed.
+
+**Status.** Open. Fixed inside the plan by WP-18 (0.1.0 (M2)): the global and the inline script are removed, and the client reads visibility-gated `data-dcf-*` attributes per rendered field (WP-16). CHANGELOG line planned in 0.1.0: "Fixed: The dependency mapping is no longer embedded in every page, including the login page." Not hotfixed earlier: the legacy runtime (until WP-18) depends on the global, so removing it alone would break filtering.
 
 ## 2. Defects fixed inside the plan
 
@@ -163,7 +172,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | Missing translation for the admin "Default value" header (`label_default_value` exists in no locale). | `app/views/custom_fields/formats/_default_dependencies.html.erb:17` | WP-02 |
 | Key/Value list (depending): duplicate option in the edit form and a double error for a disallowed value. | core RecordList `options.map(&:last)` on the plugin's 3-tuples, core-7.0 `lib/redmine/field_format.rb:789-806` | WP-08 |
 | A circular parent configuration causes unbounded synchronous change-event recursion in the browser; cycles can be created through the admin form and the API. | `depending_custom_fields.js:416-431` always dispatches `change`; `_depending_list.html.erb:10-16` excludes only the field itself | WP-10, WP-17 |
-| GET `/depending_custom_fields/options` is shadowed by the API's `:id` route for JSON; no client calls the wizard `options` action. It is still reachable over `.html`, `.js` and `.xml` (security: SD-14). | `config/routes.rb:2-8` | SD-14, WP-15 |
+| GET `/depending_custom_fields/options` is shadowed by the API's `:id` route for JSON; no client calls the wizard `options` action. It was reachable over `.html`, `.js` and `.xml` until the SD-14 fix removed it (0.0.16). | `config/routes.rb:2-8` | SD-14, WP-15 |
 | The "combos" memory restores the value captured at the last parent change, not the user's latest pick. | `depending_custom_fields.js:356-412` | WP-17 |
 | The context-menu MutationObserver is never attached (script runs in head, body is null). | `depending_custom_fields.js:544-558` | WP-17 |
 | Project copy silently skips issues with a legacy combination; unchanged legacy combinations block REST and email updates. | core-7.0 `app/models/project.rb:1185,1227`; `depending_list_format.rb:102-106` | WP-09 |

@@ -243,7 +243,7 @@ CHANGELOG:
 - Added: In bulk edit and the wizard, required dependent fields offer '(none)' while the parent selection allows no value.
 - Added: Hints are announced to screen readers.
 - Deprecated: DependingCustomFields.setup and requestSetup (aliases of DependingCustomFields.init) and CustomFieldVisibility; kept at least throughout 0.1.x, removable no earlier than 0.2.0.
-- Removed: window.DependingCustomFieldData, window.ContextMenuWizardConfig, MappingBuilder, ParentMenuBuilder, ContextMenuWizardController#options, the after_custom_field_save dispatch, data-depending-* attributes, depending_cf_N ids, the hidden mirror inputs and the data-field-id attribute.
+- Removed: window.DependingCustomFieldData, window.ContextMenuWizardConfig, MappingBuilder, ParentMenuBuilder, the after_custom_field_save dispatch, data-depending-* attributes, depending_cf_N ids, the hidden mirror inputs and the data-field-id attribute.
 - Upgrade notes: Restart Redmine. If automatic plugin asset mirroring (5.1) or redmine_detect_update (6.x/7.0) is disabled or assets are baked into an image, run rake redmine:plugins:assets (5.1) or rake assets:precompile (6.x/7.0). Reload open browser tabs. The cache key depending_custom_fields/mapping is no longer used; before downgrading to an earlier version on a persistent cache store, run bin/rails runner -e production "Rails.cache.delete('depending_custom_fields/mapping')" once.
 - Added: The value you last picked for each parent value comes back when you switch the parent back, also after the form refreshes.
 
@@ -1021,7 +1021,7 @@ New app/models/redmine_depending_custom_fields/selection_graph.rb: candidate fie
 - `spec/controllers/context_menu_wizard_controller_spec.rb`
 - `spec/helpers/context_menu_wizard_helper_spec.rb`
 - spec/characterization/context_menu_spec.rb (listed flips)
-- spec/characterization/wizard_routes_spec.rb (listed flips: options route and action)
+- spec/characterization/wizard_routes_spec.rb (no flips left: the options rows were flipped by the SD-14 fix in 0.0.16)
 - spec/characterization/depending_formats_spec.rb (listed flip: carries?, the Project example)
 - `CHANGELOG.md`
 
