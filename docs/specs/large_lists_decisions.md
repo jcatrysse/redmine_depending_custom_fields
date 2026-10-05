@@ -20,11 +20,11 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-01 | Resolved | 0.0.16 | WP-07, WP-14, WP-20, WP-32 | (Owner: one release, see detail) Release structure and deprecation targets: ship in four releases (0.0.16 foundation and hotfixes, 0.1.0 (M1) server rules and storage safety, 0.1.0 (M2) issue-form runtime, 0.1.0 (M3) editors and project pages) instead of one 0.1.0 (M1) as assumed by the area designs? |
 | UD-02 | Resolved | 0.0.16 | WP-03 | Ship two hotfixes in the legacy code in 0.0.16 (remove delete_matched; fix the #bulk-edit-form selector) before the rewrite? |
 | UD-03 | Resolved | 0.0.16 | WP-07, WP-20 | When does the separately tracked wizard-save security fix (SD-01) ship? |
-| UD-04 | Open | 0.1.0 (M1) | WP-09, WP-17 | D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)? |
-| UD-05 | Open | 0.1.0 (M1) | WP-09, WP-17 | Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)? |
-| UD-06 | Open | 0.1.0 (M1) | WP-09, WP-16 | Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied? |
-| UD-07 | Open | 0.1.0 (M1) | WP-09 | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
-| UD-08 | Open | 0.1.0 (M1) | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
+| UD-04 | Resolved | 0.1.0 (M1) | WP-09, WP-17 | D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)? |
+| UD-05 | Resolved | 0.1.0 (M1) | WP-09, WP-17 | Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)? |
+| UD-06 | Resolved | 0.1.0 (M1) | WP-09, WP-16 | Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied? |
+| UD-07 | Resolved | 0.1.0 (M1) | WP-09 | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
+| UD-08 | Resolved | 0.1.0 (M1) | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
 | UD-09 | Open | 0.1.0 (M2) | WP-17, WP-20 | Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links? |
 | UD-10 | Open | 0.1.0 (M2) | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
 | UD-11 | Open | 0.1.0 (M2) | WP-18, WP-20 | Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')? |
@@ -41,10 +41,10 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-22 | Open | 0.1.0 (M3) | WP-31 | Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings? |
 | UD-23 | Open | 0.1.0 (M3) | WP-27, WP-29 | Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort? |
 | UD-24 | Open | 0.1.0 (M3) | WP-29 | Sort inactive enumerations together with active ones (not pushed to the end)? |
-| UD-25 | Open | 0.1.0 (M1) | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
-| UD-26 | Open | 0.1.0 (M1) | WP-13 | Default type for widen_core_columns? |
-| UD-27 | Open | 0.1.0 (M1) | WP-13 | MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe? |
-| UD-28 | Open | 0.1.0 (M1) | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
+| UD-25 | Resolved | 0.1.0 (M1) | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
+| UD-26 | Resolved | 0.1.0 (M1) | WP-13 | Default type for widen_core_columns? |
+| UD-27 | Resolved | 0.1.0 (M1) | WP-13 | MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe? |
+| UD-28 | Provisional | 0.1.0 (M1) | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
 | UD-29 | Resolved | 0.0.16 | WP-01 | Approve the committed .rubocop.yml overlay (TargetRubyVersion 2.7, TargetRailsVersion 6.1, Rails/HttpStatusNameConsistency disabled) as the ratchet configuration (deviation from raw core config in D10)? |
 | UD-30 | Resolved | 0.0.16 | WP-01, WP-17 | Approve devDependencies jquery 3.7.1 and acorn ~8.18.0 in addition to jsdom ~29.1.1 (D10 named only jsdom)? |
 | UD-31 | Resolved | 0.0.16 | WP-01 | rspec-61.yml: clone source and Ruby version? |
@@ -96,6 +96,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-04
 
+**Status: Resolved by the owner (recommendation accepted).** Per value: while the parent is unchanged, stored values are tolerated and only newly added values must be allowed (WP-09, WP-17).
+
 **Question.** D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)?
 
 **Recommendation.** Per value (matches core ListFormat's value_was idiom).
@@ -107,6 +109,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-09, WP-17
 
 ### UD-05
+
+**Status: Resolved by the owner (deviates from the recommendation).** Keep today's behaviour: when the parent field is not available on the record, a non-blank child is rejected ("is invalid"), so it has to be cleared. In the rules an unavailable parent counts as changed (`ParentState#changed?` is true when `available` is false), nothing is tolerated and the allowed set is empty. No CHANGELOG line (UN-03 and PC-07 withdrawn). The client mirrors it from 0.1.0 (M2) on: with `data-dcf-parent-values="[]"` and an unavailable parent no stored value is eligible, so it is dropped as the legacy script does today (WP-17).
 
 **Question.** Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)?
 
@@ -120,6 +124,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-06
 
+**Status: Resolved by the owner (recommendation accepted).** Issue copies (single, bulk, project copy) are judged against the source issue; `data-dcf-stored` carries the copy baseline (WP-09, WP-16).
+
 **Question.** Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied?
 
 **Recommendation.** Yes (fixes project copy silently skipping issues); data-dcf-stored carries the copy baseline so the browser behaves the same.
@@ -132,6 +138,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-07
 
+**Status: Resolved by the owner (deviates from the recommendation).** Keep today's behaviour: an unchanged dependent field that the current user cannot edit is still validated when its parent changes, and an invalid value rejects the save. Accepted consequence: for that role the parent stays effectively uneditable while the child holds a value the new parent does not allow. Design rule S8, QA-08 and `DependencyRules.editable_by?` are withdrawn; WP-09 pins the rejection with a spec instead. No CHANGELOG line (PC-09 withdrawn).
+
 **Question.** Never reject an unchanged dependent field that the current user cannot edit when its parent changes?
 
 **Recommendation.** Yes.
@@ -143,6 +151,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-09
 
 ### UD-08
+
+**Status: Resolved by the owner (recommendation accepted).** Stored cycle members and chains reaching a cycle are unconstrained on server and client until fixed; the cycle check runs only when a persisted field's parent id changes (WP-10, WP-16).
 
 **Question.** Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)?
 
@@ -348,6 +358,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-25
 
+**Status: Resolved by the owner (recommendation accepted).** The MySQL/MariaDB size validation also covers core List and Key/Value list fields (WP-11).
+
 **Question.** Apply the MySQL size validation also to core List and Key/Value list fields?
 
 **Recommendation.** Yes; the plugin writes them through its project services and API, and a 5,000-value core list fails today.
@@ -359,6 +371,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-11
 
 ### UD-26
+
+**Status: Resolved by the owner (recommendation accepted).** widen_core_columns uses MEDIUMTEXT (16 MB) by default; TYPE=longtext stays available (WP-13).
 
 **Question.** Default type for widen_core_columns?
 
@@ -372,6 +386,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-27
 
+**Status: Resolved by the owner (recommendation accepted).** An optional MariaDB workflow (workflow_dispatch only, 5.1 and 7.0) is added in WP-13, guarded by ci_workflows_spec; no automatic triggers.
+
 **Question.** MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe?
 
 **Recommendation.** Yes, manual-only for 5.1 and 7.0, because storage safety otherwise relies on stubs in CI.
@@ -383,6 +399,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-13
 
 ### UD-28
+
+**Status: Provisional (recommendation applied, not yet confirmed by the owner).** The usage line at 90 percent is planned as recommended. The owner confirms or changes this before WP-11 starts; the alternative only removes the line, the hard validation error stays either way.
 
 **Question.** Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages?
 
@@ -484,7 +502,7 @@ The area designs started from ten default decisions. This table shows where the 
 
 | Default | Original wording (short) | Final plan | Reason |
 |---|---|---|---|
-| D1 | Accept a child and parent combination when neither changed; JS keeps a stored disallowed value | Refined: tolerance per value (UD-04); a parent that is not available counts as unchanged (UD-05); copies are judged against the source (UD-06); a non-editable child never blocks a parent change (UD-07) | The whole-set wording would block adding an allowed value next to a legacy one; project copy silently skipped issues |
+| D1 | Accept a child and parent combination when neither changed; JS keeps a stored disallowed value | Refined: tolerance per value (UD-04); copies are judged against the source (UD-06). Kept as today by owner choice: a parent that is not available counts as changed, so the child must be cleared (UD-05), and a non-editable child is still validated when its parent changes (UD-07) | The whole-set wording would block adding an allowed value next to a legacy one; project copy silently skipped issues |
 | D2 | Bulk edit: hide '(no change)' on descendants when a parent gets a value, force default or '(none)' | Deviates: '(no change)' stays available, the per-parent default is preselected with a hint, '(none)' is forced only for parent '(none)' or a parent value without links (UD-09); required children get a marked '(none)' (UD-10) | The literal D2 clears still-valid values on every selected issue (setting Country on 50 issues would wipe City where it is still valid) |
 | D3 | hide_when_disabled keeps its key; hides the field while the parent offers no options | Follows, never in bulk edit and never while a stored non-matching value is shown | |
 | D4 | Context menu without cache, per selection; wizard otherwise unchanged | Refined: wizard opens on '(no change)' (UD-11); wizard body stays inline with a size budget (UD-13); wizard save security is SD-01 | Saving the wizard untouched used to write the root default onto every selected issue |
@@ -502,13 +520,13 @@ The area designs started from ten default decisions. This table shows where the 
 | Id | Decision | Rationale | Alternatives |
 |---|---|---|---|
 | S1 | One shared module RedmineDependingCustomFields::DependingFormatMethods, INCLUDED in both format classes. It holds normalized_store_pairs, storage_preview(custom_field, store), before_custom_field_save, possible_values_options, validate_custom_value, validate_custom_field, value_from_keyword, edit_tag and bulk_edit_tag. Class bodies keep add, form_partial, label and query_filter_values, plus the enum possible_custom_value_options override. The module assigns no instance variables. | Include puts the module between the class and the core format, so super works. add is a private class method. Format objects are process-wide singletons, so any ivar would leak between requests (SP-16). | Prepended module (super would hit the class). Common superclass (impossible: two different core superclasses). |
-| S2 | The central module DependencyRules (module_function) holds: Set-based allowed sets; ParentState with a baseline; per-value dependency_check; effective_parent_id; carries?; lookup_records; copy baseline; editable_by?; value_keys and value_options ([key, label, active] tuples); mapping_problems; prune_mapping (admin JSON transport only); the cycle helpers on FieldIndex. Memoization only on CustomField records via CustomFieldPatch#dcf_memo. | One rule set for validation, rendering, project services and the editor. Set lookups. Record-scoped memo needs no invalidation and is thread-safe. | Extend FieldRelevance (autoloaded, project-specific). CurrentAttributes (global state). |
+| S2 | The central module DependencyRules (module_function) holds: Set-based allowed sets; ParentState with a baseline; per-value dependency_check; effective_parent_id; carries?; lookup_records; copy baseline; value_keys and value_options ([key, label, active] tuples); mapping_problems; prune_mapping (admin JSON transport only); the cycle helpers on FieldIndex. Memoization only on CustomField records via CustomFieldPatch#dcf_memo. | One rule set for validation, rendering, project services and the editor. Set lookups. Record-scoped memo needs no invalidation and is thread-safe. | Extend FieldRelevance (autoloaded, project-specific). CurrentAttributes (global state). |
 | S3 | Canonical client contract owned by the server area (section 2). Context form/bulk. data-dcf-field and data-dcf-context on every depending field. data-dcf-parent, map, defaults and hide only on managed fields (effective parent that is valid, acyclic and visible to the user). data-dcf-parent-values in form context. Unpruned sanitized map with integer enumeration ids. Radio sentinel. Marked required-none option in bulk. | One owner ends the server/frontend drift (R1, QA-01, UX-02, BC-01). Parent-values gated identically to the map leak nothing beyond what the user can see (SP-04, SP-05) and are much smaller than an allowed set. Omission on cycles and invalid chains matches unconstrained server validation, so client and server agree. An unpruned map gives exact parity with server validation. | data-dcf-allowed (larger, same information under the same gate). Emitting on cycles (client would deadlock both members blank). Pruned map (client stricter than the server for stale parent values). |
 | S4 | Single head hook specification: meta name=dcf-i18n (flat object with the 10 keys of ClientConfig::I18N), then the one UMD depending_custom_fields.js, context_menu_wizard.js and the CSS. Editor assets only for CustomFieldsController and ProjectCustomFieldConfigurationController, compared by class name, and only through the hook. | Matches the frontend runtime and wizard readers (R2) and quality G8. One inclusion path avoids double loading (BC-13). No DB access in the hook. | Nested i18n payload under another meta name (revision 1; no reader). content_for in project views for editor assets (double include). |
 | S5 | Effective parent = exists, same type, family format, not self, and the ancestor chain is acyclic. It is used by validation, ClientData and SelectionGraph alike. Fields without one (dangling, invalid, cycle members, chains reaching a cycle) are unconstrained everywhere. | Client and server must agree. A stored cycle otherwise leaves both members blank with no options. Stored cycles are now refused at save, so only legacy data and races are affected, and the admin warning shows them. | Keep validating cycle members per mapping (client and server disagree; unusable UI). |
-| S6 | D1 is per value: while the parent is unchanged, values already in the baseline are tolerated and only new values must be allowed. Parent changed means strict. A parent not available on the object counts as unchanged. | It matches core's own idiom (values - value_was - possible_values) and the frontend legacy behaviour (R14, QA-06, BC-06). Verified on 5.1 and 7.0: add, remove and reorder are accepted, a new bad value is rejected. | Whole-set comparison (revision 1; blocks multi edits). The client drops legacy values on any child edit (silent data loss). |
+| S6 | D1 is per value: while the parent is unchanged, values already in the baseline are tolerated and only new values must be allowed. Parent changed means strict. A parent not available on the object counts as changed (UD-05: today's behaviour kept). | It matches core's own idiom (values - value_was - possible_values) and the frontend legacy behaviour (R14, QA-06, BC-06). Verified on 5.1 and 7.0: add, remove and reorder are accepted, a new bad value is rejected. | Whole-set comparison (revision 1; blocks multi edits). The client drops legacy values on any child edit (silent data loss). |
 | S7 | For new records that are issue copies (copy? true), the baseline is the source issue's stored child and parent values, read through @copied_from. | Copies of legacy combinations are rejected today, and project copy silently skips them (QA-07). Verified: copy unchanged is valid, a changed child or parent is strict. Core has no reader, so the ivar access is pinned by a spec on all 4 versions. | A new-record flag to the client, keeping the server strict (keeps the project-copy data loss). |
-| S8 | The dependency rule never rejects an unchanged child that the current user cannot edit (editable_custom_field_values), even when the parent changed. It is evaluated only on the failure path. | Such errors cannot be fixed by that user (QA-08). Core filters assignment of non-editable values but still validates them. | Keep rejecting with a clearer message (parent remains effectively uneditable for that role). |
+| S8 | Withdrawn by UD-07 (owner kept today's behaviour). Originally: the dependency rule never rejects an unchanged child that the current user cannot edit (editable_custom_field_values), even when the parent changed. | Such errors cannot be fixed by that user (QA-08). Core filters assignment of non-editable values but still validates them. | Keep rejecting with a clearer message (parent remains effectively uneditable for that role). |
 | S9 | FieldIndex is the single topology helper. It reads parent ids from raw YAML with an anchored regex (deserialization fallback), is built from loaded read-only records (0 queries) or from a raw select_all, and loads missing ids lazily in one batched query. DependencyRules::Graph and the competing limits proposal are dropped. | R18 and SP-08. A regex extraction costs 0.041 ms against a 16.6 ms YAML parse per S1 row. raw before_type_cast leaves the attribute undeserialized (probe_rev). | Parse each field's format_store per hop (YAML cost). find_by per hop (query per hop). |
 | S10 | Parents are resolved from customized.custom_field_values or from the selection's available fields first. carries? short-circuits objects that cannot hold the field's type (a Project in context menus). Query assertions use invariance only. | R16: 0 queries when parents are loaded (verified, 5 children, 0 queries). The context menu no longer parses hidden children's stores. The Project-object shortcut is invisible because core destructures 2 elements. | find_by per child (O(fields) queries). Absolute query counts (version-sensitive). |
 | S11 | The storage guard is owned by the limits area (validate :dcf_validate_storage_limits in Patches::CustomFieldValidationPatch, dcf_storage_too_large). The server provides a sanitize-only normalized_store_pairs shared by before_save and storage_preview(custom_field, store) (called as format.storage_preview(record, record.format_store)), including parent normalization. D6 pruning stays exclusively in the admin JSON transport. | R5 and UX-04: one owner, one key. BC-02: before_save must not rewrite stored mappings on API, extended-API or cascade saves. Preview bytes equal stored bytes. | Server-owned StorageLimits (revision 1, conflicting API). Pruning in before_save (silent data changes). |
@@ -535,7 +553,7 @@ The area designs started from ten default decisions. This table shows where the 
 | FD-3 | Canonical contract C1 (section 3), implemented by the server and agreed text. - Attributes data-dcf-field/parent/context (form/bulk)/kind/multiple/parent-name/map/defaults/hide/parent-values/parent-label/stored. - Emitted only on an active child: parent exists, is not itself, and is visible to the user (fail closed) in both contexts. - Stored cycles, self-parents and dangling parents get no parent attributes (UD-08). - The map is sanitized, not pruned; enumeration ids are numbers. | One table removes the server/frontend drift (R1, QA-01, UX-02, BC-01). The visibility gate stops leaking role-restricted parent data and the parent option names in the map (SP-04), and keeps today's behaviour, where an invisible parent leaves the child unfiltered. Unpruned maps equal exactly what validation reads. | data-dcf-allowed without a gate (leaks). Gating only parent-values (map keys still leak). Pruned maps (client and server disagree on stored parent values outside the list). |
 | FD-4 | Parent not on the form (workflow read-only, not available for the tracker): filter by data-dcf-parent-values (current parent keys, [] when blank or unavailable). Hints use data-dcf-parent-label. Invisible parents produce no attributes at all. | It matches server validation for read-only and unavailable parents without exposing hidden data. A single map stays the source of truth (parent keys instead of a duplicated allowed list). | Server-computed allowed set (duplicates the map, larger, same privacy once gated). Leave unfiltered (users pick values the server rejects). |
 | FD-5 | data-dcf-stored = {"child": value_was keys, "parent": parent value_was keys}, emitted for persisted records (value_was) and for issue copies (copy-source baseline, UD-06). It drives D1 legacy eligibility and acts as the new-record flag. | Only genuinely stored values (for issue copies, the copy source's values, which the server uses as the same baseline) can be legacy, so new records and values posted on a failed save are never shown as 'kept' when the server would reject them (R15, QA-20b). value_was is captured before assignment (core acts_as_customizable:96/98), so it is the database value even after re-renders. | Treat every disallowed value at load as legacy (previous design; breaks copies). A separate new-record flag (two attributes for one concept). |
-| FD-6 | D1 per value on both sides. Client: eligible = stored.child minus allowed when the parent control is absent or its values equal stored.parent. Server: with an unchanged parent (unavailable counts as unchanged), values contained in value_was are exempt and new values must be allowed. Memory may hold legacy values; they are re-filtered on restore, so A to B to A restores the stored legacy value. | Whole-set leniency rejects any edit of a multi child that holds a legacy value (R14). The per-value rule matches core ListFormat's value_was idiom. Restoring on return to the stored parent fixes the silent loss in UX-07 and QA-20a. | Client drops legacy values on any child edit (surprising loss). Whole-set D1 as written (breaks multi edits). |
+| FD-6 | D1 per value on both sides. Client: eligible = stored.child minus allowed when the parent control is absent or its values equal stored.parent. Server: with an unchanged parent (unavailable counts as changed, UD-05), values contained in value_was are exempt and new values must be allowed. Memory may hold legacy values; they are re-filtered on restore, so A to B to A restores the stored legacy value. | Whole-set leniency rejects any edit of a multi child that holds a legacy value (R14). The per-value rule matches core ListFormat's value_was idiom. Restoring on return to the stored parent fixes the silent loss in UX-07 and QA-20a. | Client drops legacy values on any child edit (surprising loss). Whole-set D1 as written (breaks multi edits). |
 | FD-7 | Per-parent defaults are applied at load only to new records (no data-dcf-stored), and always on parent changes. On AJAX re-renders, memory beats defaults. | Filling defaults into existing records writes values the user never chose, under their name in the journal (UX-14), which contradicts D1's spirit. | Keep filling defaults on existing records (today's behaviour E1). |
 | FD-8 | Never disable the child control. Disallowed options and choice inputs are hidden and disabled; selected options are deselected before being disabled. Choice labels are hidden with the hidden attribute plus a mandatory CSS override, because core .check_box_group label {display:block} beats [hidden]. | Point 2: enabled controls are always submitted, so the mirror inputs go away. The CSS override was found in core-7.0 application.css:1414-1421 and core-5.1 :950-957. | Remove options from the DOM (breaks legacy display and overlays). Inline styles (the runtime would own presentation). |
 | FD-9 | Server deliverables are adopted explicitly: (a) a blank sentinel hidden input (id nil, data-dcf-blank) before span.check_box_group for single radio active children; (b) bulk_edit_tag offers __none__ for required active children (FD-22 adopted). Both come with request specs. | Without (a) a required radio child can never be cleared (harness G1/G2). Without (b) parent '(none)' cannot clear required descendants, and every issue fails 'invalid' (U2). Last-wins parsing is verified on Rack 2.2.24, AP 7.2.4 and AP 8.1.4. The no-options bypass accepts the clear. | A JS-injected sentinel (a mirror again, fails without JS). Document the limitation for required children. |
@@ -663,7 +681,7 @@ The area designs started from ten default decisions. This table shows where the 
 Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release 0.1.0 with milestones M1, M2 and M3.
 
 - **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
-- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28 (open).
+- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27 (resolved); UD-28 provisional (recommendation applied, owner confirms before WP-11).
 - **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14 (open).
 - **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (open).
 

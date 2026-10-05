@@ -171,7 +171,7 @@ Rails JSON-encodes Hash and Array data values and HTML-escapes them. The caller'
 | `data-dcf-hide` | `1` | active child with `hide_when_disabled` true (both contexts) | yes in form context; ignored in `bulk` (D3) |
 | `data-dcf-parent-values` | JSON array of the parent's CURRENT keys on the record (strings); `[]` when blank or when the parent is not available on the record (`ParentState.available == false`) | form context, active child, `customized.respond_to?(:custom_field_values)` | only when the parent control is absent from the scope (workflow read-only, not available for the tracker) |
 | `data-dcf-parent-label` | `parent.name` (plain text) | same as `data-dcf-parent-values` | only for hints when the parent control is absent |
-| `data-dcf-stored` | JSON `{"child":[<baseline child keys>],"parent":[<baseline parent keys>]}` from the server D1 baseline: `DependencyRules.child_baseline(custom_value)` (child) and `ParentState#baseline` (parent) for persisted records, the copy source's stored child and parent values for issue copies (UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty. | form context, active child, and `customized.persisted?` or an issue copy (`copy?` with a source, server S7). Absent for every other new record. | yes: D1 legacy eligibility and the "no baseline" flag for defaults at load |
+| `data-dcf-stored` | JSON `{"child":[<baseline child keys>],"parent":[<baseline parent keys>]}` from the server D1 baseline: `DependencyRules.child_baseline(custom_value)` (child) and `ParentState#baseline` (parent) for persisted records, the copy source's stored child and parent values for issue copies (UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty, and also while the parent is not available on the record, because the server then tolerates nothing (UD-05). | form context, active child, and `customized.persisted?` or an issue copy (`copy?` with a source, server S7). Absent for every other new record. | yes: D1 legacy eligibility and the "no baseline" flag for defaults at load |
 
 The client compares every key and value as `String(x)`. Unknown keys and values without an option are ignored.
 
@@ -490,9 +490,8 @@ Grandchild cascades follow naturally:
   - `replaceIssueFormWith` copies in-flight user changes by id into the detached replacement.
   - The observer callback initialises the new markup before the next task, once per added root (coalesced, no timer debounce, section 5.11). Values not usable under the stored rules are dropped; stored values under an unchanged parent stay as legacy; memory survives.
 - **Tracker change that removes the parent.** The child is re-rendered with `data-dcf-parent-values="[]"` and `stored.parent: []`.
-  - kind is `static` and eligible is `stored.child`, so the child is kept, marked and posted unchanged.
-  - Server D1 counts an unavailable parent as unchanged and accepts it.
-  - Switching back to the old tracker: the parent is rendered with its database value, which equals the stored parent, so filtering is restored with the legacy value intact.
+  - The server counts an unavailable parent as changed and rejects a non-blank child (UD-05, today's behaviour), so nothing is eligible: the stored value is dropped and posted blank, as the legacy script does today, and the generic hint is shown.
+  - Switching back to the old tracker: the parent is rendered with its database value, which equals the stored parent, so filtering is restored. Whether the dropped child value comes back follows the in-flight copy of `replaceIssueFormWith`; WP-17 pins the outcome with a jsdom test.
 - **Failed save re-render:** see 5.4.
 - **Issue copy** (`GET /issues/:id/copy`, gap 6): new record with `data-dcf-stored` = the copy source's stored child and parent values (UD-06). Under the unchanged parent a legacy value copied from the source stays enabled, marked and posted, and the server accepts it (row F6b-a). A plain new record without `data-dcf-stored` drops disallowed values (row F6b-b).
 - **Bulk refresh** (`updateBulkEditFrom` replaces `#content`): the observer initialises the new form with the posted values; memory starts fresh.
@@ -559,7 +558,7 @@ Release: every "after" column ships in 0.1.0 (M2) (WP-16 to WP-19; rows F10 and 
 | F11 | chain | event-driven | explicit BFS cascade, depth-ordered init | P |
 | F12 | multi parent | union, defaults of added parents merged | same | P |
 | F13 | parent read-only by workflow (visible) | child unfiltered (T) | filtered by data-dcf-parent-values; stored disallowed value kept with the "not editable here" hint | C |
-| F13b | parent not available for the tracker | child unfiltered, but the server forced blank on save | generic "No values are available for this field."; stored value kept (server: unavailable counts as unchanged); hide_when_disabled may hide it when no legacy value | C |
+| F13b | parent not available for the tracker | child unfiltered, but the server forced blank on save | generic "No values are available for this field."; stored value dropped and posted blank (server: unavailable counts as changed, UD-05); hide_when_disabled may hide it when no legacy value | C |
 | F14 | parent invisible to the role | unfiltered, mapping leaked globally | unfiltered, no data-dcf attributes at all | P + F (privacy) |
 | F15 | updateIssueFrom | ajaxComplete plus 100 ms rescan; serialize relied on the mirror; memory lost | serialize carries enabled controls; re-init in the observer microtask, exactly one init per added root (coalesced, no timer debounce, gap 13); memory kept; copied values classified by stored data | P + F |
 | F16 | hide_when_disabled, form | p hidden while no options; forced visible otherwise | own p hidden while no options and no legacy value; only un-hides what it hid | P + F |
@@ -770,7 +769,7 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
    - no parent attributes for dangling or self parents, nor for stored-cycle members and chains reaching a cycle (UD-08; consolidated rule, this revision originally emitted them on cycle members).
 2. **`DependencyRules.parent_of(cf)` is part of the WP-05 API (gap 2):** memoized on the record, it returns the parent record, or nil for blank, dangling, wrong type or family, or self, so rendering and validation agree. Client emission does not use it directly: `ClientData` uses `effective_parent_id`, which builds on `parent_of` and adds the acyclic check (WP-16).
 3. **D1 per value in `validate_custom_value`:**
-   - when `parent_state` exists and `!state.changed?` (an unavailable parent counts as unchanged), values contained in the normalized `value_was` are exempt from the dependency check, and every other non-blank value must be allowed;
+   - when `parent_state` exists and `!state.changed?` (an unavailable parent counts as changed, UD-05), values contained in the normalized `value_was` are exempt from the dependency check, and every other non-blank value must be allowed;
    - when the parent changed, every value must be allowed.
    - for issue copies the baseline is the copy source's stored child and parent values (UD-06, server S7), which is exactly what `data-dcf-stored` carries;
    - This replaces whole-set `legacy_combination?` (R14). The shared parity cases in `test/js/fixtures/shared/rules_cases.json` cover add, remove and reorder for multi children.

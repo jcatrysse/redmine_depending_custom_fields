@@ -49,7 +49,7 @@ All probes ran against the baseline Redmine test stacks in rolled-back transacti
 - unchanged, reordered, one legacy value removed, or an allowed value added: valid;
 - a new disallowed value: invalid;
 - parent changed: strict;
-- non-editable child unchanged while the parent changed: valid;
+- non-editable child unchanged while the parent changed: valid (probe result; not adopted, UD-07 keeps the rejection);
 - `Issue#copy` unchanged: valid; copy with a new bad value: invalid; copy with the parent changed: strict;
 - stored cycle X<->Y: both unconstrained, `effective_parent_id` nil;
 - `parent_state` for 5 children sharing one parent: 0 queries.
@@ -75,7 +75,7 @@ Core facts used:
 | R13 | One fixture mechanism (generated markup) with fixed per-kind id ranges, a normalizer and a sequence-bump self check, checked under two seeds (compat section 2.4 "Fixture ids"). The JSON contract fixture is deleted. |
 | R14, QA-06, BC-06 | D1 is per value. |
 | QA-07 | Issue copies are judged against the source issue. |
-| QA-08 | A non-editable unchanged child is never rejected because the parent changed. |
+| QA-08 | Withdrawn by UD-07: a non-editable unchanged child is still validated when the parent changed (today's behaviour). |
 | R16, SP-08 | Parents are resolved from loaded objects. FieldIndex reads raw YAML. Query invariance style throughout. Byte budget for the context menu. |
 | R18 | FieldIndex is the single topology helper. `DependencyRules::Graph` is dropped. |
 | R5, BC-02, UX-04 | Storage is owned by limits. The server keeps a sanitize-only `normalized_store_pairs` and `storage_preview(custom_field, store)`, called as `format.storage_preview(record, record.format_store)` (gap 4). CustomFieldPatch registers no callbacks. |
@@ -135,7 +135,7 @@ Attributes go on the element core passes `options` to. That is the `<select>` (d
 | `data-dcf-hide` | `1` | managed and `hide_when_disabled` true. The client ignores it in `bulk` (D3). |
 | `data-dcf-parent-values` | JSON array of strings: the parent's current value(s) on the record; `[]` when blank or when the parent is not available on the record (for example not enabled for the tracker) | managed, `form` context, and the customized object carries `custom_field_values` |
 | `data-dcf-parent-label` | `parent.name` (plain text) | same condition as `data-dcf-parent-values`. Used by the client only for hints when the parent control is absent from the scope. |
-| `data-dcf-stored` | JSON object `{"child": [<child baseline keys>], "parent": [<parent baseline keys>]}`, all strings. It is the server D1 baseline (section 8): `child` is `DependencyRules.child_baseline(custom_value)` and `parent` is `ParentState#baseline`. For a persisted record both come from `value_was`; for an issue copy (new record with `copy?` true and a baseline source) both come from the copy source's stored values (gap 6, UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty. | managed, `form` context, a parent state exists, and the record is persisted or `DependencyRules.baseline_source(customized)` is non-nil. Absent for every other new record. |
+| `data-dcf-stored` | JSON object `{"child": [<child baseline keys>], "parent": [<parent baseline keys>]}`, all strings. It is the server D1 baseline (section 8): `child` is `DependencyRules.child_baseline(custom_value)` and `parent` is `ParentState#baseline`. For a persisted record both come from `value_was`; for an issue copy (new record with `copy?` true and a baseline source) both come from the copy source's stored values (gap 6, UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty, and also while the parent is not available on the record, because the server then tolerates nothing (UD-05). | managed, `form` context, a parent state exists, and the record is persisted or `DependencyRules.baseline_source(customized)` is non-nil. Absent for every other new record. |
 
 Option-level and sibling markup:
 
@@ -291,8 +291,9 @@ CANONICAL_ID = /\A[1-9]\d*\z/.freeze
 
 # values/baseline: Arrays of Strings. baseline = value_was, or the copy source's stored value (section 8, rule 2).
 ParentState = Struct.new(:parent, :available, :values, :baseline) do
+  # An unavailable parent counts as changed (UD-05: the child must be cleared, as today).
   def changed?
-    available && values.sort != baseline.sort
+    !available || values.sort != baseline.sort
   end
 end
 Problem = Struct.new(:type, :parent_key, :child_key, keyword_init: true)
@@ -318,7 +319,6 @@ Problem = Struct.new(:type, :parent_key, :child_key, keyword_init: true)
 | `allowed_set(map, parent_values)` / `allowed_values` / `default_values(map, defaults, parent_values, multiple:)` | Pure. Set-based union; first-seen order for `allowed_values`; defaults filtered by allowed; single gives the first. Shared cases in `rules_cases.json`. |
 | `allowed_for(cf, state)` | `allowed_set(cf.value_dependencies \|\| {}, state.values)` |
 | `dependency_check(custom_value, state, user = User.current)` | Returns `[allowed_empty, errors]`; section 8 |
-| `editable_by?(cf, customized, user)` | `customized.editable_custom_field_values(user).any? { \|v\| v.custom_field_id == cf.id }` when the method exists (F9). True when it does not exist. Rescue gives true (editable means strict, so an error never relaxes validation). Only evaluated on the failure path. |
 | `no_options?(cf, customized)` | A parent state exists and `allowed_for` is empty. Used by the required bypass. |
 | `hide_when_disabled?(cf)`, `mapping(cf)`, `defaults(cf)` | as before |
 | `value_keys(cf, include_inactive: true)` | List family: `possible_values` strings, deduplicated keeping the first occurrence. Enum family: ids as strings, by `[position, id]`, inactive included unless `include_inactive: false`. Uses in-memory values, so the textarea of the same request counts. |
@@ -759,7 +759,7 @@ end
 
 ## 8. Validation algorithm (points 5 and 6, D1)
 
-`DependencyRules.dependency_check(custom_value, state, user)` (D1, copies and non-editable children: 0.1.0 (M1), WP-09; effective parent and cycles: 0.1.0 (M1), WP-10):
+`DependencyRules.dependency_check(custom_value, state, user)` (D1 and copies: 0.1.0 (M1), WP-09; effective parent and cycles: 0.1.0 (M1), WP-10):
 
 ```ruby
 cf = custom_value.custom_field
@@ -770,19 +770,18 @@ baseline = child_baseline(custom_value)
 tolerated = state.changed? ? Set.new : Set.new(baseline)          # D1 per value (R14): keep what was there
 bad = current.reject { |v| allowed.include?(v) || tolerated.include?(v) }
 return [allowed.empty?, []] if bad.empty?
-return [allowed.empty?, []] if current.sort == baseline.sort && !editable_by?(cf, custom_value.customized, user)  # QA-08
 [allowed.empty?, [::I18n.t('activerecord.errors.messages.invalid')]]
 ```
 
 Rules:
-1. **D1 per value.** While the parent is unchanged, every value already in the baseline is tolerated, and only newly added values must be allowed. This matches core's own idiom (F7). When the parent changed, everything is strict again. A parent that is not available on the object counts as unchanged (no value before or after; UD-05). The one-line switch to strict is a user decision (UD-04).
+1. **D1 per value.** While the parent is unchanged, every value already in the baseline is tolerated, and only newly added values must be allowed. This matches core's own idiom (F7). When the parent changed, everything is strict again. A parent that is not available on the object counts as changed (UD-05, owner kept today's behaviour): nothing is tolerated and the allowed set is empty, so a non-blank child gives "is invalid" and has to be cleared. The one-line switch to strict is a user decision (UD-04).
    - Release effect: in 0.1.0 (M1) the leniency applies to the REST API, email, bulk edit, the wizard and copies. The issue form keeps such values only from 0.1.0 (M2) on, because the legacy JS still drops a disallowed stored value at load in 0.1.0 (M1); the new runtime (WP-17) keeps it using `data-dcf-stored` (2.2).
 2. **Copies (QA-07).** For a new record that `copy?` (issue copy, bulk copy, the issue part of project copy), the baseline is the source issue's stored child and parent value instead of `value_was` (F8). Combinations copied unchanged are accepted (UD-06). A changed child or a changed parent is validated as above.
    - The same baseline is emitted to the client as `data-dcf-stored` (2.2, gap 6), so the copy form keeps, marks and posts a copied legacy value instead of dropping it.
    - Today, copies holding a legacy combination fail, and project copy silently skips them (core-7.0 `project.rb:1227`). This revision fixes that.
    - Other new records (including Project copies of project custom fields) stay strict.
    - Core's own inclusion check is untouched. A copied value outside `possible_values`, or a copied inactive enumeration id, is still rejected by core, as for plain list and enumeration fields.
-3. **Non-editable child (QA-08).** The dependency rule never rejects an unchanged child that the current user cannot edit (`editable_custom_field_values`, F9), even when the parent changed. Such a child cannot be fixed by that user: core filters its assignment (core-7.0 `app/models/issue.rb:647-648`) but still validates it. A user decision confirms this default (UD-07).
+3. **Non-editable child (QA-08, withdrawn by UD-07).** Today's behaviour stays: an unchanged child that the current user cannot edit (`editable_custom_field_values`, F9) is validated like any other child when the parent changed. Core filters its assignment (core-7.0 `app/models/issue.rb:647-648`) but still validates it, so a parent change that makes such a child invalid is rejected. The owner accepts that the parent then stays effectively uneditable for that role. WP-09 pins this with a spec.
 4. **Cycle members and fields whose chain reaches a cycle:** no effective parent, so core validation only (UD-08). The client is unfiltered too (2.1).
 5. **No parent, dangling parent, nil customized, or a non-carrying object:** core validation only, as today.
 6. **Otherwise:** today's behaviour. When nothing is allowed, a non-blank untolerated value gives "is invalid" with no core check. Otherwise core errors are returned, plus one "is invalid".
@@ -978,7 +977,7 @@ The work-package split in `large_lists_work_packages.md` is canonical; the WP an
 2. **Refactor to the new structure:** DependencyRules, FieldIndex and DependingFormatMethods, with no behaviour change except listed flips. FieldRelevance and the project controller delegate. [WP-05 and WP-06, 0.1.0 (M1); `QueryCustomFieldColumnPatch` is removed in WP-06]
 3. **Deliberate changes, each flipping listed expectations, with a CHANGELOG line:**
    - (a) the enum options fix [WP-08, 0.1.0 (M1)];
-   - (b) D1 per value plus copies plus non-editable [WP-09, 0.1.0 (M1)];
+   - (b) D1 per value plus copies [WP-09, 0.1.0 (M1)];
    - (c) effective parent (cycle members unconstrained) [WP-10, 0.1.0 (M1)];
    - (d) cycle validation, locales, parent select and warning [WP-10, 0.1.0 (M1)];
    - (e) `normalized_store_pairs` and `storage_preview` for limits [defined in WP-06, 0.1.0 (M1), without behaviour change; consumed by WP-11, 0.1.0 (M1)].
@@ -1006,8 +1005,6 @@ Changed:
 - **Stored values.**
   - Stored values that no longer fit the parent are accepted on save until the parent changes. This holds per value: you can add or remove other values. [0.1.0 (M1), WP-09; UD-04. In 0.1.0 (M1) this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.1.0 (M2) on]
   - Issue copies, including bulk copy and project copy, keep such values when copied unchanged. [0.1.0 (M1), WP-09; UD-06. The copy form keeps them from 0.1.0 (M2) on through `data-dcf-stored`, WP-16 and WP-17]
-  - A dependent field you cannot edit no longer blocks saving a parent change. [0.1.0 (M1), WP-09; UD-07]
-  - An untouched value is accepted when the parent field is not available for the issue's tracker. [0.1.0 (M1), WP-09; UD-05]
 - **Filtering.**
   - Dependent fields whose parent is read-only or hidden by the workflow are filtered by the stored parent value, and may be hidden when "Hide when no valid options" is set. [0.1.0 (M2), WP-16 to WP-18]
   - Dependent fields whose parent you cannot see are no longer filtered in the browser. The server still validates them. [0.1.0 (M2), WP-16 to WP-18]
