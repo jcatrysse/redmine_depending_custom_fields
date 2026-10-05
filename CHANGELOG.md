@@ -126,7 +126,7 @@
 * Edit key-value (enumeration) values the way Redmine's own Administration
   screen does.
 
-## 0.0.16 (unreleased)
+## 0.0.16
 
 * **Security:** the context-menu wizard now writes only the custom fields the
   current user may edit on each issue, like Redmine's own bulk edit. Before,
