@@ -36,10 +36,10 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     before do
       allow(relation).to receive(:find_each).and_yield(issue1).and_yield(issue2)
       allow(Issue).to receive(:where).and_return(relation)
-      allow(issue1).to receive(:custom_field_values=)
+      allow(issue1).to receive(:safe_attributes=)
       allow(issue1).to receive(:save)
       allow(issue1).to receive(:errors).and_return(double(any?: false, full_messages: []))
-      allow(issue2).to receive(:custom_field_values=)
+      allow(issue2).to receive(:safe_attributes=)
       allow(issue2).to receive(:save)
       allow(issue2).to receive(:errors).and_return(double(any?: false, full_messages: []))
     end
@@ -47,9 +47,9 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     it 'sets the field value on each issue and saves them' do
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => 'foo' } } }
 
-      expect(issue1).to have_received(:custom_field_values=).with('5' => 'foo')
+      expect(issue1).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'foo' })
       expect(issue1).to have_received(:save)
-      expect(issue2).to have_received(:custom_field_values=).with('5' => 'foo')
+      expect(issue2).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'foo' })
       expect(issue2).to have_received(:save)
       expect(response).to have_http_status(:ok)
     end
@@ -66,13 +66,13 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     it 'clears the value when __none__ is passed' do
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => '__none__' } } }
 
-      expect(issue1).to have_received(:custom_field_values=).with('5' => '')
-      expect(issue2).to have_received(:custom_field_values=).with('5' => '')
+      expect(issue1).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => '' })
+      expect(issue2).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => '' })
     end
 
     it 'does nothing when blank value is submitted' do
-      expect(issue1).not_to receive(:custom_field_values=)
-      expect(issue2).not_to receive(:custom_field_values=)
+      expect(issue1).not_to receive(:safe_attributes=)
+      expect(issue2).not_to receive(:safe_attributes=)
 
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => '' } } }
 
@@ -80,8 +80,8 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     end
 
     it 'does nothing when empty array is submitted' do
-      expect(issue1).not_to receive(:custom_field_values=)
-      expect(issue2).not_to receive(:custom_field_values=)
+      expect(issue1).not_to receive(:safe_attributes=)
+      expect(issue2).not_to receive(:safe_attributes=)
 
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => [] } } }
 
@@ -91,8 +91,8 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     it 'accepts ids[] array parameters' do
       post :save, params: { ids: ['1', '2'], issue: { custom_field_values: { '5' => 'bar' } } }
 
-      expect(issue1).to have_received(:custom_field_values=).with('5' => 'bar')
-      expect(issue2).to have_received(:custom_field_values=).with('5' => 'bar')
+      expect(issue1).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'bar' })
+      expect(issue2).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'bar' })
     end
 
     context 'when user lacks permission' do

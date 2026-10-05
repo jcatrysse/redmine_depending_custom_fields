@@ -29,7 +29,10 @@ class ContextMenuWizardController < ApplicationController
 
     errors = []
     @issues.find_each do |issue|
-      issue.custom_field_values = values
+      # Assign through safe_attributes= like core bulk_update does: it keeps
+      # only the custom fields the current user may edit on this issue
+      # (visible for the user's roles and not read-only by workflow).
+      issue.safe_attributes = { 'custom_field_values' => values }
       issue.save
       errors.concat(issue.errors.full_messages) if issue.errors.any?
     end

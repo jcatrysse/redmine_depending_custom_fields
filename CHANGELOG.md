@@ -125,3 +125,11 @@
   page
 * Edit key-value (enumeration) values the way Redmine's own Administration
   screen does.
+
+## 0.0.16 (unreleased)
+
+* **Security:** the context-menu wizard now writes only the custom fields the
+  current user may edit on each issue, like Redmine's own bulk edit. Before,
+  a user allowed to edit an issue could also change fields that are read-only
+  for their role by workflow, or hidden for their role, by posting those field
+  ids to `/depending_custom_fields/save`.
