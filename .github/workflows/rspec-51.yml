@@ -3,6 +3,9 @@ name: Plugin Specs (Redmine 5.1)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: RSpec tests
@@ -35,7 +38,7 @@ jobs:
         run: |
           git clone --depth 1 --branch 5.1-stable https://github.com/redmine/redmine.git redmine
           mkdir -p redmine/plugins/$(basename "$GITHUB_WORKSPACE")
-          rsync -a --exclude redmine/ --exclude .git/ ./ redmine/plugins/$(basename "$GITHUB_WORKSPACE")/
+          rsync -a --exclude redmine/ --exclude .git/ --exclude node_modules/ ./ redmine/plugins/$(basename "$GITHUB_WORKSPACE")/
 
       - name: Install system packages
         run: sudo apt-get update && sudo apt-get install -y build-essential libpq-dev nodejs

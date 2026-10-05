@@ -1,0 +1,19 @@
+# RuboCop overlay for .codex/rubocop_ratchet.sh. Only meaningful inside a Redmine
+# checkout (plugins/redmine_depending_custom_fields) because it inherits core's
+# configuration; core's own RuboCop run never reads it (core excludes plugins/**).
+inherit_from: ../../.rubocop.yml
+
+AllCops:
+  # init.rb declares requires_redmine 5.0: stay Ruby 2.7 / Rails 6.1 compatible,
+  # so no cop suggests 3.x-only syntax or Rails 7+/8-only APIs.
+  TargetRubyVersion: 2.7
+  TargetRailsVersion: 6.1
+  Exclude:
+    - '**/node_modules/**/*'
+    - '**/vendor/**/*'
+    - '**/tmp/**/*'
+    - '**/coverage/**/*'
+
+# :unprocessable_content raises ArgumentError on Rack 2.2 (Redmine 5.1). Use 422.
+Rails/HttpStatusNameConsistency:
+  Enabled: false

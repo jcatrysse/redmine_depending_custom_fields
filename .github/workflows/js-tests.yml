@@ -1,0 +1,31 @@
+name: Plugin JavaScript tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: node --test (jsdom)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install development dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check shipped assets parse as ES2017
+        run: npm run check
+
+      - name: Run JavaScript tests
+        run: npm run test:ci

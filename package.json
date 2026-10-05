@@ -1,0 +1,17 @@
+{
+  "name": "redmine_depending_custom_fields-dev",
+  "private": true,
+  "license": "GPL-2.0-or-later",
+  "description": "Development-only tooling (JS tests). Not needed to run the plugin.",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "check": "node test/js/support/check_assets.js",
+    "test": "node --test \"test/js/**/*.test.js\"",
+    "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout \"test/js/**/*.test.js\""
+  },
+  "devDependencies": {
+    "acorn": "~8.18.0",
+    "jquery": "3.7.1",
+    "jsdom": "~29.1.1"
+  }
+}

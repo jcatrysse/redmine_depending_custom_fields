@@ -41,10 +41,16 @@ RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
         @format_obj             = attrs[:format]
       end
 
-      def is_required? = @required
-      def format       = @format_obj
+      def is_required?
+        @required
+      end
+      def format
+        @format_obj
+      end
 
-      def set_custom_field_value(_cv, v) = v  # required by CustomFieldValue#value=
+      def set_custom_field_value(_cv, v)  # required by CustomFieldValue#value=
+        v
+      end
 
       # Mirrors the relevant part of CustomField#validate_custom_value
       def validate_custom_value(custom_value)
@@ -261,11 +267,19 @@ RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
           @format_obj             = attrs[:format]
         end
 
-        def is_required? = @required
-        def format       = @format_obj
-        def multiple?    = true
+        def is_required?
+          @required
+        end
+        def format
+          @format_obj
+        end
+        def multiple?
+          true
+        end
 
-        def set_custom_field_value(_cv, v) = v
+        def set_custom_field_value(_cv, v)
+          v
+        end
 
         # Array branch of CustomField#validate_custom_value
         def validate_custom_value(custom_value)

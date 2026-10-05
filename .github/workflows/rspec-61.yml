@@ -1,4 +1,4 @@
-name: Plugin Specs (Redmine 7.0)
+name: Plugin Specs (Redmine 6.1)
 
 on:
   workflow_dispatch:
@@ -34,9 +34,9 @@ jobs:
       - name: Checkout plugin
         uses: actions/checkout@v4
 
-      - name: Clone Redmine 7.0
+      - name: Clone Redmine 6.1
         run: |
-          git clone --depth 1 --branch 7.0-stable https://github.com/redmine/redmine.git redmine
+          git clone --depth 1 --branch 6.1-stable https://github.com/redmine/redmine.git redmine
           mkdir -p redmine/plugins/$(basename "$GITHUB_WORKSPACE")
           rsync -a --exclude redmine/ --exclude .git/ --exclude node_modules/ ./ redmine/plugins/$(basename "$GITHUB_WORKSPACE")/
 
@@ -46,7 +46,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.4.5
+          ruby-version: 3.3.9
           bundler-cache: false
           working-directory: redmine
 
