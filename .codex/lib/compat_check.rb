@@ -17,8 +17,9 @@ module DcfCompatCheck
     [/\bin_order_of\b/, 'in_order_of needs Rails 7'],
     [/\bnormalizes\b/, 'normalizes needs Rails 7.1'],
     [/Rails\.configuration\.to_prepare/, 'repository rule: no to_prepare in init.rb'],
-    [/\bdelete_matched\b/, 'delete_matched raises NotImplementedError on MemCacheStore'],
-    [/\bjavascript_tag\b/, 'no inline script tags (CSP, point 1)'],
+    # Production code only: specs legitimately name these to assert their absence.
+    [/\bdelete_matched\b/, 'delete_matched raises NotImplementedError on MemCacheStore', :code],
+    [/\bjavascript_tag\b/, 'no inline script tags (CSP, point 1)', :code],
     [/[\u2013\u2014]/, 'no en dash or em dash characters (owner style)']
   ].freeze
   EXEMPT = 'dcf-compat-ok'
@@ -39,7 +40,9 @@ module DcfCompatCheck
       elsif line.start_with?('+')
         text = line[1..-1]
         unless text.include?(EXEMPT)
-          RULES.each do |pattern, message|
+          RULES.each do |pattern, message, scope|
+            next if scope == :code && spec_path?(path)
+
             findings << [path, line_no, message, text.strip] if pattern.match?(text)
           end
         end
@@ -47,6 +50,10 @@ module DcfCompatCheck
       end
     end
     findings
+  end
+
+  def spec_path?(path)
+    path.to_s.start_with?('spec/', 'test/')
   end
 
   # git output is UTF-8 whatever the process locale (LANG may be unset).

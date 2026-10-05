@@ -18,7 +18,7 @@ RSpec.describe 'CustomField cache clearing callback' do
     cf.format = RedmineDependingCustomFields::DependingListFormat.instance
     cf.send(:dispatch_after_custom_field_save)
     expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
-    expect(Rails.cache).to have_received(:delete_matched).with('dcf/*')
+    expect(Rails.cache).not_to have_received(:delete_matched)
   end
 
   it 'clears caches for depending enumeration field' do
@@ -26,6 +26,6 @@ RSpec.describe 'CustomField cache clearing callback' do
     cf.format = RedmineDependingCustomFields::DependingEnumerationFormat.instance
     cf.send(:dispatch_after_custom_field_save)
     expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
-    expect(Rails.cache).to have_received(:delete_matched).with('dcf/*')
+    expect(Rails.cache).not_to have_received(:delete_matched)
   end
 end

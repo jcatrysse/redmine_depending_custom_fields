@@ -76,7 +76,6 @@ module RedmineDependingCustomFields
 
     def after_custom_field_save(_custom_field)
       Rails.cache.delete('depending_custom_fields/mapping')
-      Rails.cache.delete_matched('dcf/*')
     end
 
     def validate_custom_value(custom_value)

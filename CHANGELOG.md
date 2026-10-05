@@ -142,6 +142,11 @@
   every other custom field of the import. Before, a user allowed to import
   issues could set such fields that are hidden for their role or read-only by
   workflow by mapping them in the import settings.
+* Fixed: saving a depending field no longer fails with an internal error (and
+  a rolled back save) on MemCacheStore or other cache stores without
+  `delete_matched`.
+* Fixed: bulk edit of issues and time entries no longer clears untouched
+  multi-value dependent fields on every selected record.
 * Fixed: the per-parent default table of the admin custom field form shows
   "Default value" instead of a missing translation.
 * Removed: the unused and broken `test/spec` suite (it was never run by CI or

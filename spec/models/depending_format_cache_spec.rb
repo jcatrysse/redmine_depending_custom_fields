@@ -12,13 +12,13 @@ RSpec.describe 'Depending format cache clearing' do
     format = RedmineDependingCustomFields::DependingListFormat.instance
     format.after_custom_field_save(cf)
     expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
-    expect(Rails.cache).to have_received(:delete_matched).with('dcf/*')
+    expect(Rails.cache).not_to have_received(:delete_matched)
   end
 
   it 'clears caches for enumeration format' do
     format = RedmineDependingCustomFields::DependingEnumerationFormat.instance
     format.after_custom_field_save(cf)
     expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
-    expect(Rails.cache).to have_received(:delete_matched).with('dcf/*')
+    expect(Rails.cache).not_to have_received(:delete_matched)
   end
 end

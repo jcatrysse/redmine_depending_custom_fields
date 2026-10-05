@@ -84,6 +84,12 @@ RSpec.describe 'Lint gate helpers (.codex)' do
       expect(described_class.check(binary)).to be_empty
     end
 
+    it 'allows specs to name delete_matched and javascript_tag but not production code' do
+      expect(described_class.check(diff('expect(cache).not_to have_received(:delete_matched)', 'spec/models/x_spec.rb'))).to be_empty
+      expect(described_class.check(diff('Rails.cache.delete_matched("x")', 'lib/x.rb'))).not_to be_empty
+      expect(described_class.check(diff("a \u2014 b", 'spec/models/x_spec.rb'))).not_to be_empty
+    end
+
     it 'exempts a line marked dcf-compat-ok' do
       expect(described_class.check(diff('<%= javascript_tag "x" %> <%# dcf-compat-ok %>'))).to be_empty
     end

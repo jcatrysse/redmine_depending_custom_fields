@@ -98,7 +98,7 @@
 
     const getContextRoot = (element) => {
         if (!element || !element.closest) return document;
-        return element.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk-edit-form, form') || document;
+        return element.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form, form') || document;
     };
 
     const getValues = (field) => {
@@ -198,7 +198,7 @@
         const container = ensureHiddenContainer(field);
         container.innerHTML = '';
         const values = getValues(field);
-        const isBulk = !!field.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk-edit-form');
+        const isBulk = !!field.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form');
         const isInlineEdit = !!field.closest('#inline_edit_form');
 
         if (isBulk) {
@@ -295,7 +295,7 @@
         const isSelect = isSelectElement(childSelect);
         const isBulk = isSelect
             ? childSelect.querySelector(`option[value="${NONE_VALUE}"]`) !== null
-            : !!childSelect.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk-edit-form');
+            : !!childSelect.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form');
         const noChangeOption = isSelect ? childSelect.querySelector('option[value=""]') : null;
         const hasNone  = parentValues.includes(NONE_VALUE);
         const hasValue = parentValues.some(v => v !== '' && v !== NONE_VALUE);
