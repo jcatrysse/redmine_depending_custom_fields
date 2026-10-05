@@ -12,7 +12,7 @@ module DcfConfigHelpers
     user
   end
 
-  # status: :active (default), :closed (read-only — read:true permissions still
+  # status: :active (default), :closed (read-only: read:true permissions still
   # work), or :archived (Redmine denies all access).
   def dcf_create_project(name: 'Project', active: true, status: nil)
     status ||= active ? :active : :archived
@@ -118,11 +118,53 @@ module DcfConfigHelpers
     issue
   end
 
-  # A bare CustomValue row (no real issue) — enough to test the value rewrite,
+  # A bare CustomValue row (no real issue): enough to test the value rewrite,
   # which is scoped by custom_field_id + value (no project join).
   def dcf_custom_value(field, value, customized_id: 999_999)
     CustomValue.create!(customized_type: 'Issue', customized_id: customized_id,
                         custom_field_id: field.id, value: value.to_s)
+  end
+
+  # Fixed, disjoint id ranges for records whose ids end up in rendered markup
+  # or JSON fixtures, so the output is the same on every run and version.
+  DCF_FIXTURE_ID_BASES = {
+    'CustomField' => 9_100_001,
+    'CustomFieldEnumeration' => 9_200_001,
+    'Issue' => 9_300_001,
+    'Project' => 9_400_001,
+    'User' => 9_500_001,
+    'Role' => 9_600_001,
+    'Tracker' => 9_700_001,
+    'IssueStatus' => 9_800_001
+  }.freeze
+
+  # Builds and saves +klass+ with the next id of its range. Pass the attributes
+  # as an explicit Hash (braces): validate: is a keyword. Pass a block to set
+  # attributes that are not mass-assignable. validate: false mirrors the
+  # existing builders for records whose validations need unrelated setup.
+  def dcf_fixture_record(klass, attributes = {}, validate: true)
+    base_name = klass.base_class.name
+    base = DCF_FIXTURE_ID_BASES.fetch(base_name) { raise ArgumentError, "no fixture id range for #{base_name}" }
+    @dcf_fixture_counters ||= Hash.new(0)
+    record = klass.new
+    attributes.each { |name, value| record.send("#{name}=", value) }
+    yield record if block_given?
+    record.id = base + @dcf_fixture_counters[base_name]
+    @dcf_fixture_counters[base_name] += 1
+    record.save!(validate: validate)
+    record
+  end
+
+  def dcf_issue_status(name: "Status-#{SecureRandom.hex(3)}", is_closed: false)
+    IssueStatus.create!(name: name, is_closed: is_closed)
+  end
+
+  # A tracker with its own default status (Redmine requires one).
+  def dcf_tracker(name: "Tracker-#{SecureRandom.hex(3)}", default_status: nil)
+    tracker = Tracker.new(name: name)
+    tracker.default_status = default_status || dcf_issue_status
+    tracker.save!
+    tracker
   end
 end
 

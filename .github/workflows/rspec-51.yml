@@ -2,6 +2,11 @@ name: Plugin Specs (Redmine 5.1)
 
 on:
   workflow_dispatch:
+    inputs:
+      system_specs:
+        description: 'Also run the opt-in browser specs (spec/system, headless Chrome)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -87,4 +92,11 @@ jobs:
           mkdir -p tmp/test-results
           bundle exec rspec plugins/$(basename "$GITHUB_WORKSPACE")/spec \
             --format progress
+        working-directory: redmine
+
+      - name: Run system specs (opt-in)
+        if: ${{ inputs.system_specs }}
+        run: |
+          DCF_SYSTEM_SPECS=1 bundle exec rspec plugins/$(basename "$GITHUB_WORKSPACE")/spec/system \
+            --format documentation
         working-directory: redmine

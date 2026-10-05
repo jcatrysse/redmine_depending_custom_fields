@@ -58,15 +58,39 @@ issue once you click **Save**.
 
 ## Compatibility
 
-The plugin is tested with Redmine **5.1** and should work with later versions.
+* Tested with Redmine **5.1, 6.0, 6.1 and 7.0** (PostgreSQL).
+* `requires_redmine` stays at **5.0**: the code is kept compatible with Ruby 2.7
+  and Rails 6.1, but Redmine 5.0 itself is not tested.
+* Ruby **2.7 or newer** is required.
 
 ## Development
 
-Tests can be run using:
+Plugin specs run inside a Redmine checkout:
 
 ```bash
 RAILS_ENV=test bundle exec rspec plugins/redmine_depending_custom_fields/spec
 ```
+
+The `.codex` scripts reproduce the CI steps locally on a fresh Redmine checkout
+(they need PostgreSQL with a role `redmine`/`redmine` that may create databases;
+the scripts never create roles themselves):
+
+```bash
+.codex/redmine_clone.sh 7.0          # shallow clone of 7.0-stable
+.codex/test_setup.sh 7.0             # gems, database.yml, migrations
+.codex/test_plugin.sh 7.0            # rspec, JavaScript tests and the lint gate
+.codex/test_matrix.sh --setup --suite rspec --suite lint   # 5.1, 6.0, 6.1 and 7.0
+```
+
+* Specs run in random order; the seed is printed, rerun a failure with
+  `--seed <n>`.
+* Browser specs (`spec/system`) are opt-in: `DCF_SYSTEM_SPECS=1` (headless
+  Chrome). Leave `CHROME_BIN` unset so Selenium Manager picks a matching
+  Chrome and chromedriver; set it only together with a matching driver.
+* JavaScript tests use Node 22: `npm ci && npm run check && npm test`.
+* Lint gate: `.codex/rubocop_ratchet.sh` (Ruby 2.7 syntax, compatibility check
+  on added lines, no new RuboCop offenses in changed files).
+* The GitHub workflows are manual only (`workflow_dispatch`).
 
 ## API
 
@@ -76,12 +100,12 @@ you normally configure in the Redmine GUI, such as name, description, required
 flag, visibility, trackers and projects as well as the dependency mapping.
 The following endpoints are available:
 
-- `GET /depending_custom_fields` – list supported custom fields.
-- `GET /depending_custom_fields/:id` – show a single custom field with its
+- `GET /depending_custom_fields`: list supported custom fields.
+- `GET /depending_custom_fields/:id`: show a single custom field with its
   dependencies.
-- `POST /depending_custom_fields` – create a new custom field.
-- `PUT /depending_custom_fields/:id` – update an existing custom field.
-- `DELETE /depending_custom_fields/:id` – remove a custom field.
+- `POST /depending_custom_fields`: create a new custom field.
+- `PUT /depending_custom_fields/:id`: update an existing custom field.
+- `DELETE /depending_custom_fields/:id`: remove a custom field.
 
 Responses contain the custom field attributes listed above including
 `parent_custom_field_id`, the possible values and the mapping of allowed child
@@ -278,19 +302,19 @@ assigned to the *Non member* / *Anonymous* roles. Members holding it gain a
 For custom fields **relevant to the current project** (issue custom fields in the
 project plus all project custom fields) in a supported format:
 
-* **Standard `list`** and **standard `enumeration`** — values and the field's
+* **Standard `list`** and **standard `enumeration`**: values and the field's
   default value.
-* **`depending_list`** and **`depending_enumeration`** — values **plus** the
+* **`depending_list`** and **`depending_enumeration`**: values **plus** the
   parent/child dependency matrix. Fields without a parent expose a plain default
   value; child fields configure per-parent default values in the matrix.
 
 Add, rename, remove and reorder values; manage enumeration values; set the
 field's default value; and edit the dependency matrix. Values are reordered by
-dragging the handle to the target position — the same drag handle, and the same
+dragging the handle to the target position: the same drag handle, and the same
 single control, that Redmine itself uses for enumeration values in
 Administration. Key/value (enumeration) values are edited exactly as
 Administration edits them: the table is one form with a single **Save** that
-applies renames, reordering and the **Active** checkbox together — unticking
+applies renames, reordering and the **Active** checkbox together. Unticking
 Active hides the value from every picker without deleting anything, and ticking
 it again brings the value back. For `multiple` fields the
 per-parent default selectors allow choosing several values. The feature
@@ -300,20 +324,20 @@ required flag, tracker or project applicability.
 ### Safety
 
 * Renaming a list value rewrites existing issue values, the field default, the
-  field's own dependency entries and the parent keys of every dependent field —
+  field's own dependency entries and the parent keys of every dependent field,
   all in one transaction. Removing a value never deletes issue data (list values
   are left orphaned; in-use enumeration values are deactivated rather than
   destroyed).
 * Deactivating an enumeration value is reversible and destroys nothing: stored
   issue values keep resolving to the (inactive) name and the dependency matrix is
-  left untouched, so reactivating restores the previous behaviour — including for
+  left untouched, so reactivating restores the previous behaviour, including for
   issues already sitting on a deactivated parent value. The only thing it changes
   besides the flag is the field's default value, which is cleared if it pointed
   at the value being deactivated.
 * Editing a field shared with, or global to, other projects is allowed but
   surfaced with scope badges, a warning banner, an impact panel and a required
   confirmation checkbox.
-* Every change — and every rejected attempt — is recorded in an append-only
+* Every change, and every rejected attempt, is recorded in an append-only
   audit log, written in the same transaction as the change. Project managers see
   the audit for their project in the settings tab; administrators can view the
   global log at `/dcf_config_audit`.
@@ -323,10 +347,10 @@ required flag, tracker or project applicability.
 Two plugin settings (Administration → Plugins → Configure):
 
 * **Allow managing standard list / key-value fields** (`manage_standard_custom_fields`,
-  default **on**) — turn off to restrict delegation to the plugin's depending
+  default **on**): turn off to restrict delegation to the plugin's depending
   formats only.
 * **Block removing values that are still in use** (`block_removal_when_used`,
-  default off) — hardens value removal.
+  default off): hardens value removal.
 
 ### Migration
 

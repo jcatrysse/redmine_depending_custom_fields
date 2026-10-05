@@ -44,6 +44,8 @@ unless defined?(ActiveRecord::QueryRecorder)
 end
 require_relative 'support/custom_field_factory'
 require_relative 'support/dcf_config_helpers'
+require_relative 'support/query_counter'
+require_relative 'support/dcf_large_list'
 
 RSpec.configure do |config|
   fixture_path = File.expand_path('fixtures', __dir__)
@@ -59,6 +61,24 @@ RSpec.configure do |config|
   end
 
   config.use_transactional_fixtures = true
+
+  # Random order surfaces hidden dependencies between examples; the seed is
+  # printed so a failure can be replayed with --seed <n>.
+  config.order = :random
+  Kernel.srand config.seed
+
+  # Browser specs are opt-in (DCF_SYSTEM_SPECS=1), they need Chrome.
+  if ENV['DCF_SYSTEM_SPECS'] == '1'
+    require_relative 'support/system_driver'
+  else
+    config.filter_run_excluding type: :system
+  end
+  config.filter_run_excluding :mysql unless Redmine::Database.mysql?
+  config.filter_run_excluding :perf unless ENV['DCF_PERF_SPECS'] == '1'
+
+  # A spec that switches the locale must not leak it into the next example.
+  config.around { |example| I18n.with_locale(I18n.default_locale) { example.run } }
+
   config.infer_spec_type_from_file_location!
   config.filter_rails_from_backtrace!
   begin
@@ -75,5 +95,3 @@ RSpec.configure do |config|
     @request.session[:user_id] = user.id if defined?(@request)
   end
 end
-
-require File.expand_path('../init', __dir__)

@@ -81,7 +81,7 @@
   rows and `default_value`; renames/removals of a value used as a *parent key*
   cascade into every depending child; enumeration removal deactivates in-use
   values and destroys unused ones.
-* Every change — and every rejected attempt — is written to a new append-only
+* Every change, and every rejected attempt, is written to a new append-only
   `dcf_config_audit_events` table inside the same transaction as the change.
   A project-scoped audit view lives in the settings tab; an admin-only global
   view is available at `/dcf_config_audit`.
@@ -113,8 +113,8 @@
   and `:enumerations` from the `CustomField` STI base while the result set
   mixed `IssueCustomField` and `ProjectCustomField` records. Since `:projects`
   is a habtm defined only on `IssueCustomField`, the Rails 7 preloader (Redmine
-  6+) — which groups records by concrete class and requires the association on
-  each — raised `Association named 'projects' was not found on
+  6+), which groups records by concrete class and requires the association on
+  each, raised `Association named 'projects' was not found on
   ProjectCustomField`, producing a 500 on the settings tab. The two field types
   are now queried separately so `:projects` is preloaded only where it exists,
   keeping the N+1 optimisation intact.
@@ -142,3 +142,14 @@
   every other custom field of the import. Before, a user allowed to import
   issues could set such fields that are hidden for their role or read-only by
   workflow by mapping them in the import settings.
+* Fixed: the per-parent default table of the admin custom field form shows
+  "Default value" instead of a missing translation.
+* Removed: the unused and broken `test/spec` suite (it was never run by CI or
+  rake).
+* Development: `.codex` scripts that reproduce the CI steps locally, a lint
+  gate (Ruby 2.7 syntax, compatibility check on added lines, RuboCop ratchet),
+  JavaScript tests with `node --test` and jsdom, specs in random order, opt-in
+  browser specs (`DCF_SYSTEM_SPECS=1`), locale parity and no-dash checks, and
+  manual workflows for Redmine 6.1 and JavaScript.
+* Upgrade notes: Ruby 2.7 or newer is required. Redmine 5.0 stays declared but
+  is not tested; 5.1, 6.0, 6.1 and 7.0 are tested.

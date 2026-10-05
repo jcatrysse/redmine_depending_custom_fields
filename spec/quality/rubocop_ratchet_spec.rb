@@ -79,6 +79,11 @@ RSpec.describe 'Lint gate helpers (.codex)' do
       expect(described_class.check(text)).to be_empty
     end
 
+    it 'reads a diff with non-ASCII characters whatever the external encoding is' do
+      binary = diff("name = 'S\u00e3o Jo\u00e3o'").dup.force_encoding(Encoding::ASCII_8BIT)
+      expect(described_class.check(binary)).to be_empty
+    end
+
     it 'exempts a line marked dcf-compat-ok' do
       expect(described_class.check(diff('<%= javascript_tag "x" %> <%# dcf-compat-ok %>'))).to be_empty
     end

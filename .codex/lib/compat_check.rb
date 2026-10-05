@@ -30,7 +30,7 @@ module DcfCompatCheck
     findings = []
     path = nil
     line_no = 0
-    diff.each_line do |raw|
+    utf8(diff).each_line do |raw|
       line = raw.chomp
       if line.start_with?('+++ ')
         path = line.sub(%r{\A\+\+\+ (b/)?}, '')
@@ -47,6 +47,11 @@ module DcfCompatCheck
       end
     end
     findings
+  end
+
+  # git output is UTF-8 whatever the process locale (LANG may be unset).
+  def utf8(text)
+    text.dup.force_encoding(Encoding::UTF_8).scrub
   end
 end
 

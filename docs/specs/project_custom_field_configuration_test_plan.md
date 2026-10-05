@@ -209,15 +209,17 @@ row) — these are the guard against a future prune being added to §E:
 
 ## 8. View / request tests
 
-> **Harness note (independent-review fix #15):** the repo has no Capybara/system
-> stack (only `spec/` request/model/lib specs + a `test/` unit harness). Write
-> these as **request specs** (assert rendered HTML / redirects / status), **not**
-> Capybara system specs, unless Agent 9 confirms and adds a system-test stack.
-> No test may depend on a JS driver. Since Amendment A2 (reorder is drag-only)
-> this no longer rests on a no-JS reorder path but on the fact that the sortable
-> submits an **ordinary form PATCH**: the endpoint is covered by request specs
-> and the client-side hooks by markup assertions. Drag behaviour itself is
-> therefore verified manually — see T-CMP-4 in §10.
+> **Harness note (independent-review fix #15, amended by large_lists WP-02):**
+> since 0.0.16 the repo has an opt-in system spec stack: `spec/system`, run with
+> `DCF_SYSTEM_SPECS=1` (core's Capybara and selenium-webdriver, headless
+> Chrome, `spec/support/system_driver.rb`; see README Development). The tests
+> of this section stay **request specs** (assert rendered HTML / redirects /
+> status), because the default suite must run without a browser. Since
+> Amendment A2 (reorder is drag-only) this no longer rests on a no-JS reorder
+> path but on the fact that the sortable submits an **ordinary form PATCH**: the
+> endpoint is covered by request specs and the client-side hooks by markup
+> assertions. Drag behaviour itself can now get an opt-in system spec; until
+> then it is verified manually, see T-CMP-4 in section 10.
 
 - T-UI-1 Tab renders for authorized users (request spec asserts the tab link in
   `projects/settings`).
