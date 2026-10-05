@@ -47,7 +47,7 @@ echo "--- 2. Compat check (lines added since base)"
 COMPAT_PATHS=(app lib config db init.rb spec assets ':!*.md' ':!spec/quality/**')
 { git diff -U0 "$BASE" -- "${COMPAT_PATHS[@]}"
   git ls-files --others --exclude-standard -- "${COMPAT_PATHS[@]}" \
-    | while read -r f; do git diff -U0 --no-index /dev/null "$f"; done
+    | while read -r f; do git diff -U0 --no-index /dev/null "$f" || true; done  # exit 1 means "differs"
 } | ruby "$DCF_SCRIPT_DIR/lib/compat_check.rb" || STATUS=1
 
 echo "--- 3. Ratchet (changed files vs $BASE)"
