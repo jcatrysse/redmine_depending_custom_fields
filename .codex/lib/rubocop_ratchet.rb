@@ -14,9 +14,7 @@ module DcfRubocopRatchet
 
   # path => [offense, ...]
   def offenses_by_path(report)
-    report.fetch('files').each_with_object({}) do |file, out|
-      out[file['path']] = file['offenses']
-    end
+    report.fetch('files').to_h { |file| [file['path'], file['offenses']] }
   end
 
   # Returns { regressions: [String], infos: [String], summary: String }.
@@ -54,7 +52,7 @@ module DcfRubocopRatchet
   end
 end
 
-if $PROGRAM_NAME == __FILE__
+if $0 == __FILE__
   result = DcfRubocopRatchet.compare(JSON.parse(File.read(ARGV.fetch(0))),
                                      JSON.parse(File.read(ARGV.fetch(1))))
   puts result[:infos]

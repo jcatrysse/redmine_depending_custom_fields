@@ -19,7 +19,7 @@ module DcfCompatCheck
     [/Rails\.configuration\.to_prepare/, 'repository rule: no to_prepare in init.rb'],
     [/\bdelete_matched\b/, 'delete_matched raises NotImplementedError on MemCacheStore'],
     [/\bjavascript_tag\b/, 'no inline script tags (CSP, point 1)'],
-    [/[–—]/, 'no en dash or em dash characters (owner style)']
+    [/[\u2013\u2014]/, 'no en dash or em dash characters (owner style)']
   ].freeze
   EXEMPT = 'dcf-compat-ok'
 
@@ -40,7 +40,7 @@ module DcfCompatCheck
         text = line[1..-1]
         unless text.include?(EXEMPT)
           RULES.each do |pattern, message|
-            findings << [path, line_no, message, text.strip] if text =~ pattern
+            findings << [path, line_no, message, text.strip] if pattern.match?(text)
           end
         end
         line_no += 1
@@ -50,7 +50,7 @@ module DcfCompatCheck
   end
 end
 
-if $PROGRAM_NAME == __FILE__
+if $0 == __FILE__
   findings = DcfCompatCheck.check($stdin.read)
   findings.each { |path, line, message, text| puts "#{path}:#{line}: #{message}: #{text}" }
   if findings.empty?

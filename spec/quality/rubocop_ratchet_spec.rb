@@ -64,12 +64,12 @@ RSpec.describe 'Lint gate helpers (.codex)' do
     end
 
     it 'flags an en dash and an em dash' do
-      expect(described_class.check(diff("a – b"))).not_to be_empty
-      expect(described_class.check(diff("a — b"))).not_to be_empty
+      expect(described_class.check(diff("a \u2013 b"))).not_to be_empty
+      expect(described_class.check(diff("a \u2014 b"))).not_to be_empty
     end
 
     it 'flags Ruby 3.1+ and Rails 7+ only APIs' do
-      %w[list.intersect?(other) params.expect(:id) render(status: :unprocessable_content)].each do |code|
+      ['list.intersect?(other)', 'params.expect(:id)', 'render(status: :unprocessable_content)'].each do |code|
         expect(described_class.check(diff(code, 'app/x.rb'))).not_to be_empty, code
       end
     end
