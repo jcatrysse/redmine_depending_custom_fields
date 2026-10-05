@@ -17,48 +17,50 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 | UD | Status | First release | Work packages | Question |
 |---|---|---|---|---|
-| UD-01 | Open | 0.0.16 | WP-07, WP-14, WP-20, WP-32 | Release structure and deprecation targets: ship in four releases (0.0.16 foundation and hotfixes, 0.1.0 server rules and storage safety, 0.2.0 issue-form runtime, 0.3.0 editors and project pages) instead of one 0.1.0 as assumed by the area designs? |
-| UD-02 | Open | 0.0.16 | WP-03 | Ship two hotfixes in the legacy code in 0.0.16 (remove delete_matched; fix the #bulk-edit-form selector) before the rewrite? |
-| UD-03 | Open | 0.0.16 | WP-07, WP-20 | When does the separately tracked wizard-save security fix (SD-01) ship? |
-| UD-04 | Open | 0.1.0 | WP-09, WP-17 | D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)? |
-| UD-05 | Open | 0.1.0 | WP-09, WP-17 | Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)? |
-| UD-06 | Open | 0.1.0 | WP-09, WP-16 | Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied? |
-| UD-07 | Open | 0.1.0 | WP-09 | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
-| UD-08 | Open | 0.1.0 | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
-| UD-09 | Open | 0.2.0 | WP-17, WP-20 | Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links? |
-| UD-10 | Open | 0.2.0 | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
-| UD-11 | Open | 0.2.0 | WP-18, WP-20 | Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')? |
-| UD-12 | Open | 0.2.0 | WP-17 | Apply per-parent defaults at page load only to new records (always on parent changes)? |
-| UD-13 | Open | 0.2.0 | WP-18 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
-| UD-14 | Open | 0.2.0 | WP-15, WP-18 | Delete MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch outright (D5) instead of uncached deprecated shims? |
-| UD-15 | Open | 0.3.0 | WP-22 | Keep the admin safe attributes value_dependencies and default_value_dependencies permanently (deviation from D5's one-minor-version window)? |
-| UD-16 | Open | 0.3.0 | WP-25, WP-27 | Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active? |
-| UD-17 | Open | 0.3.0 | WP-22, WP-25, WP-27 | Keep the admin lost-update guard with the conflict panel (use mine, keep current, export mine) and defer a three-way merge? |
-| UD-18 | Open | 0.3.0 | WP-26 | Spreadsheet formula protection on CSV export? |
-| UD-19 | Open | 0.3.0 | WP-26 | Enumeration import matches by name only (D7) in this release? |
-| UD-20 | Open | 0.3.0 | WP-25 | Editor page sizes: 100 parent sections and 200 child rows per 'Show more'? |
-| UD-21 | Open | 0.3.0 | WP-28 | Values page: paginate only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values? |
-| UD-22 | Open | 0.3.0 | WP-31 | Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings? |
-| UD-23 | Open | 0.3.0 | WP-27, WP-29 | Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort? |
-| UD-24 | Open | 0.3.0 | WP-29 | Sort inactive enumerations together with active ones (not pushed to the end)? |
-| UD-25 | Open | 0.1.0 | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
-| UD-26 | Open | 0.1.0 | WP-13 | Default type for widen_core_columns? |
-| UD-27 | Open | 0.1.0 | WP-13 | MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe? |
-| UD-28 | Open | 0.1.0 | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
-| UD-29 | Open | 0.0.16 | WP-01 | Approve the committed .rubocop.yml overlay (TargetRubyVersion 2.7, TargetRailsVersion 6.1, Rails/HttpStatusNameConsistency disabled) as the ratchet configuration (deviation from raw core config in D10)? |
-| UD-30 | Open | 0.0.16 | WP-01, WP-17 | Approve devDependencies jquery 3.7.1 and acorn ~8.18.0 in addition to jsdom ~29.1.1 (D10 named only jsdom)? |
-| UD-31 | Open | 0.0.16 | WP-01 | rspec-61.yml: clone source and Ruby version? |
+| UD-01 | Resolved | 0.0.16 | WP-07, WP-14, WP-20, WP-32 | (Owner: one release, see detail) Release structure and deprecation targets: ship in four releases (0.0.16 foundation and hotfixes, 0.1.0 (M1) server rules and storage safety, 0.1.0 (M2) issue-form runtime, 0.1.0 (M3) editors and project pages) instead of one 0.1.0 (M1) as assumed by the area designs? |
+| UD-02 | Resolved | 0.0.16 | WP-03 | Ship two hotfixes in the legacy code in 0.0.16 (remove delete_matched; fix the #bulk-edit-form selector) before the rewrite? |
+| UD-03 | Resolved | 0.0.16 | WP-07, WP-20 | When does the separately tracked wizard-save security fix (SD-01) ship? |
+| UD-04 | Open | 0.1.0 (M1) | WP-09, WP-17 | D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)? |
+| UD-05 | Open | 0.1.0 (M1) | WP-09, WP-17 | Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)? |
+| UD-06 | Open | 0.1.0 (M1) | WP-09, WP-16 | Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied? |
+| UD-07 | Open | 0.1.0 (M1) | WP-09 | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
+| UD-08 | Open | 0.1.0 (M1) | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
+| UD-09 | Open | 0.1.0 (M2) | WP-17, WP-20 | Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links? |
+| UD-10 | Open | 0.1.0 (M2) | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
+| UD-11 | Open | 0.1.0 (M2) | WP-18, WP-20 | Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')? |
+| UD-12 | Open | 0.1.0 (M2) | WP-17 | Apply per-parent defaults at page load only to new records (always on parent changes)? |
+| UD-13 | Open | 0.1.0 (M2) | WP-18 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
+| UD-14 | Open | 0.1.0 (M2) | WP-15, WP-18 | Delete MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch outright (D5) instead of uncached deprecated shims? |
+| UD-15 | Open | 0.1.0 (M3) | WP-22 | Keep the admin safe attributes value_dependencies and default_value_dependencies permanently (deviation from D5's one-minor-version window)? |
+| UD-16 | Open | 0.1.0 (M3) | WP-25, WP-27 | Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active? |
+| UD-17 | Open | 0.1.0 (M3) | WP-22, WP-25, WP-27 | Keep the admin lost-update guard with the conflict panel (use mine, keep current, export mine) and defer a three-way merge? |
+| UD-18 | Open | 0.1.0 (M3) | WP-26 | Spreadsheet formula protection on CSV export? |
+| UD-19 | Open | 0.1.0 (M3) | WP-26 | Enumeration import matches by name only (D7) in this release? |
+| UD-20 | Open | 0.1.0 (M3) | WP-25 | Editor page sizes: 100 parent sections and 200 child rows per 'Show more'? |
+| UD-21 | Open | 0.1.0 (M3) | WP-28 | Values page: paginate only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values? |
+| UD-22 | Open | 0.1.0 (M3) | WP-31 | Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings? |
+| UD-23 | Open | 0.1.0 (M3) | WP-27, WP-29 | Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort? |
+| UD-24 | Open | 0.1.0 (M3) | WP-29 | Sort inactive enumerations together with active ones (not pushed to the end)? |
+| UD-25 | Open | 0.1.0 (M1) | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
+| UD-26 | Open | 0.1.0 (M1) | WP-13 | Default type for widen_core_columns? |
+| UD-27 | Open | 0.1.0 (M1) | WP-13 | MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe? |
+| UD-28 | Open | 0.1.0 (M1) | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
+| UD-29 | Resolved | 0.0.16 | WP-01 | Approve the committed .rubocop.yml overlay (TargetRubyVersion 2.7, TargetRailsVersion 6.1, Rails/HttpStatusNameConsistency disabled) as the ratchet configuration (deviation from raw core config in D10)? |
+| UD-30 | Resolved | 0.0.16 | WP-01, WP-17 | Approve devDependencies jquery 3.7.1 and acorn ~8.18.0 in addition to jsdom ~29.1.1 (D10 named only jsdom)? |
+| UD-31 | Resolved | 0.0.16 | WP-01 | rspec-61.yml: clone source and Ruby version? |
 | UD-32 | Resolved | 0.0.16 | WP-01, WP-07 | May Claude dispatch the manual workflows? |
-| UD-33 | Open | 0.0.16 | WP-01 | One-time local prerequisite: may the PostgreSQL role redmine/redmine with CREATEDB be created on developer machines (the scripts never do it themselves)? |
-| UD-34 | Open | 0.0.16 | WP-01, WP-07 | Keep requires_redmine 5.0 while testing only 5.1 to 7.0, documenting Ruby 2.7 or newer? |
+| UD-33 | Resolved | 0.0.16 | WP-01 | One-time local prerequisite: may the PostgreSQL role redmine/redmine with CREATEDB be created on developer machines (the scripts never do it themselves)? |
+| UD-34 | Resolved | 0.0.16 | WP-01, WP-07 | Keep requires_redmine 5.0 while testing only 5.1 to 7.0, documenting Ruby 2.7 or newer? |
 
 ### UD-01
 
-**Question.** Release structure and deprecation targets: ship in four releases (0.0.16 foundation and hotfixes, 0.1.0 server rules and storage safety, 0.2.0 issue-form runtime, 0.3.0 editors and project pages) instead of one 0.1.0 as assumed by the area designs?
+**Status: Resolved by the owner (deviates from the recommendation).** The owner chose one release for the renewal instead of four. Applied as: 0.0.16 stays a small patch release with WP-01, WP-02, WP-03 and WP-07, because UD-02 asks for the hotfixes right away; the separate SD-01 pull request lands before it (UD-03). Every other work package ships together in one release 0.1.0, built in three internal milestones: M1 (WP-04 to WP-06, WP-08 to WP-14), M2 (WP-15 to WP-20), M3 (WP-21 to WP-32). WP-14 and WP-20 become milestone checkpoints with a full evidence run but no version bump and no tag; WP-32 tags 0.1.0. Work packages stay small pull requests. Deprecations: deprecated in 0.1.0, kept throughout 0.1.x, removable no earlier than 0.2.0.
 
-**Recommendation.** Four releases. Deprecations: JS shims and CustomFieldVisibility deprecated in 0.2.0 (removable no earlier than 0.3.0, recommended 0.4.0); project nested params deprecated in 0.3.0 (removable no earlier than 0.4.0).
+**Question.** Release structure and deprecation targets: ship in four releases (0.0.16 foundation and hotfixes, 0.1.0 (M1) server rules and storage safety, 0.1.0 (M2) issue-form runtime, 0.1.0 (M3) editors and project pages) instead of one 0.1.0 (M1) as assumed by the area designs?
 
-**Alternatives.** One 0.1.0 containing everything (designs' version targets 'removed no earlier than 0.2.0' unchanged), or 0.1.0 + 0.2.0 only.
+**Recommendation.** Four releases. Deprecations: JS shims and CustomFieldVisibility deprecated in 0.1.0 (removable no earlier than 0.2.0); project nested params deprecated in 0.1.0 (removable no earlier than 0.2.0).
+
+**Alternatives.** One 0.1.0 (M1) containing everything (designs' version targets 'removed no earlier than 0.2.0' unchanged), or 0.1.0 (M1) + 0.1.0 (M2) only.
 
 **Impact.** Smaller, reviewable release units; each minor bump marks one class of behaviour change. CHANGELOG version targets in WP-20 and WP-32 follow this choice.
 
@@ -66,11 +68,13 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-02
 
+**Status: Resolved by the owner (recommendation accepted).** Both hotfixes ship in 0.0.16 (WP-03).
+
 **Question.** Ship two hotfixes in the legacy code in 0.0.16 (remove delete_matched; fix the #bulk-edit-form selector) before the rewrite?
 
 **Recommendation.** Yes. Both are one-line edits; jsdom harness evidence shows the selector fix only removes the empty-array post of untouched multi children (planning scratch space, design/delivery).
 
-**Alternatives.** Wait for 0.2.0, leaving MemCacheStore saves failing and bulk edit wiping multi-value children until then.
+**Alternatives.** Wait for 0.1.0 (M2), leaving MemCacheStore saves failing and bulk edit wiping multi-value children until then.
 
 **Impact.** WP-03; users get the data-loss and crash fixes months earlier.
 
@@ -78,11 +82,13 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-03
 
+**Status: Resolved by the owner (recommendation accepted).** The wizard-save security fix is its own small pull request outside the plan, merged before 0.0.16 is tagged. Only the minimal fix (write only fields the user may edit); the journal and notification hardening stays SD-02.
+
 **Question.** When does the separately tracked wizard-save security fix (SD-01) ship?
 
-**Recommendation.** As its own PR merged before tagging 0.0.16; hard deadline: no 0.2.0 tag without it.
+**Recommendation.** As its own PR merged before tagging 0.0.16; hard deadline: no 0.1.0 (M2) tag without it.
 
-**Alternatives.** Together with 0.2.0 (point 1 touches the same controller), or later.
+**Alternatives.** Together with 0.1.0 (M2) (point 1 touches the same controller), or later.
 
 **Impact.** Closes a privilege issue (writing read-only and role-hidden fields) as early as possible; independent of all WPs.
 
@@ -214,7 +220,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 **Recommendation.** Delete with CHANGELOG notes (nothing in or outside the plugin uses them).
 
-**Alternatives.** Uncached shims kept throughout 0.2.x.
+**Alternatives.** Uncached shims kept throughout 0.1.x.
 
 **Impact.** WP-15 and WP-18.
 
@@ -390,6 +396,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-29
 
+**Status: Resolved by the owner (recommendation accepted).** RuboCop with the core 7.0 rules, set to Ruby 2.7 and Rails 6.1; only new offenses count.
+
 **Question.** Approve the committed .rubocop.yml overlay (TargetRubyVersion 2.7, TargetRailsVersion 6.1, Rails/HttpStatusNameConsistency disabled) as the ratchet configuration (deviation from raw core config in D10)?
 
 **Recommendation.** Yes; the raw config suggests :unprocessable_content (ArgumentError on Rack 2.2), params.expect, anonymous forwarding and Array#intersect?.
@@ -402,6 +410,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-30
 
+**Status: Resolved by the owner (recommendation accepted).** devDependencies jsdom ~29.1.1, jquery 3.7.1 and acorn ~8.18.0 in a private package.json.
+
 **Question.** Approve devDependencies jquery 3.7.1 and acorn ~8.18.0 in addition to jsdom ~29.1.1 (D10 named only jsdom)?
 
 **Recommendation.** Yes (serialize parity and jQuery-trigger tests; ES2017 gate).
@@ -413,6 +423,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-01, WP-17
 
 ### UD-31
+
+**Status: Resolved by the owner (recommendation accepted).** rspec-61.yml clones upstream redmine/redmine 6.1-stable with Ruby 3.3.9.
 
 **Question.** rspec-61.yml: clone source and Ruby version?
 
@@ -440,6 +452,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-33
 
+**Status: Resolved by the owner (recommendation accepted).** Fixed local PostgreSQL role redmine/redmine with CREATEDB, documented in the README; the scripts never create it and exit with a clear hint when it is missing.
+
 **Question.** One-time local prerequisite: may the PostgreSQL role redmine/redmine with CREATEDB be created on developer machines (the scripts never do it themselves)?
 
 **Recommendation.** Yes, documented in README Development.
@@ -451,6 +465,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Work packages.** WP-01
 
 ### UD-34
+
+**Status: Resolved by the owner (recommendation accepted).** requires_redmine stays at 5.0; Ruby 2.7 or newer is documented; 5.0 is not actively tested.
 
 **Question.** Keep requires_redmine 5.0 while testing only 5.1 to 7.0, documenting Ruby 2.7 or newer?
 
@@ -506,7 +522,7 @@ The area designs started from ten default decisions. This table shows where the 
 | S19 | Context menu: early return when @options_by_custom_field is blank. ParentDetector visibility uses core visible_by?, fails closed and is memoized per [cf, project, tracker]. Declared response-size budget for S1. CustomFieldVisibility deprecated and unused. | SP-08, SP-10: fail-open visibility could expose fields in the wizard. The memo removes repeated per-issue checks. | Keep rescue NoMethodError => true (fail open). |
 | S20 | value_options returns ordered Ruby tuples [key, label, active]; the one compact wire shape ({key}, label only when it differs, active:false only when inactive) is produced only by DependencyEditorConfig.wire_values. Order is list order or enumeration [position, id], inactive included. | R7: one shape for the values endpoint, both presenters and the JS, covered by a contract fixture. Compact for large lists. | Full triples on the wire (doubles bytes for lists). Per-consumer shapes (revision 1 drift). |
 | S21 | value_dependencies and default_value_dependencies stay permanent CustomField safe attributes. Only the nested HTML form params are deprecated (not rendered, still accepted). | BC-04: jc-redmine_extended_api writes through safe_attributes=, and removal would silently drop mappings with a 200. | Remove them after one minor version (silent breakage). |
-| S22 | No rollback-only cache delete is kept in code. A documented downgrade step deletes the stale key. | Point 1 explicitly requires removing the Rails.cache mapping and its after_save invalidation (BC-07 code change rejected). The documented one-line command covers the downgrade risk. | Keep a plain Rails.cache.delete in after_commit through 0.2.x (contradicts the owner's point 1). |
+| S22 | No rollback-only cache delete is kept in code. A documented downgrade step deletes the stale key. | Point 1 explicitly requires removing the Rails.cache mapping and its after_save invalidation (BC-07 code change rejected). The documented one-line command covers the downgrade risk. | Keep a plain Rails.cache.delete in after_commit through 0.1.x (contradicts the owner's point 1). |
 | S23 | Keep query_filter_values asymmetric (list: all; enum: restricted by the query project's parent value). Enum tolerates a nil query. Delete QueryCustomFieldColumnPatch (verified no-op). | Characterized behaviour, not part of the 9 points. The patch has no effect on any target version. | Unify semantics (behaviour change). |
 | S24 | Server-owned locale keys: field_parent_custom_field (same text as the form label), warning_dcf_parent_cycle, activerecord.errors.messages.dcf_circular_dependency (phrased to follow the label). field_value_dependencies is owned by limits with the 'Dependency mapping' wording. The hook hint keys are owned by frontend. | R19, UX-15, UX-03, R11: one owner and one text per key. Error messages read correctly after their label in all four languages. | 'Parent field' label (mismatch with 'Depends on'). |
 
@@ -530,7 +546,7 @@ The area designs started from ten default decisions. This table shows where the 
 | FD-14 | One native delegated change listener, plus a jQuery delegate that handles only isTrigger events. Own events are tracked in a WeakSet. change is dispatched only when values changed, and dcf:updated for every evaluation that was not a no-op. BFS cascade with a visited set; depth-ordered init. | Points 3 and 5. It handles select2 triggers without double processing (verified) and terminates on stored cycles. | Per-element listeners and always-fired change events (today). |
 | FD-15 | The MutationObserver initialises matching added roots directly inside its callback (a microtask after the inserting task). There is no debounce, and requestSetup alone keeps a 25 ms debounce. | It removes the window in which re-rendered fields are unfiltered and could be submitted (QA-15, QA-20b). One task's mutations arrive in one callback, so coalescing is preserved for replaceIssueFormWith and #content replacement. | A 25 ms debounce (previous design). |
 | FD-16 | Memory is a WeakMap keyed by the scope element, then prefix/fieldId, then the parent key. It is written at initial evaluation, on parent-driven changes (edit) and on every user or third-party child change. Bulk memory holds only the initial state and user picks. | Fixes E3 (latest pick restored). It survives updateIssueFrom and needs no dataset bookkeeping. | dataset JSON or sessionStorage. |
-| FD-17 | Compatibility: setup(root) and requestSetup(root) are deprecated in 0.2.0, kept throughout 0.2.x, removable no earlier than 0.3.0 (recommended 0.4.0). DependingCustomFieldData and ContextMenuWizardConfig are removed. A load guard prevents double binding. | D5, with the explicit version targets that BC-14 asks for. No external users were found. | 'At least one minor version' without targets. |
+| FD-17 | Compatibility: setup(root) and requestSetup(root) are deprecated in 0.1.0, kept throughout 0.1.x, removable no earlier than 0.2.0. DependingCustomFieldData and ContextMenuWizardConfig are removed. A load guard prevents double binding. | D5, with the explicit version targets that BC-14 asks for. No external users were found. | 'At least one minor version' without targets. |
 | FD-18 | context_menu_wizard.js: - resolve the form action with new URL against location and refuse cross-origin or missing actions; - init the cloned wizard synchronously; - show a localized alert on non-JSON errors and catch the rejection; - narrow the observer to childList filtered on li.cf-parent. | Removes the last global and adds defense in depth for the CSRF token (SP-15). Removes the delayed unfiltered state and the body-wide style observer. | Post to any action read from the DOM. |
 | FD-19 | ES2017 for all plugin JS, enforced by an acorn parse in npm run check. No CSS.escape. | Matches browsers supported by Redmine 5.0+. jsdom lacks CSS.escape. The prototype passes the acorn gate. | ES2020. |
 | FD-20 | Tests use one fixture mechanism: real request rendering in all four rspec workflows, explicit record ids in a reserved range, a shared Nokogiri normalizer (placeholders, JSON-aware) and a savepoint self-check that sequence shifts do not change the output. Every required contract case gets a jsdom outcome test. jsdom ~29.1.1 plus jquery 3.7.1, a spec-compliant entries helper, opt-in system specs for the CSS and browser-only behaviour. | Fixes the fixtures depending on sequences under random order (R13) and the two parallel contract fixtures (QA-01). jsdom FormData is wrong for disabled options. jsdom cannot evaluate the [hidden] overrides. | Helper-only rendering (misses workflow and visibility paths). Hand-written fixtures. |
@@ -562,13 +578,13 @@ The area designs started from ten default decisions. This table shows where the 
 | AD-21 | One value wire format: {key} plus label only when it differs from key, plus active:false only when inactive. It is produced by DependencyEditorConfig.wire_values from DependencyRules.value_options tuples and used by the endpoint and both presenter modes, and the JS decodes it with documented defaults. | Resolves the three-shape conflict (R7) with the compact shape, saving about 200 KB at 5,570 list values, and is pinned by a contract spec. | Always emit all three keys (heavier); server tuples on the wire (less self-describing). |
 | AD-22 | One shared JS fixture mechanism, spec/support/dcf_js_fixtures.rb: fixture records get explicit ids from the quality per-kind ranges (CustomField 9_100_001+ ...) via dcf_fixture_record, with the normalizer, the sequence-bump self check and two seeds (compat section 2.4 row Fixture ids); the ID_BASE 1,900,000,000 scheme of editor revision 2 is superseded. Tokens and state hashes are scrubbed, and fixtures are written or compared through DCF_WRITE_JS_FIXTURES. The fixture spec renders each scenario twice with sequences advanced in between. | PostgreSQL sequences are not rolled back and random order changes them, so DB-derived ids must not reach fixtures (R13). The same mechanism serves the frontend markup fixtures and the payload fixtures (R1, QA-01). | Placeholder substitution of numbers (fragile); resetting sequences (affects other specs). |
 | AD-23 | The project page renders Save disabled with data-dcf-editor-submit, and the editor enables it only after successful init. Bad data attributes leave the editor inert, with an error notice and nothing written. | No-JS users can no longer trigger a misleading no-op 'saved' flash or a 'reload' message (UX-01). Fail closed on corrupt bootstrap data (QA-24). | Pre-fill the hidden input so that a no-JS save is a no-op (project revision 1); fail open with an empty state (would clear the mapping). |
-| AD-24 | The admin nested safe attributes value_dependencies and default_value_dependencies stay permanently. Only the project nested params are deprecated (deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0). | Concrete reason to deviate from D5: jc-redmine_extended_api writes custom fields through safe_attributes= (custom_fields_controller_patch.rb assign_filtered_attributes); removing them would silently drop its clients' mappings. | Remove after one minor version (breaks that plugin). |
+| AD-24 | The admin nested safe attributes value_dependencies and default_value_dependencies stay permanently. Only the project nested params are deprecated (deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0). | Concrete reason to deviate from D5: jc-redmine_extended_api writes custom fields through safe_attributes= (custom_fields_controller_patch.rb assign_filtered_attributes); removing them would silently drop its clients' mappings. | Remove after one minor version (breaks that plugin). |
 
 ### project (large_lists_project_design.md)
 
 | Id | Decision | Rationale | Alternatives |
 |---|---|---|---|
-| P-D1 | edit_dependencies posts one hidden field, dependencies_json, plus state_hash, in a multipart PATCH form. The value is decoded inside DependencyMappingService with the shared DependencyPayload.parse (editor-owned, schema v1). Every bad input is therefore an audited 422. A present-but-blank value is an error and never clears. When the key is absent, the service falls back to the legacy nested params (deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0). JSON wins when both are posted. | Decoding in the BaseService subclass satisfies 'bad input is audited'. Multipart keeps PATCH beyond the 4 MB urlencoded limit (rack_probe.out). One parser and one schema remove the R3/QA-02/BC-03 divergence. | Parse in the controller (not audited). Urlencoded form (about 4 MB ceiling minus escaping bloat). A project-only parser with a meta wrapper (revision 1; conflicts with the admin path). |
+| P-D1 | edit_dependencies posts one hidden field, dependencies_json, plus state_hash, in a multipart PATCH form. The value is decoded inside DependencyMappingService with the shared DependencyPayload.parse (editor-owned, schema v1). Every bad input is therefore an audited 422. A present-but-blank value is an error and never clears. When the key is absent, the service falls back to the legacy nested params (deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0). JSON wins when both are posted. | Decoding in the BaseService subclass satisfies 'bad input is audited'. Multipart keeps PATCH beyond the 4 MB urlencoded limit (rack_probe.out). One parser and one schema remove the R3/QA-02/BC-03 divergence. | Parse in the controller (not audited). Urlencoded form (about 4 MB ceiling minus escaping bloat). A project-only parser with a meta wrapper (revision 1; conflicts with the admin path). |
 | P-D2 | The editor's initial state comes from data-dcf-editor-mapping. The hidden input is always blank (GET and every re-render); a parsed ok posted payload is rendered in data-dcf-editor-mapping with data-dcf-editor-dirty="1" (gap 1). The Save button carries data-dcf-editor-submit and is enabled after init. | A server pre-fill no longer counts as a dirty echo, so there is no spurious beforeunload (R4). Without working JS nothing can be posted, so a no-op never reports success and nobody is told to reload (UX-01). Rendering the parsed posted payload as the dirty initial state keeps the user's work after a 422. | Pre-fill the hidden input with the canonical mapping (revision 1; conflicts with the editor's always-blank hidden input). Treat blank as unchanged (ambiguous; the admin path uses that semantic, the project path must fail closed). |
 | P-D3 | Project validation stays strict: unknown parent keys, unknown child values and defaults outside the links give 422 error_invalid_dependency. Lookups use Hash#key?. All offenders are aggregated into the audit summary, with at most 5 labels per kind cut at 40 characters, and the flash stays generic. On the JSON path defaults are shaped by multiple? (a single [x] becomes x, and several values on a single field are an offender). | Preserves the tested project contract (T-DEP-2/3/5) and removes the O(n*m) cost. Shaping matches what the editor serializes. | Silent pruning as on the admin form (hides tampering at the non-admin surface). |
 | P-D4 | update_dependencies writes a compact v2 delta. Samples are bounded by count (20 per list) and by encoded bytes (4,000 per list, measured with ActiveSupport::JSON), labels are cut at 80 characters, and each default entry keeps 3 labels. The digest key is mapping_sha256. The limits AuditPayload cap (16,384 B, marker payload_sha256) is the backstop and is never reached by this delta. | Measured worst case 12,028 B on AS 6.1 and 8.1 (proto2/delta_worst.out), so the delta digest is never overwritten by a shrink (R10). The key names cannot collide with the marker. | Count-only caps (worst case 19 KB plus, which the shrink would then mangle). A 60 KB project cap (revision 1; conflicts with limits). |
@@ -639,14 +655,16 @@ The area designs started from ten default decisions. This table shows where the 
 | Q21 | NEW: contract fixtures are deterministic by construction: fixture records get explicit ids in disjoint high ranges, a normalizer scrubs tokens, state hashes and asset digests, a guard fails on any id-bearing number outside the ranges, a sequence-bump self check renders twice inside savepoints, and G2 runs the fixture specs under two seeds. | E23: fixed ids stay identical while sequence ids drift between renders on 5.1 and 7.0, and the sequence never reaches the fixed range on PostgreSQL. Normalizing only custom field ids left enumeration and project ids sequence-dependent (R13). | Placeholder replacement by creation order (kind-aware rewriting, collision-prone). Seed-only checks (catch drift late, not deterministic). |
 | Q22 | NEW: storage, audit and topology are owned by limits: all new CustomField callbacks in one separate CustomFieldValidationPatch module; StorageLimits.column_limit(column, model = CustomField); one model error key dcf_storage_too_large; one RecordInvalid mapping in BaseService (no pre-check guard); sanitized ValueTooLong audit rows; escaped flash interpolations; AuditPayload 16 KB with payload_sha256 marker; FieldIndex as the only topology helper and StorageReport as the only report; pruning only in the admin JSON transport. | Four incompatible storage designs existed and registering callbacks in CustomFieldPatch broke 14 examples (V11); flash is rendered html_safe (SP-06); the limits sha256 marker overwrote the project delta's digest (R10); normalization-time pruning would rewrite mappings on unrelated API and plugin saves (BC-02). | Server's StorageLimits API and registration (breaks specs). Project pre-check plus limits mapping (two mappings, two keys). |
 | Q23 | NEW: D1 leniency is per value (values contained in value_was are exempt while the parent is unchanged), tested from one shared case table by the Ruby rules and the JS rules. | With the whole-set rule, adding an allowed value to a multi child that holds a legacy value always failed validation, although the client keeps legacy values selectable; core's ListFormat already uses the per-value idiom. | Client drops legacy values on any child edit (silent data loss on every edit). |
-| Q24 | NEW: an upgrade-notes register UN-01..UN-45 lists every change a 0.0.15 user can notice with its CHANGELOG section and owning WP; G9 checks the entries each WP touches and the release WP checks all. Version targets: four releases (UD-01); JS shims and CustomFieldVisibility deprecated in 0.2.0, removable no earlier than 0.3.0 (recommended 0.4.0); project nested params deprecated in 0.3.0, removable no earlier than 0.4.0; admin nested safe attributes kept permanently. | No area design collected all user-visible changes and several had no compatibility row (BC-14). Admin safe attributes are used by other plugins (E28), which is a concrete reason to deviate from D5's one-minor-version window on the admin side. | Per-WP CHANGELOG lines without a register (items fall through). Remove admin nested params after one minor (breaks jc-redmine_extended_api writes). |
+| Q24 | NEW: an upgrade-notes register UN-01..UN-45 lists every change a 0.0.15 user can notice with its CHANGELOG section and owning WP; G9 checks the entries each WP touches and the release WP checks all. Version targets: four releases (UD-01); JS shims and CustomFieldVisibility deprecated in 0.1.0, removable no earlier than 0.2.0; project nested params deprecated in 0.1.0, removable no earlier than 0.2.0; admin nested safe attributes kept permanently. | No area design collected all user-visible changes and several had no compatibility row (BC-14). Admin safe attributes are used by other plugins (E28), which is a concrete reason to deviate from D5's one-minor-version window on the admin side. | Per-WP CHANGELOG lines without a register (items fall through). Remove admin nested params after one minor (breaks jc-redmine_extended_api writes). |
 | Q25 | NEW: the wizard save authorization bypass is tracked as a separate SECURITY defect (out of the 9 points per D4) scheduled no later than the release that ships point 1, with a CHANGELOG Security entry; WP-15 pins that the endpoint still requires login, visibility and editability. | The controller assigns custom_field_values directly, bypassing core's editable filter (SP-07); point 1 touches this controller and route, so the release must not ship without a plan for it. | Leave it as 'hardening' (understates a privilege issue). Fold it into point 1 (contradicts D4). |
 
 ## 4. Which decisions block which release
 
-- **0.0.16**: UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-33, UD-34
-- **0.1.0**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28
-- **0.2.0**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14
-- **0.3.0**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24
+Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release 0.1.0 with milestones M1, M2 and M3.
 
-UD-01 (release structure) and UD-03 (timing of the SD-01 security fix) should be answered before work starts. UD-32 is resolved.
+- **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
+- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28 (open).
+- **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14 (open).
+- **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (open).
+
+The open decisions only need an answer before the milestone that implements them starts.

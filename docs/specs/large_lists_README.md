@@ -19,16 +19,16 @@ Some ideas come from a comparison with the competing plugin `redmine_cascading_c
 
 | # | Point | Work packages | Release | Main document |
 |---|-------|---------------|---------|---------------|
-| 1 | Per-field data attributes instead of the global inline script; remove the Rails.cache mapping and its invalidation; context menu without cache | WP-15, WP-16, WP-18 | 0.2.0 | [server](large_lists_server_design.md), [frontend](large_lists_frontend_design.md) |
-| 2 | Never disable the child control: hide and disable options, show a hint, remove the hidden-input mirror | WP-03 (hotfix), WP-09, WP-17, WP-19 | 0.0.16 to 0.2.0 | [frontend](large_lists_frontend_design.md) |
-| 3 | One delegated change listener and a filtered MutationObserver | WP-17 | 0.2.0 | [frontend](large_lists_frontend_design.md) |
-| 4 | Only touch the depending fields that are present in the DOM | WP-16, WP-17 | 0.2.0 | [frontend](large_lists_frontend_design.md) |
-| 5 | Fire `change` only on a real change; server-side cycle validation | WP-10, WP-17 | 0.1.0, 0.2.0 | [server](large_lists_server_design.md), [frontend](large_lists_frontend_design.md) |
-| 6 | Central rules module and a shared module for both depending formats | WP-05, WP-06, WP-08, WP-09 | 0.0.16, 0.1.0 | [server](large_lists_server_design.md) |
-| 7 | Admin dependency editor with a single JSON transport | WP-21 to WP-25 | 0.3.0 | [editor](large_lists_editor_design.md) |
-| 8 | CSV import and export of the mapping, "add missing child values" | WP-26 | 0.3.0 | [editor](large_lists_editor_design.md) |
-| 9 | Project pages: shared editor, compact audit delta, search and pagination, sort, page-scoped Key/Value batch save | WP-27 to WP-31 | 0.3.0 | [project](large_lists_project_design.md) |
-| x | MySQL/MariaDB TEXT 64 KB storage safety (cross-cutting) | WP-11 to WP-13, WP-31 | 0.1.0, 0.3.0 | [limits](large_lists_limits_design.md) |
+| 1 | Per-field data attributes instead of the global inline script; remove the Rails.cache mapping and its invalidation; context menu without cache | WP-15, WP-16, WP-18 | 0.1.0 (M2) | [server](large_lists_server_design.md), [frontend](large_lists_frontend_design.md) |
+| 2 | Never disable the child control: hide and disable options, show a hint, remove the hidden-input mirror | WP-03 (hotfix), WP-09, WP-17, WP-19 | 0.0.16 to 0.1.0 (M2) | [frontend](large_lists_frontend_design.md) |
+| 3 | One delegated change listener and a filtered MutationObserver | WP-17 | 0.1.0 (M2) | [frontend](large_lists_frontend_design.md) |
+| 4 | Only touch the depending fields that are present in the DOM | WP-16, WP-17 | 0.1.0 (M2) | [frontend](large_lists_frontend_design.md) |
+| 5 | Fire `change` only on a real change; server-side cycle validation | WP-10, WP-17 | 0.1.0 (M1), 0.1.0 (M2) | [server](large_lists_server_design.md), [frontend](large_lists_frontend_design.md) |
+| 6 | Central rules module and a shared module for both depending formats | WP-05, WP-06, WP-08, WP-09 | 0.1.0 (M1), 0.1.0 (M1) | [server](large_lists_server_design.md) |
+| 7 | Admin dependency editor with a single JSON transport | WP-21 to WP-25 | 0.1.0 (M3) | [editor](large_lists_editor_design.md) |
+| 8 | CSV import and export of the mapping, "add missing child values" | WP-26 | 0.1.0 (M3) | [editor](large_lists_editor_design.md) |
+| 9 | Project pages: shared editor, compact audit delta, search and pagination, sort, page-scoped Key/Value batch save | WP-27 to WP-31 | 0.1.0 (M3) | [project](large_lists_project_design.md) |
+| x | MySQL/MariaDB TEXT 64 KB storage safety (cross-cutting) | WP-11 to WP-13, WP-31 | 0.1.0 (M1), 0.1.0 (M3) | [limits](large_lists_limits_design.md) |
 
 ## Baseline (measured before any change)
 
@@ -43,14 +43,16 @@ Some ideas come from a comparison with the competing plugin `redmine_cascading_c
 
 ## Releases
 
+The owner chose one release for the renewal (UD-01). 0.0.16 stays a small patch release so the hotfixes and the security fix reach users right away (UD-02, UD-03). Everything else ships together in 0.1.0, built in three internal milestones. Every work package is still a separate small pull request, and each milestone ends with a full evidence run (WP-14, WP-20) but without a version bump or tag.
+
 | Release | Contents | Work packages |
 |---------|----------|---------------|
-| 0.0.16 | Foundation and hotfixes: tooling (`.codex` scripts, RuboCop ratchet, JS tests, manual 6.1 and JS workflows), test hygiene, the MemCacheStore save crash fix and the bulk-edit data-loss fix, characterization specs, `DependencyRules` + `FieldIndex`, shared `DependingFormatMethods` | WP-01 to WP-07 |
-| 0.1.0 | Server rules and storage safety: Key/Value list options fix, per-value leniency for stored combinations (D1), cycle validation, MySQL size validation, service error mapping and audit cap, opt-in rake tasks | WP-08 to WP-14 |
-| 0.2.0 | Issue-form runtime without inline script (points 1 to 5): context menu without cache, per-field data contract, new runtime, switch-over, required "(none)" and radio sentinel | WP-15 to WP-20 |
-| 0.3.0 | Dependency editor, CSV import and export, project pages (points 7 to 9) | WP-21 to WP-32 |
+| 0.0.16 (patch) | SD-01 security fix (own pull request), the MemCacheStore save crash fix, the bulk-edit data-loss fix, the missing "Default value" label, development tooling (`.codex` scripts, RuboCop ratchet, JS tests, manual 6.1 and JS workflows), test hygiene | WP-01, WP-02, WP-03, WP-07 |
+| 0.1.0, milestone M1 | Characterization specs, `DependencyRules` + `FieldIndex`, shared `DependingFormatMethods`, Key/Value list options fix, per-value leniency for stored combinations (D1), cycle validation, MySQL size validation, service error mapping and audit cap, opt-in rake tasks | WP-04 to WP-06, WP-08 to WP-14 |
+| 0.1.0, milestone M2 | Issue-form runtime without inline script (points 1 to 5): context menu without cache, per-field data contract, new runtime, switch-over, required "(none)" and radio sentinel | WP-15 to WP-20 |
+| 0.1.0, milestone M3 | Dependency editor, CSV import and export, project pages (points 7 to 9); version bump and tag 0.1.0 | WP-21 to WP-32 |
 
-[`large_lists_work_packages.md`](large_lists_work_packages.md) has the full CHANGELOG lines per release. [`large_lists_compatibility.md`](large_lists_compatibility.md) has every change a user can notice.
+In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships in release 0.1.0, implemented during that milestone. [`large_lists_work_packages.md`](large_lists_work_packages.md) has the full CHANGELOG lines. [`large_lists_compatibility.md`](large_lists_compatibility.md) has every change a user can notice.
 
 ## Reading order
 
@@ -92,6 +94,6 @@ This spec set adds:
 - **Found during research and fixed early (0.0.16):**
   - every save of a depending field fails on MemCacheStore, because `Rails.cache.delete_matched` raises inside `after_save`;
   - bulk edit clears untouched multi-value dependent fields, because the JS checks the selector `#bulk-edit-form` while core uses `#bulk_edit_form`.
-- **Security (SD-01):** the context-menu wizard save writes every posted custom field, including fields that are read-only by workflow or hidden for the user's role, and creates no journal entry. The recommendation is a separate PR before 0.0.16 is tagged (UD-03).
+- **Security (SD-01):** the context-menu wizard save writes every posted custom field, including fields that are read-only by workflow or hidden for the user's role, and creates no journal entry. Decided: a separate small pull request, merged before 0.0.16 is tagged (UD-03).
 - **Large lists on MySQL/MariaDB:** `custom_fields.possible_values` and `custom_fields.format_store` are 64 KB TEXT columns in every Redmine version. A list of 27 × 5,570 values does not fit (about 86 KB of values, 98 KB of mapping), with or without this plugin. The plan adds a clear validation error instead of HTTP 500 or silent truncation, plus an opt-in rake task that widens the columns. PostgreSQL and SQLite have no such limit.
-- **Decisions to confirm:** the work starts with 0.0.16, which needs UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-33 and UD-34. The other decisions are only needed for later releases; see section 4 of [`large_lists_decisions.md`](large_lists_decisions.md).
+- **Decisions:** everything 0.0.16 needs is decided (UD-01 to UD-03, UD-29 to UD-34). The open decisions UD-04 to UD-28 are only needed before the milestone that implements them; see section 4 of [`large_lists_decisions.md`](large_lists_decisions.md).

@@ -34,9 +34,9 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Evidence.** app/controllers/context_menu_wizard_controller.rb:31-32 assigns issue.custom_field_values = values directly; the check at :22-27 only asks safe_attribute?('custom_field_values'). Core filters assignments to editable_custom_field_values(user) only inside Issue#safe_attributes= (core-5.1 app/models/issue.rb:625-626, core-7.0 :647-648). A user with edit_issues can therefore write workflow read-only and role-invisible fields, without a journal. Confirmed independently by the server, frontend, limits and quality designs (SP-07).
 
-**Recommendation.** Separate PR, outside the 9 points (D4). Minimal fix: keep only keys present in issue.editable_custom_field_values(User.current), or assign through issue.safe_attributes = { 'custom_field_values' => values }. Spec: posted read-only and role-hidden fields stay unchanged; login, visibility and editability still required. CHANGELOG 'Security' entry. Merge before tagging 0.0.16 (recommended, UD-03), no later than 0.2.0. WP-15 pins the current gates so the plan never widens the endpoint meanwhile.
+**Recommendation.** Separate PR, outside the 9 points (D4). Minimal fix: keep only keys present in issue.editable_custom_field_values(User.current), or assign through issue.safe_attributes = { 'custom_field_values' => values }. Spec: posted read-only and role-hidden fields stay unchanged; login, visibility and editability still required. CHANGELOG 'Security' entry. Merge before tagging 0.0.16 (recommended, UD-03), no later than 0.1.0 (M2). WP-15 pins the current gates so the plan never widens the endpoint meanwhile.
 
-**Verified during consolidation.** `ContextMenuWizardController#save` (`app/controllers/context_menu_wizard_controller.rb:19-35`) assigns `issue.custom_field_values = values` for every posted field id. Before that it only checks that the user may view and edit each issue (`check_edit_permission`, `:141-147`) and that `custom_field_values` is a safe attribute at all (`:23-28`). Core `Issue#safe_attributes=` instead filters custom field values through `editable_custom_field_values(user)`, which excludes fields that are read-only by workflow or not visible for the user's role. A user who may edit an issue can therefore write such fields by posting their ids to `/depending_custom_fields/save`. No journal entry is created, so the change leaves no history. Timing: own pull request, merged before 0.0.16 is tagged (UD-03); hard prerequisite for 0.2.0.
+**Verified during consolidation.** `ContextMenuWizardController#save` (`app/controllers/context_menu_wizard_controller.rb:19-35`) assigns `issue.custom_field_values = values` for every posted field id. Before that it only checks that the user may view and edit each issue (`check_edit_permission`, `:141-147`) and that `custom_field_values` is a safe attribute at all (`:23-28`). Core `Issue#safe_attributes=` instead filters custom field values through `editable_custom_field_values(user)`, which excludes fields that are read-only by workflow or not visible for the user's role. A user who may edit an issue can therefore write such fields by posting their ids to `/depending_custom_fields/save`. No journal entry is created, so the change leaves no history. Timing: own pull request, merged before 0.0.16 is tagged (UD-03); hard prerequisite for 0.1.0 (M2).
 
 ### SD-02: Wizard save hardening: no journal, :edit_issues instead of core @can[:edit], 7.0 webhooks and updated_on
 
@@ -52,7 +52,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Evidence.** The plugin's ContextMenusControllerPatch only acts on the issue menu (lib/redmine_depending_custom_fields/patches/context_menus_controller_patch.rb:9,26-29). Core time-entry menu: core-7.0 app/controllers/context_menus/time_entries_controller.rb:31-40 and app/views/context_menus/time_entries.html.erb:30-31 render __group_* rows as clickable values and depending fields with all values (critic C3).
 
-**Recommendation.** Separate WP after 0.2.0 reusing SelectionGraph and the __group_* filter for TimeEntry selections; out of the 9 points per D4.
+**Recommendation.** Separate WP after 0.1.0 (M2) reusing SelectionGraph and the __group_* filter for TimeEntry selections; out of the 9 points per D4.
 
 ### SD-04: Workflow-required depending children with no options cannot be saved
 
@@ -76,7 +76,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Evidence.** CustomField copy duplicates format_store, but the copy gets new CustomFieldEnumeration ids, so value_dependencies keys and values still point at the source field (D6 explicitly out of scope; editor design section 3.4).
 
-**Recommendation.** Separate WP: remap enumeration ids by position/name on copy_from. Until then the 0.3.0 editor shows them as orphans and removes them on the first editor save (documented).
+**Recommendation.** Separate WP: remap enumeration ids by position/name on copy_from. Until then the 0.1.0 (M3) editor shows them as orphans and removes them on the first editor save (documented).
 
 ### SD-07: Editing parent values on the core admin page does not cascade into child mappings
 
@@ -84,7 +84,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Evidence.** Renaming or removing a value in the parent's possible_values textarea leaves the child mapping keys unchanged; only project-level rename/remove services cascade (app/services/redmine_depending_custom_fields/base_service.rb:236-261; critic C6).
 
-**Recommendation.** Separate feature: optional cascade on admin saves of a parent (rename detection is ambiguous). The 0.3.0 editor reports such orphans and removes them at the next editor save.
+**Recommendation.** Separate feature: optional cascade on admin saves of a parent (rename detection is ambiguous). The 0.1.0 (M3) editor reports such orphans and removes them at the next editor save.
 
 ### SD-08: Deleting a parent field leaves dangling parent_custom_field_id in children
 

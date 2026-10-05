@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This document cuts the plan into 32 small, reversible work packages (one pull request each), grouped into four releases. Every work package must leave the plugin specs green on Redmine 5.1, 6.0, 6.1 and 7.0 and must pass the gates of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) before merge. The detailed designs live in the area documents; this document says what goes into which pull request, in which order, and how each one is accepted and rolled back.
+This document cuts the plan into 32 small, reversible work packages (one pull request each), grouped into two releases: the patch release 0.0.16 and the single feature release 0.1.0 with milestones M1, M2 and M3 (UD-01). Every work package must leave the plugin specs green on Redmine 5.1, 6.0, 6.1 and 7.0 and must pass the gates of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) before merge. The detailed designs live in the area documents; this document says what goes into which pull request, in which order, and how each one is accepted and rolled back.
 
 ## Contents
 
@@ -21,37 +21,39 @@ This document cuts the plan into 32 small, reversible work packages (one pull re
 | WP-01 | 0.0.16 | M | - | - | Local and CI tooling: .codex scripts, RuboCop ratchet, JS toolchain, manual workflows |
 | WP-02 | 0.0.16 | M | - | WP-01 | Test hygiene, shared test infrastructure and repository cleanup |
 | WP-03 | 0.0.16 | S | 1, 2 | WP-01, WP-02 | Hotfixes in the legacy code: MemCacheStore save crash and bulk-edit data loss |
-| WP-04 | 0.0.16 | M | 1, 2, 3, 5, 6, 7, 9 | WP-02, WP-03 | Characterization specs (Ruby and jsdom) and DB-backed validation specs |
-| WP-05 | 0.0.16 | M | 6, 5 | WP-04 | Central rules module DependencyRules and the single topology helper FieldIndex |
-| WP-06 | 0.0.16 | M | 6 | WP-05 | Shared DependingFormatMethods module for both depending formats; dead code removed |
-| WP-07 | 0.0.16 | S | - | WP-01, WP-02, WP-03, WP-04, WP-05, WP-06 | Release 0.0.16 |
-| WP-08 | 0.1.0 | S | 6 | WP-06 | Key/Value list (depending): edit options without duplicates and a single error |
-| WP-09 | 0.1.0 | M | 2, 6 | WP-06 | D1 per-value leniency, issue copies and non-editable children (server) |
-| WP-10 | 0.1.0 | M | 5 | WP-05, WP-06 | Effective parent, server cycle validation, parent select and cycle warning (point 5 server) |
-| WP-11 | 0.1.0 | M | - | WP-02, WP-06 | MySQL TEXT 64 KB safety: storage size validation with a clear i18n error |
-| WP-12 | 0.1.0 | M | 9 | WP-11 | Service error mapping, flash escaping and the audit value cap |
-| WP-13 | 0.1.0 | M | - | WP-11 | Opt-in rake tasks report_sizes and widen_core_columns, MySQL documentation |
-| WP-14 | 0.1.0 | S | - | WP-08, WP-09, WP-10, WP-11, WP-12, WP-13 | Release 0.1.0 |
-| WP-15 | 0.2.0 | M | 1 | WP-05, WP-10 | Context menu without cache: selection graph, fail-closed wizard roots, named save route (D4) |
-| WP-16 | 0.2.0 | L | 1, 4 | WP-09, WP-10, WP-15 | Issue-form data contract emitted per field (additive, legacy JS untouched) |
-| WP-17 | 0.2.0 | L | 2, 3, 4, 5 | WP-16 | New issue-form runtime (single UMD file) shipped behind the legacy script |
-| WP-18 | 0.2.0 | L | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17 | Switch: per-field attributes and meta tag replace the inline script; Rails.cache removed (point 1) |
-| WP-19 | 0.2.0 | M | 2 | WP-18 | Radio blank sentinel and required '(none)' in bulk edit and the wizard |
-| WP-20 | 0.2.0 | S | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17, WP-18, WP-19 | Release 0.2.0 |
-| WP-21 | 0.3.0 | M | 7, 9 | WP-02 | DependencyPayload: one strict parser for both entry points |
-| WP-22 | 0.3.0 | M | 7 | WP-05, WP-11, WP-21 | Admin JSON transport: virtual attribute dependencies_json (absent = unchanged, '{}' = clear) |
-| WP-23 | 0.3.0 | M | 7 | WP-21, WP-22 | Editor model (pure JS) and cross-layer payload contract |
-| WP-24 | 0.3.0 | M | 7, 9 | WP-05, WP-11, WP-16 | Values endpoint, compact value wire format, editor presenter and shared partial |
-| WP-25 | 0.3.0 | L | 7 | WP-18, WP-22, WP-23, WP-24 | Admin dependency editor UI replaces the matrix (point 7) |
-| WP-26 | 0.3.0 | L | 8 | WP-25 | CSV import and export of the mapping, add missing child values (point 8) |
-| WP-27 | 0.3.0 | L | 9 | WP-12, WP-21, WP-25, WP-26 | Project dependency page on the shared editor with JSON transport and compact audit delta (point 9) |
-| WP-28 | 0.3.0 | L | 9 | WP-05, WP-12, WP-23 | Project values page: server-side search and pagination (point 9) |
-| WP-29 | 0.3.0 | M | 9 | WP-28 | Sort A-Z / Z-A as an audited service (point 9) |
-| WP-30 | 0.3.0 | M | 9 | WP-28 | Page-scoped batch save for Key/Value list values (point 9) |
-| WP-31 | 0.3.0 | M | 9 | WP-11, WP-12, WP-27, WP-29, WP-30 | Large-list safety on project pages: storage ceiling setting and value length cap |
-| WP-32 | 0.3.0 | S | 7, 8, 9 | WP-21, WP-22, WP-23, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 | Release 0.3.0 |
+| WP-04 | 0.1.0 (M1) | M | 1, 2, 3, 5, 6, 7, 9 | WP-02, WP-03 | Characterization specs (Ruby and jsdom) and DB-backed validation specs |
+| WP-05 | 0.1.0 (M1) | M | 6, 5 | WP-04 | Central rules module DependencyRules and the single topology helper FieldIndex |
+| WP-06 | 0.1.0 (M1) | M | 6 | WP-05 | Shared DependingFormatMethods module for both depending formats; dead code removed |
+| WP-07 | 0.0.16 | S | - | WP-01, WP-02, WP-03 | Release 0.0.16 |
+| WP-08 | 0.1.0 (M1) | S | 6 | WP-06 | Key/Value list (depending): edit options without duplicates and a single error |
+| WP-09 | 0.1.0 (M1) | M | 2, 6 | WP-06 | D1 per-value leniency, issue copies and non-editable children (server) |
+| WP-10 | 0.1.0 (M1) | M | 5 | WP-05, WP-06 | Effective parent, server cycle validation, parent select and cycle warning (point 5 server) |
+| WP-11 | 0.1.0 (M1) | M | - | WP-02, WP-06 | MySQL TEXT 64 KB safety: storage size validation with a clear i18n error |
+| WP-12 | 0.1.0 (M1) | M | 9 | WP-11 | Service error mapping, flash escaping and the audit value cap |
+| WP-13 | 0.1.0 (M1) | M | - | WP-11 | Opt-in rake tasks report_sizes and widen_core_columns, MySQL documentation |
+| WP-14 | 0.1.0 (M1) | S | - | WP-08, WP-09, WP-10, WP-11, WP-12, WP-13 | Release 0.1.0 (M1) |
+| WP-15 | 0.1.0 (M2) | M | 1 | WP-05, WP-10 | Context menu without cache: selection graph, fail-closed wizard roots, named save route (D4) |
+| WP-16 | 0.1.0 (M2) | L | 1, 4 | WP-09, WP-10, WP-15 | Issue-form data contract emitted per field (additive, legacy JS untouched) |
+| WP-17 | 0.1.0 (M2) | L | 2, 3, 4, 5 | WP-16 | New issue-form runtime (single UMD file) shipped behind the legacy script |
+| WP-18 | 0.1.0 (M2) | L | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17 | Switch: per-field attributes and meta tag replace the inline script; Rails.cache removed (point 1) |
+| WP-19 | 0.1.0 (M2) | M | 2 | WP-18 | Radio blank sentinel and required '(none)' in bulk edit and the wizard |
+| WP-20 | 0.1.0 (M2) | S | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17, WP-18, WP-19 | Release 0.1.0 (M2) |
+| WP-21 | 0.1.0 (M3) | M | 7, 9 | WP-02 | DependencyPayload: one strict parser for both entry points |
+| WP-22 | 0.1.0 (M3) | M | 7 | WP-05, WP-11, WP-21 | Admin JSON transport: virtual attribute dependencies_json (absent = unchanged, '{}' = clear) |
+| WP-23 | 0.1.0 (M3) | M | 7 | WP-21, WP-22 | Editor model (pure JS) and cross-layer payload contract |
+| WP-24 | 0.1.0 (M3) | M | 7, 9 | WP-05, WP-11, WP-16 | Values endpoint, compact value wire format, editor presenter and shared partial |
+| WP-25 | 0.1.0 (M3) | L | 7 | WP-18, WP-22, WP-23, WP-24 | Admin dependency editor UI replaces the matrix (point 7) |
+| WP-26 | 0.1.0 (M3) | L | 8 | WP-25 | CSV import and export of the mapping, add missing child values (point 8) |
+| WP-27 | 0.1.0 (M3) | L | 9 | WP-12, WP-21, WP-25, WP-26 | Project dependency page on the shared editor with JSON transport and compact audit delta (point 9) |
+| WP-28 | 0.1.0 (M3) | L | 9 | WP-05, WP-12, WP-23 | Project values page: server-side search and pagination (point 9) |
+| WP-29 | 0.1.0 (M3) | M | 9 | WP-28 | Sort A-Z / Z-A as an audited service (point 9) |
+| WP-30 | 0.1.0 (M3) | M | 9 | WP-28 | Page-scoped batch save for Key/Value list values (point 9) |
+| WP-31 | 0.1.0 (M3) | M | 9 | WP-11, WP-12, WP-27, WP-29, WP-30 | Large-list safety on project pages: storage ceiling setting and value length cap |
+| WP-32 | 0.1.0 (M3) | S | 7, 8, 9 | WP-21, WP-22, WP-23, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 | Release 0.1.0 (M3) |
 
-SD-01 (security, wizard save) is not a work package of this plan. It is recommended as its own pull request, merged before tagging 0.0.16 (UD-03), and it is a hard prerequisite for tagging 0.2.0.
+**Release structure (UD-01, resolved by the owner): two releases.** 0.0.16 is a patch release with WP-01, WP-02, WP-03 and WP-07 (tooling, test hygiene, the two hotfixes). Everything else ships together in one release, 0.1.0, built in three milestones: M1 (WP-04 to WP-06 and WP-08 to WP-14: characterization, rules and format modules, server rules, storage safety), M2 (WP-15 to WP-20: issue-form runtime) and M3 (WP-21 to WP-32: editor, import/export, project pages). WP-14 and WP-20 are milestone checkpoints: full evidence run on one SHA, no version bump, no tag. Every work package stays one small pull request. Wherever a document says '0.1.0 (M1)', '0.1.0 (M2)' or '0.1.0 (M3)', the change ships in release 0.1.0 and lands on the main branch during that milestone.
+
+SD-01 (security, wizard save) is not a work package of this plan. Per UD-03 (resolved) it is its own pull request, merged before 0.0.16 is tagged.
 
 ## 2. Dependency graph
 
@@ -60,35 +62,35 @@ flowchart TD
   WP01["WP-01 0.0.16"]
   WP02["WP-02 0.0.16"]
   WP03["WP-03 0.0.16"]
-  WP04["WP-04 0.0.16"]
-  WP05["WP-05 0.0.16"]
-  WP06["WP-06 0.0.16"]
+  WP04["WP-04 0.1.0 (M1)"]
+  WP05["WP-05 0.1.0 (M1)"]
+  WP06["WP-06 0.1.0 (M1)"]
   WP07["WP-07 0.0.16"]
-  WP08["WP-08 0.1.0"]
-  WP09["WP-09 0.1.0"]
-  WP10["WP-10 0.1.0"]
-  WP11["WP-11 0.1.0"]
-  WP12["WP-12 0.1.0"]
-  WP13["WP-13 0.1.0"]
-  WP14["WP-14 0.1.0"]
-  WP15["WP-15 0.2.0"]
-  WP16["WP-16 0.2.0"]
-  WP17["WP-17 0.2.0"]
-  WP18["WP-18 0.2.0"]
-  WP19["WP-19 0.2.0"]
-  WP20["WP-20 0.2.0"]
-  WP21["WP-21 0.3.0"]
-  WP22["WP-22 0.3.0"]
-  WP23["WP-23 0.3.0"]
-  WP24["WP-24 0.3.0"]
-  WP25["WP-25 0.3.0"]
-  WP26["WP-26 0.3.0"]
-  WP27["WP-27 0.3.0"]
-  WP28["WP-28 0.3.0"]
-  WP29["WP-29 0.3.0"]
-  WP30["WP-30 0.3.0"]
-  WP31["WP-31 0.3.0"]
-  WP32["WP-32 0.3.0"]
+  WP08["WP-08 0.1.0 (M1)"]
+  WP09["WP-09 0.1.0 (M1)"]
+  WP10["WP-10 0.1.0 (M1)"]
+  WP11["WP-11 0.1.0 (M1)"]
+  WP12["WP-12 0.1.0 (M1)"]
+  WP13["WP-13 0.1.0 (M1)"]
+  WP14["WP-14 0.1.0 (M1)"]
+  WP15["WP-15 0.1.0 (M2)"]
+  WP16["WP-16 0.1.0 (M2)"]
+  WP17["WP-17 0.1.0 (M2)"]
+  WP18["WP-18 0.1.0 (M2)"]
+  WP19["WP-19 0.1.0 (M2)"]
+  WP20["WP-20 0.1.0 (M2)"]
+  WP21["WP-21 0.1.0 (M3)"]
+  WP22["WP-22 0.1.0 (M3)"]
+  WP23["WP-23 0.1.0 (M3)"]
+  WP24["WP-24 0.1.0 (M3)"]
+  WP25["WP-25 0.1.0 (M3)"]
+  WP26["WP-26 0.1.0 (M3)"]
+  WP27["WP-27 0.1.0 (M3)"]
+  WP28["WP-28 0.1.0 (M3)"]
+  WP29["WP-29 0.1.0 (M3)"]
+  WP30["WP-30 0.1.0 (M3)"]
+  WP31["WP-31 0.1.0 (M3)"]
+  WP32["WP-32 0.1.0 (M3)"]
   WP01 --> WP02
   WP01 --> WP03
   WP02 --> WP03
@@ -176,31 +178,36 @@ flowchart TD
 
 ### 0.0.16
 
-Foundation and hotfixes, no intended behaviour change beyond listed fixes: WP-01 tooling (.codex scripts, ratchet, JS toolchain, manual 6.1 and JS workflows), WP-02 test hygiene, shared generator and locale parity, WP-03 hotfixes (MemCacheStore save crash, bulk-edit data loss in the legacy JS), WP-04 characterization specs, WP-05 DependencyRules + FieldIndex, WP-06 shared DependingFormatMethods module, WP-07 release. Recommended: the separately tracked SECURITY fix SD-01 (wizard save) as its own PR merged before tagging (UD-03).
+Patch release (UD-01, UD-02, UD-03 resolved): WP-01 tooling (.codex scripts, RuboCop ratchet, JS toolchain, manual 6.1 and JS workflows), WP-02 test hygiene, shared generator and locale parity, WP-03 hotfixes (MemCacheStore save crash, bulk-edit data loss in the legacy JS), WP-07 release, plus the separate SD-01 security pull request. No other behaviour change.
 
 CHANGELOG:
 
 - Fixed: Saving a depending field no longer fails with an internal error on MemCacheStore or other cache stores without delete_matched.
 - Fixed: Bulk edit of issues and time entries no longer clears untouched multi-value dependent fields.
 - Fixed: The admin custom field form shows 'Default value' instead of a missing translation.
-- Removed: QueryCustomFieldColumnPatch (it had no effect on any supported Redmine version).
 - Removed: the unused and broken test/spec suite.
+- Security: The context-menu wizard writes only fields the user may edit (SD-01, own pull request merged before this tag, UD-03).
 - Development: local test scripts in .codex mirroring CI, RuboCop ratchet (Ruby 2.7 syntax gate), JavaScript tests with node --test and jsdom, manual workflows for Redmine 6.1 and JavaScript.
 - Upgrade notes: Ruby 2.7 or newer is required. Redmine 5.0 remains declared but is not tested; 5.1, 6.0, 6.1 and 7.0 are tested.
 
-### 0.1.0
+### 0.1.0 (one release, built in milestones M1, M2 and M3)
+
+UD-01 (resolved by the owner): everything after the patch release ships in one release. The milestones below are internal checkpoints (WP-14, WP-20) with a full evidence run each; only WP-32 bumps the version and tags 0.1.0. The CHANGELOG 0.1.0 section is the union of the three milestone lists, grouped by Added, Changed, Fixed, Deprecated, Removed, Security, API and Upgrade notes.
+
+#### Milestone M1: server rules and storage safety (WP-04 to WP-06, WP-08 to WP-14)
 
 Server rules and storage safety: WP-08 enumeration options and single error, WP-09 D1 per-value leniency incl. copies and non-editable children, WP-10 effective parent + cycle validation + parent select + cycle warning, WP-11 MySQL TEXT size validation with usage hint, WP-12 service error mapping + flash escaping + audit cap, WP-13 rake tasks report_sizes/widen_core_columns + README MySQL section (+ optional manual MariaDB workflow), WP-14 release. Storage safety ships here (ahead of the 'large-list safety' slot of the ordering) because the editor transport depends on it and it fixes HTTP 500s and silent truncation today.
 
 CHANGELOG:
 
+- Removed: QueryCustomFieldColumnPatch (it had no effect on any supported Redmine version).
 - Added: Choosing the field itself or one of its dependent fields as 'Depends on' is refused (form error, HTTP 422 in the APIs).
 - Added: The admin form warns about fields that are part of an existing circular dependency; such fields are treated as independent until the cycle is fixed.
 - Added: Size validation against MySQL/MariaDB TEXT limits for List, Key/Value list and both depending formats; nothing is truncated anymore.
 - Added: Rake tasks redmine:depending_custom_fields:report_sizes and redmine:depending_custom_fields:widen_core_columns (opt-in, dry run by default, CONFIRM=1 to apply).
 - Added: A database storage usage line on the custom field form and project pages at 90 percent of the column limit.
-- Changed: Stored values that no longer fit the parent are accepted on save until the parent changes; other values of a multi-value field can still be added or removed. In 0.1.0 this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.2.0 on.
-- Changed: An untouched value is accepted when its parent field is not available for the issue's tracker. In 0.1.0 this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.2.0 on.
+- Changed: Stored values that no longer fit the parent are accepted on save until the parent changes; other values of a multi-value field can still be added or removed. In 0.1.0 (M1) this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.1.0 (M2) on.
+- Changed: An untouched value is accepted when its parent field is not available for the issue's tracker. In 0.1.0 (M1) this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.1.0 (M2) on.
 - Changed: Issue copies (single copy, bulk copy, project copy) keep such values when copied unchanged; project copy no longer skips those issues.
 - Changed: A dependent field you cannot edit no longer blocks saving a change of its parent.
 - Changed: The 'Depends on' select no longer offers the field's own dependent fields.
@@ -212,7 +219,7 @@ CHANGELOG:
 - API: The response shape is unchanged. New HTTP 422 reasons: circular parent and MySQL oversize.
 - Upgrade notes: On MySQL servers running without strict mode, saves that used to be truncated silently are now refused. Core List and Key/Value list fields are checked too. The plugin never alters core tables; widening is an explicit rake task and running Redmine processes keep the old limit until restarted. Run report_sizes once after upgrading: fields reported CORRUPT or SUSPECT were truncated earlier and need their values restored from a backup.
 
-### 0.2.0
+#### Milestone M2: issue-form runtime without inline script (WP-15 to WP-20)
 
 Issue-form runtime without inline script (points 1 to 5): WP-15 context menu without cache, WP-16 per-field data contract (additive), WP-17 new UMD runtime behind the legacy script, WP-18 switch (meta tag + runtime, inline script/globals/Rails.cache/MappingBuilder removed, wizard rework), WP-19 radio sentinel and required '(none)', WP-20 release. Must not be tagged before SD-01 (wizard save security) is merged.
 
@@ -237,13 +244,12 @@ CHANGELOG:
 - Fixed: The dependency mapping is no longer embedded in every page, including the login page.
 - Added: In bulk edit and the wizard, required dependent fields offer '(none)' while the parent selection allows no value.
 - Added: Hints are announced to screen readers.
-- Deprecated: DependingCustomFields.setup and requestSetup (aliases of DependingCustomFields.init) and CustomFieldVisibility; kept at least throughout 0.2.x, removable no earlier than 0.3.0.
+- Deprecated: DependingCustomFields.setup and requestSetup (aliases of DependingCustomFields.init) and CustomFieldVisibility; kept at least throughout 0.1.x, removable no earlier than 0.2.0.
 - Removed: window.DependingCustomFieldData, window.ContextMenuWizardConfig, MappingBuilder, ParentMenuBuilder, ContextMenuWizardController#options, the after_custom_field_save dispatch, data-depending-* attributes, depending_cf_N ids, the hidden mirror inputs and the data-field-id attribute.
-- Security: The context-menu wizard writes only fields the user may edit (separately tracked SD-01, if not already released earlier).
 - Upgrade notes: Restart Redmine. If automatic plugin asset mirroring (5.1) or redmine_detect_update (6.x/7.0) is disabled or assets are baked into an image, run rake redmine:plugins:assets (5.1) or rake assets:precompile (6.x/7.0). Reload open browser tabs. The cache key depending_custom_fields/mapping is no longer used; before downgrading to an earlier version on a persistent cache store, run bin/rails runner -e production "Rails.cache.delete('depending_custom_fields/mapping')" once.
 - Added: The value you last picked for each parent value comes back when you switch the parent back, also after the form refreshes.
 
-### 0.3.0
+#### Milestone M3: dependency editor, import/export, project pages (WP-21 to WP-32)
 
 Dependency editor, import/export and project pages (points 7, 8, 9): WP-21 payload parser, WP-22 admin JSON transport, WP-23 editor model + payload contract, WP-24 values endpoint + presenter + shared partial, WP-25 admin editor UI, WP-26 CSV import/export + add missing child values, WP-27 project dependency page on the shared editor with compact audit delta, WP-28 values page search/pagination, WP-29 sort A-Z/Z-A, WP-30 page-scoped enumeration batch, WP-31 project storage ceiling and value length cap, WP-32 release.
 
@@ -269,7 +275,7 @@ CHANGELOG:
 - Fixed: Unticking every link clears the mapping; parent values containing [ or ] and mappings with more than about 4,000 links can be saved (admin form and project settings).
 - Fixed: Links to inactive Key/Value list entries are kept on admin saves.
 - Fixed: Correcting a failed dependency save in project settings and saving again no longer reports a conflict.
-- Deprecated: Posting value_dependencies / default_value_dependencies as nested params to the project dependency page; send dependencies_json (accepted throughout 0.3.x, removed no earlier than 0.4.0). The admin safe attributes value_dependencies and default_value_dependencies remain permanently.
+- Deprecated: Posting value_dependencies / default_value_dependencies as nested params to the project dependency page; send dependencies_json (accepted throughout 0.1.x, removed no earlier than 0.2.0). The admin safe attributes value_dependencies and default_value_dependencies remain permanently.
 - Removed: Partials custom_fields/formats/_dependencies_matrix and _default_dependencies, CSS classes .dependencies-matrix*, .dependencies-defaults* and .dcf-dependencies-matrix, locale key text_dependency_matrix_help.
 - Upgrade notes: Links dropped by earlier versions (inactive Key/Value entries) cannot be restored. Links stored under parent values containing [ or ] were saved under corrupted keys by earlier versions; the editor lists them as orphans and they must be re-linked once. Copied Key/Value list (depending) fields keep links to the source field's entries (no remap); they show as orphans and are removed at the first editor save. Reverse proxies may limit request bodies (nginx client_max_body_size is 1 MB by default): raise it for very large mappings. On PostgreSQL and SQLite, changes from project settings are limited by the new storage setting; the administration and the API are not. Restart Redmine after upgrading (new asset files).
 - Changed: The project dependency page shows the global/shared field warning, and a notice instead of the editor when the parent field is not available in the project or no longer exists.
@@ -450,7 +456,7 @@ Revert the PR (two code edits). No data effect; reverting reintroduces both defe
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.0.16 | M | 1, 2, 3, 5, 6, 7, 9 | WP-02, WP-03 |
+| 0.1.0 (M1) | M | 1, 2, 3, 5, 6, 7, 9 | WP-02, WP-03 |
 
 **Scope**
 
@@ -495,7 +501,7 @@ Revert the PR.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.0.16 | M | 6, 5 | WP-04 |
+| 0.1.0 (M1) | M | 6, 5 | WP-04 |
 
 **Scope**
 
@@ -546,7 +552,7 @@ Revert the PR; FieldRelevance returns to its own walk.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.0.16 | M | 6 | WP-05 |
+| 0.1.0 (M1) | M | 6 | WP-05 |
 
 **Scope**
 
@@ -595,11 +601,11 @@ Revert the PR; both format classes return to their duplicated bodies.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.0.16 | S | - | WP-01, WP-02, WP-03, WP-04, WP-05, WP-06 |
+| 0.0.16 | S | - | WP-01, WP-02, WP-03 |
 
 **Scope**
 
-Bump init.rb version to 0.0.16, finalize the CHANGELOG 0.0.16 section (Fixed: MemCacheStore, bulk data loss, Default value label; Removed: QueryCustomFieldColumnPatch, unused test/spec suite; Upgrade notes: Ruby 2.7 or newer), README Compatibility and Development. If the separately tracked SD-01 security PR is merged (recommended, UD-03), add the Security line. Full evidence run.
+Bump init.rb version to 0.0.16, finalize the CHANGELOG 0.0.16 section (Fixed: MemCacheStore, bulk data loss, Default value label; Removed: unused test/spec suite; Upgrade notes: Ruby 2.7 or newer), README Compatibility and Development. Add the Security line for SD-01: per UD-03 (resolved) the wizard-save fix is its own pull request, merged before this tag. Full evidence run. WP-04 to WP-06 are not part of this patch release (UD-01 resolved: they move to 0.1.0, milestone M1).
 
 **Files**
 
@@ -614,7 +620,7 @@ Bump init.rb version to 0.0.16, finalize the CHANGELOG 0.0.16 section (Fixed: Me
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 plus SYNTAX/COMPAT/RATCHET PASS
-- CHANGELOG lists every 0.0.16 perceptible change (PC-01..PC-05)
+- CHANGELOG lists every 0.0.16 perceptible change (PC-01, PC-02, PC-03, PC-05) and the SD-01 Security line
 - Optional manual CI dispatch per quality protocol section 10 (UD-32, resolved): only after the local gates pass, at most once per workflow per SHA, reported with workflow, SHA, run URL and result; headSha equals the release SHA
 
 **Compatibility notes**
@@ -633,7 +639,7 @@ Do not tag; revert the version bump commit.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | S | 6 | WP-06 |
+| 0.1.0 (M1) | S | 6 | WP-06 |
 
 **Scope**
 
@@ -673,11 +679,11 @@ Revert the PR.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | M | 2, 6 | WP-06 |
+| 0.1.0 (M1) | M | 2, 6 | WP-06 |
 
 **Scope**
 
-DependencyRules.dependency_check implements D1 per value (UD-04): while the parent is unchanged (order-insensitive; a parent not available on the object counts as unchanged, UD-05) every value in the baseline is tolerated and only newly added values must be allowed; when the parent changed, all values are validated. Baseline = value_was, or for new records with copy? true the source issue's stored values via @copied_from (core has no reader; pinned by a spec on all 4 versions; falls back to strict, never crashes) (UD-06). An unchanged child the current user cannot edit (editable_custom_field_values) is never rejected because the parent changed; evaluated only on the failure path (UD-07). validate_custom_value uses it; the required bypass in CustomFieldPatch#validate_custom_value moves to DependencyRules.no_options? with unchanged semantics. Rows added to test/js/fixtures/shared/rules_cases.json (multi add allowed, add disallowed, remove legacy, reorder, keep legacy and change parent, single legacy to allowed, single legacy to other disallowed, parent unavailable untouched). Legacy JS (still active until WP-18) drops a disallowed stored value on load, so form saves are unchanged until 0.2.0; REST, mail, bulk '(no change)', wizard and copies benefit now.
+DependencyRules.dependency_check implements D1 per value (UD-04): while the parent is unchanged (order-insensitive; a parent not available on the object counts as unchanged, UD-05) every value in the baseline is tolerated and only newly added values must be allowed; when the parent changed, all values are validated. Baseline = value_was, or for new records with copy? true the source issue's stored values via @copied_from (core has no reader; pinned by a spec on all 4 versions; falls back to strict, never crashes) (UD-06). An unchanged child the current user cannot edit (editable_custom_field_values) is never rejected because the parent changed; evaluated only on the failure path (UD-07). validate_custom_value uses it; the required bypass in CustomFieldPatch#validate_custom_value moves to DependencyRules.no_options? with unchanged semantics. Rows added to test/js/fixtures/shared/rules_cases.json (multi add allowed, add disallowed, remove legacy, reorder, keep legacy and change parent, single legacy to allowed, single legacy to other disallowed, parent unavailable untouched). Legacy JS (still active until WP-18) drops a disallowed stored value on load, so form saves are unchanged until 0.1.0 (M2); REST, mail, bulk '(no change)', wizard and copies benefit now.
 
 **Files**
 
@@ -723,7 +729,7 @@ Revert the PR to restore strict whole-set validation; no data migration. Records
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | M | 5 | WP-05, WP-06 |
+| 0.1.0 (M1) | M | 5 | WP-05, WP-06 |
 
 **Scope**
 
@@ -770,7 +776,7 @@ DependencyRules.effective_parent_id: parent exists, same type, family format, no
 
 **Compatibility notes**
 
-New 422 reason only for invalid configurations. The legacy JS still recurses on stored cycles until 0.2.0, but no new cycle can be created from now on.
+New 422 reason only for invalid configurations. The legacy JS still recurses on stored cycles until 0.1.0 (M2), but no new cycle can be created from now on.
 
 **Rollback**
 
@@ -784,7 +790,7 @@ Revert the PR; cycles can be saved again silently. No data change.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | M | - | WP-02, WP-06 |
+| 0.1.0 (M1) | M | - | WP-02, WP-06 |
 
 **Scope**
 
@@ -847,7 +853,7 @@ Revert the PR; MySQL returns to 500 or truncation. No data change.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | M | 9 | WP-11 |
+| 0.1.0 (M1) | M | 9 | WP-11 |
 
 **Scope**
 
@@ -899,7 +905,7 @@ Revert the PR; services return to generic save_failed; audit values unbounded ag
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | M | - | WP-11 |
+| 0.1.0 (M1) | M | - | WP-11 |
 
 **Scope**
 
@@ -945,15 +951,15 @@ Revert the PR. Columns already widened stay widened; revert them with REVERT=1 C
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
-### WP-14: Release 0.1.0
+### WP-14: Milestone M1 checkpoint (no release tag)
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.1.0 | S | - | WP-08, WP-09, WP-10, WP-11, WP-12, WP-13 |
+| 0.1.0 (M1) | S | - | WP-08, WP-09, WP-10, WP-11, WP-12, WP-13 |
 
 **Scope**
 
-Version 0.1.0, CHANGELOG 0.1.0 (Added, Changed, Fixed, API, Upgrade notes per PC-06..PC-21), README API section (new 422 reasons, unchanged shape), README validation section (legacy values accepted until the parent changes, copies, non-editable children, cycles). Full evidence including the manual MariaDB run.
+Milestone checkpoint inside the single release 0.1.0 (UD-01 resolved): no version bump and no tag. Full evidence run on one SHA, and the CHANGELOG 'Unreleased (0.1.0)' section gets the M1 lines (Added, Changed, Fixed, API, Upgrade notes per PC-04 and PC-06..PC-21), README API section (new 422 reasons, unchanged shape), README validation section (legacy values accepted until the parent changes, copies, non-editable children, cycles). Full evidence including the manual MariaDB run.
 
 **Files**
 
@@ -968,7 +974,7 @@ Version 0.1.0, CHANGELOG 0.1.0 (Added, Changed, Fixed, API, Upgrade notes per PC
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 and on MariaDB 10.11 (5.1, 7.0)
-- CHANGELOG covers PC-06..PC-21
+- CHANGELOG 'Unreleased (0.1.0)' covers PC-04 and PC-06..PC-21; init.rb version unchanged
 
 **Compatibility notes**
 
@@ -986,7 +992,7 @@ Do not tag; revert the version bump.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | M | 1 | WP-05, WP-10 |
+| 0.1.0 (M2) | M | 1 | WP-05, WP-10 |
 
 **Scope**
 
@@ -1046,7 +1052,7 @@ Revert the PR; the menu returns to global hiding through the cached mapping (the
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | L | 1, 4 | WP-09, WP-10, WP-15 |
+| 0.1.0 (M2) | L | 1, 4 | WP-09, WP-10, WP-15 |
 
 **Scope**
 
@@ -1099,7 +1105,7 @@ Revert the PR; markup returns to the previous shape. No data effect.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | L | 2, 3, 4, 5 | WP-16 |
+| 0.1.0 (M2) | L | 2, 3, 4, 5 | WP-16 |
 
 **Scope**
 
@@ -1160,7 +1166,7 @@ Revert the PR; the legacy file returns to its original name.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | L | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17 |
+| 0.1.0 (M2) | L | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17 |
 
 **Scope**
 
@@ -1235,7 +1241,7 @@ Revert the PR: the legacy script, inline global and cache return. On persistent 
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | M | 2 | WP-18 |
+| 0.1.0 (M2) | M | 2 | WP-18 |
 
 **Scope**
 
@@ -1278,15 +1284,15 @@ Revert the PR; required radio and required bulk children return to the previous 
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
-### WP-20: Release 0.2.0
+### WP-20: Milestone M2 checkpoint (no release tag)
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.2.0 | S | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17, WP-18, WP-19 |
+| 0.1.0 (M2) | S | 1, 2, 3, 4, 5 | WP-15, WP-16, WP-17, WP-18, WP-19 |
 
 **Scope**
 
-Rewrite README lines 22-24 (never disabled), 31 (remove the false 'calculated across all selected issues' promise), 36-37 (bulk '(No change)' per UD-09), wizard section (UD-11). CHANGELOG 0.2.0 with Upgrade notes (restart; run rake redmine:plugins:assets on 5.1 or assets:precompile on 6.x/7.0 when automatic mirroring or detect_update is disabled; reload open tabs; cache key no longer used; downgrade command; setup/requestSetup deprecated). Confirm SD-01 is merged (no later than this release). Version 0.2.0.
+Rewrite README lines 22-24 (never disabled), 31 (remove the false 'calculated across all selected issues' promise), 36-37 (bulk '(No change)' per UD-09), wizard section (UD-11). CHANGELOG 'Unreleased (0.1.0)' gets the M2 lines with Upgrade notes (restart; run rake redmine:plugins:assets on 5.1 or assets:precompile on 6.x/7.0 when automatic mirroring or detect_update is disabled; reload open tabs; cache key no longer used; downgrade command; setup/requestSetup deprecated). SD-01 is already merged before 0.0.16 (UD-03 resolved). No version bump and no tag (UD-01 resolved).
 
 **Files**
 
@@ -1301,7 +1307,7 @@ Rewrite README lines 22-24 (never disabled), 31 (remove the false 'calculated ac
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 with system specs on 5.1 and 7.0
-- CHANGELOG covers PC-22..PC-44, PC-66 and the SD-01 Security line
+- CHANGELOG 'Unreleased (0.1.0)' covers PC-22..PC-44 and PC-66; init.rb version unchanged
 
 **Compatibility notes**
 
@@ -1319,7 +1325,7 @@ Do not tag; revert the version bump.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 7, 9 | WP-02 |
+| 0.1.0 (M3) | M | 7, 9 | WP-02 |
 
 **Scope**
 
@@ -1363,7 +1369,7 @@ Revert the PR.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 7 | WP-05, WP-11, WP-21 |
+| 0.1.0 (M3) | M | 7 | WP-05, WP-11, WP-21 |
 
 **Scope**
 
@@ -1415,7 +1421,7 @@ Revert the PR; the virtual attribute disappears (posted dependencies_json is the
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 7 | WP-21, WP-22 |
+| 0.1.0 (M3) | M | 7 | WP-21, WP-22 |
 
 **Scope**
 
@@ -1458,7 +1464,7 @@ Revert the PR.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 7, 9 | WP-05, WP-11, WP-16 |
+| 0.1.0 (M3) | M | 7, 9 | WP-05, WP-11, WP-16 |
 
 **Scope**
 
@@ -1515,7 +1521,7 @@ Revert the PR.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | L | 7 | WP-18, WP-22, WP-23, WP-24 |
+| 0.1.0 (M3) | L | 7 | WP-18, WP-22, WP-23, WP-24 |
 
 **Scope**
 
@@ -1581,7 +1587,7 @@ Revert the PR; the matrix partials return and the admin form posts nested params
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | L | 8 | WP-25 |
+| 0.1.0 (M3) | L | 8 | WP-25 |
 
 **Scope**
 
@@ -1634,11 +1640,11 @@ Revert the PR; the import and export panels disappear, the editor stays.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | L | 9 | WP-12, WP-21, WP-25, WP-26 |
+| 0.1.0 (M3) | L | 9 | WP-12, WP-21, WP-25, WP-26 |
 
 **Scope**
 
-edit_dependencies.html.erb keeps its multipart PATCH form and state_hash and renders the shared partial with DependencyEditorConfig.for_project; Save rendered disabled with data-dcf-editor-submit and enabled by the editor after init (no false success without JS, UD-16); global/shared scope banner via dcf_flash_box (notice_icon on 6.0+, classic on 5.1); notices instead of the editor when the parent is missing or not relevant. DependencyMappingService decodes dependencies_json with DependencyPayload.parse! inside perform! so every bad input (blank included) is an audited validation_failed; exposes parsed_payload; strict Set-based validation with aggregated offender summary (labels only in the audit summary, never in flash); shape_defaults! on the JSON path; legacy nested params still accepted when the key is absent, with a deprecation log (removed no earlier than 0.4.0). DependencyDelta v2: before {v, links, defaults, mapping_sha256}; after with counts, orphans_removed, defaults_changed, parents_changed, samples capped at 20 entries and 4,000 encoded bytes per list, labels cut to 80 encoded bytes, 3 labels per default, informational source and import (client-reported, SP-12). Controller prepare_dependencies reloads the field before computing state_hash (R9); 422 re-render passes posted: service.parsed_payload (only when it parsed) to DependencyEditorConfig.for_project; the hidden input stays blank and the payload is rendered in data-dcf-editor-mapping with data-dcf-editor-dirty="1"; 409 re-render passes the posted version as data-dcf-editor-conflict-mapping (parsed once, after authorization) so the same conflict panel as on the admin form appears (reconciliation: editor attribute instead of the project's data-dcf-editor-pending). Removes text_dependency_matrix_help. Payload goldens also posted to the project path.
+edit_dependencies.html.erb keeps its multipart PATCH form and state_hash and renders the shared partial with DependencyEditorConfig.for_project; Save rendered disabled with data-dcf-editor-submit and enabled by the editor after init (no false success without JS, UD-16); global/shared scope banner via dcf_flash_box (notice_icon on 6.0+, classic on 5.1); notices instead of the editor when the parent is missing or not relevant. DependencyMappingService decodes dependencies_json with DependencyPayload.parse! inside perform! so every bad input (blank included) is an audited validation_failed; exposes parsed_payload; strict Set-based validation with aggregated offender summary (labels only in the audit summary, never in flash); shape_defaults! on the JSON path; legacy nested params still accepted when the key is absent, with a deprecation log (removed no earlier than 0.2.0). DependencyDelta v2: before {v, links, defaults, mapping_sha256}; after with counts, orphans_removed, defaults_changed, parents_changed, samples capped at 20 entries and 4,000 encoded bytes per list, labels cut to 80 encoded bytes, 3 labels per default, informational source and import (client-reported, SP-12). Controller prepare_dependencies reloads the field before computing state_hash (R9); 422 re-render passes posted: service.parsed_payload (only when it parsed) to DependencyEditorConfig.for_project; the hidden input stays blank and the payload is rendered in data-dcf-editor-mapping with data-dcf-editor-dirty="1"; 409 re-render passes the posted version as data-dcf-editor-conflict-mapping (parsed once, after authorization) so the same conflict panel as on the admin form appears (reconciliation: editor attribute instead of the project's data-dcf-editor-pending). Removes text_dependency_matrix_help. Payload goldens also posted to the project path.
 
 **Consolidation amendments**
 
@@ -1702,7 +1708,7 @@ Revert the PR; the project page returns to the matrix. Audit rows written in v2 
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | L | 9 | WP-05, WP-12, WP-23 |
+| 0.1.0 (M3) | L | 9 | WP-05, WP-12, WP-23 |
 
 **Scope**
 
@@ -1769,7 +1775,7 @@ Revert the PR; the values page renders every row again.
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 9 | WP-28 |
+| 0.1.0 (M3) | M | 9 | WP-28 |
 
 **Scope**
 
@@ -1823,7 +1829,7 @@ Revert the PR; sort_values audit rows remain readable; the action disappears fro
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 9 | WP-28 |
+| 0.1.0 (M3) | M | 9 | WP-28 |
 
 **Scope**
 
@@ -1875,7 +1881,7 @@ Revert the PR; paginated enumeration pages lose their save form (WP-28 alone ren
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | M | 9 | WP-11, WP-12, WP-27, WP-29, WP-30 |
+| 0.1.0 (M3) | M | 9 | WP-11, WP-12, WP-27, WP-29, WP-30 |
 
 **Scope**
 
@@ -1940,15 +1946,15 @@ Revert the PR; the setting key stays in plugin settings (harmless).
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
-### WP-32: Release 0.3.0
+### WP-32: Release 0.1.0 (milestones M1, M2 and M3)
 
 | Release | Size | Points | Depends on |
 |---|---|---|---|
-| 0.3.0 | S | 7, 8, 9 | WP-21, WP-22, WP-23, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 |
+| 0.1.0 (M3) | S | 7, 8, 9 | WP-21, WP-22, WP-23, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 |
 
 **Scope**
 
-Version 0.3.0; CHANGELOG 0.3.0 (PC-45..PC-65, PC-67, PC-68 incl. Deprecated project nested params with removal no earlier than 0.4.0 and Removed matrix partials/CSS/key); README (editor, import/export, project pages, reverse proxy note, no-JS behaviour); docs/specs amendments A5 and A6 finalized (operations, audit, UI, integration, security model, permissions, functional spec, test plan); upgrade-notes register checked completely (quality section 9).
+Version 0.1.0 in init.rb and the release tag (UD-01 resolved: one release for all milestones). The CHANGELOG 'Unreleased (0.1.0)' section becomes '0.1.0', grouped by Added, Changed, Fixed, Deprecated, Removed, Security, API and Upgrade notes, and gets the M3 lines (PC-45..PC-65, PC-67, PC-68 incl. Deprecated project nested params with removal no earlier than 0.2.0 and Removed matrix partials/CSS/key); README (editor, import/export, project pages, reverse proxy note, no-JS behaviour); docs/specs amendments A5 and A6 finalized (operations, audit, UI, integration, security model, permissions, functional spec, test plan); upgrade-notes register checked completely (quality section 9).
 
 **Files**
 
@@ -1964,7 +1970,7 @@ Version 0.3.0; CHANGELOG 0.3.0 (PC-45..PC-65, PC-67, PC-68 incl. Deprecated proj
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 with system specs on 5.1 and 7.0
-- Every upgrade-notes register entry has its CHANGELOG line
+- Every upgrade-notes register entry has its CHANGELOG line, and the 0.1.0 section contains all lines of M1, M2 and M3 (PC-04, PC-06..PC-68)
 
 **Compatibility notes**
 

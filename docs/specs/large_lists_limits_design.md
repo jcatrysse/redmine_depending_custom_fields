@@ -1,9 +1,9 @@
 # Large lists and MySQL safety (cross-cutting): implementation plan, revision 2
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: none of 1 to 9 directly (cross-cutting MySQL/MariaDB TEXT safety, README row "x"); it supports 6 (shared normalizer `storage_preview`, `FieldIndex`), 7 and 8 (editor storage attributes and client estimate) and 9 (project service error mapping, audit cap, project storage ceiling). Owner area: limits (cross-cutting MySQL TEXT safety: `StorageLimits`, the `CustomFieldValidationPatch` registration point, service error mapping, `OperationError`, `translate_error`, `AuditPayload`, `StorageReport`, `CoreColumnWidener`, rake tasks, README storage section, limits locale keys). Work packages: WP-11, WP-12, WP-13 (primary, release 0.1.0), WP-31 (project storage ceiling and value length cap, release 0.3.0); contributing: WP-02 (generator byte helpers, rails_helper tags, locale parity spec, 0.0.16), WP-05 (`FieldIndex`, 0.0.16), WP-06 (`normalized_store_pairs`, `storage_preview(custom_field, store)`, 0.0.16), WP-22 (editor transport callbacks join `CustomFieldValidationPatch`, 0.3.0), WP-24 (storage attributes, `text_dcf_storage_estimate`, 0.3.0), WP-25 (client estimate warning and `test/js/dependency_editor_storage.test.js`, 0.3.0), WP-27 (project delta caps of 6.3, 0.3.0). Decisions: UD-22, UD-25, UD-26, UD-27, UD-28; related: UD-01 (release structure), UD-03 (SD-01 timing, section 16), UD-32 (dispatch of the manual MariaDB workflow, resolved).
+> Points: none of 1 to 9 directly (cross-cutting MySQL/MariaDB TEXT safety, README row "x"); it supports 6 (shared normalizer `storage_preview`, `FieldIndex`), 7 and 8 (editor storage attributes and client estimate) and 9 (project service error mapping, audit cap, project storage ceiling). Owner area: limits (cross-cutting MySQL TEXT safety: `StorageLimits`, the `CustomFieldValidationPatch` registration point, service error mapping, `OperationError`, `translate_error`, `AuditPayload`, `StorageReport`, `CoreColumnWidener`, rake tasks, README storage section, limits locale keys). Work packages: WP-11, WP-12, WP-13 (primary, release 0.1.0 (M1)), WP-31 (project storage ceiling and value length cap, release 0.1.0 (M3)); contributing: WP-02 (generator byte helpers, rails_helper tags, locale parity spec, 0.0.16), WP-05 (`FieldIndex`, 0.1.0 (M1)), WP-06 (`normalized_store_pairs`, `storage_preview(custom_field, store)`, 0.0.16), WP-22 (editor transport callbacks join `CustomFieldValidationPatch`, 0.1.0 (M3)), WP-24 (storage attributes, `text_dcf_storage_estimate`, 0.1.0 (M3)), WP-25 (client estimate warning and `test/js/dependency_editor_storage.test.js`, 0.1.0 (M3)), WP-27 (project delta caps of 6.3, 0.1.0 (M3)). Decisions: UD-22, UD-25, UD-26, UD-27, UD-28; related: UD-01 (release structure), UD-03 (SD-01 timing, section 16), UD-32 (dispatch of the manual MariaDB workflow, resolved).
 
-**Consolidation.** The final completeness critic (gap 4: `storage_preview(custom_field, store)` called as `format.storage_preview(record, record.format_store)`, one `translate_error(error_or_key)` method called as `translate_error(e)`; gap 5: `ClientConfig::I18N` and `DependencyEditorConfig::I18N`; gap 1: failed-save re-render; gap 12: client storage estimate test in WP-25) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts", including the rows "Large-list generator", "FieldIndex API" and "Service storage error text") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20, 0.3.0 = WP-21..WP-32. Storage validation, the usage hint, the service error mapping, flash escaping, the audit cap and the rake tasks ship in 0.1.0 (WP-11 to WP-13); the editor storage attributes and the client estimate ship in 0.3.0 (WP-24, WP-25); the project storage ceiling ships in 0.3.0 (WP-31, UD-22). Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, interpolations and owner WPs.
+**Consolidation.** The final completeness critic (gap 4: `storage_preview(custom_field, store)` called as `format.storage_preview(record, record.format_store)`, one `translate_error(error_or_key)` method called as `translate_error(e)`; gap 5: `ClientConfig::I18N` and `DependencyEditorConfig::I18N`; gap 1: failed-save re-render; gap 12: client storage estimate test in WP-25) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts", including the rows "Large-list generator", "FieldIndex API" and "Service storage error text") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20, 0.1.0 (M3) = WP-21..WP-32. Storage validation, the usage hint, the service error mapping, flash escaping, the audit cap and the rake tasks ship in 0.1.0 (M1) (WP-11 to WP-13); the editor storage attributes and the client estimate ship in 0.1.0 (M3) (WP-24, WP-25); the project storage ceiling ships in 0.1.0 (M3) (WP-31, UD-22). Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, interpolations and owner WPs.
 
 Scope:
 - (a) byte-size validation of `custom_fields.possible_values` and `custom_fields.format_store`;
@@ -85,23 +85,23 @@ Facts inherited from research_limits.json:
 | `OperationError` signature | `OperationError.new(key, http_status: :unprocessable_entity, audit_status: 'validation_failed', summary: nil, interpolations: nil, payload: nil)` | the separate limits and project kwarg sets |
 | Flash translation | controller `translate_error(error_or_key)` (one method, one parameter), which escapes interpolations; callers holding an `OperationError` call `translate_error(e)` (gap 4; WP-12, and WP-27 to WP-31) | `translate_error(key, interpolations)`, `translate_error(e.key, e.interpolations)` |
 | Audit value cap | `AuditPayload` (16,384 B), used by `AuditRecorder` | project `AuditRecorder::MAX_VALUE_BYTES = 60_000` |
-| Field topology | `RedmineDependingCustomFields::FieldIndex` (server-owned file with the server names `load`/`children_ids`, WP-05, 0.0.16; this area contributes the raw-regex extraction and the acceptance criteria of 9.3) | `DependencyRules::Graph`, per-hop `find_parent` ancestor walk, per-page child loading in `UsageCalculator`, this area's revision 2 names `build`/`child_ids`/`children` |
+| Field topology | `RedmineDependingCustomFields::FieldIndex` (server-owned file with the server names `load`/`children_ids`, WP-05, 0.1.0 (M1); this area contributes the raw-regex extraction and the acceptance criteria of 9.3) | `DependencyRules::Graph`, per-hop `find_parent` ancestor walk, per-page child loading in `UsageCalculator`, this area's revision 2 names `build`/`child_ids`/`children` |
 | Size report | `RedmineDependingCustomFields::StorageReport` | `StorageLimits.report` |
 | Large-list generator | `DcfLargeList` in `spec/support/dcf_large_list.rb` (WP-02, 0.0.16): the arithmetic generator owned by quality (pinned `233acf899217e962` for `names(5570, tricky_every: 97)`, `466b240daca61be9` for the partition, JS twin `test/js/support/large_list.js`) plus the Ruby-only byte helpers from this area | the mulberry32 generator and its pinned hash `0634a624422f2f06` (proposed by revision 2 of this area), `spec/lib/dcf_large_list_spec.rb`, `spec/quality/large_list_parity_spec.rb` |
-| Client storage estimate inputs | `data-dcf-editor-storage-limit`, `-storage-base`, `-values-limit`, `-storage-warn`, rendered by `DependencyEditorConfig` (WP-24, 0.3.0) | `data-dcf-storage-*` (revision 1), the editor's constant `+256` |
+| Client storage estimate inputs | `data-dcf-editor-storage-limit`, `-storage-base`, `-values-limit`, `-storage-warn`, rendered by `DependencyEditorConfig` (WP-24, 0.1.0 (M3)) | `data-dcf-storage-*` (revision 1), the editor's constant `+256` |
 
 ## 3. Architecture: four layers, fail closed
 
-1. **Transport guard** (editor area, section 12; WP-21 and WP-22, 0.3.0): the single `dependencies_json` field is rejected above 4 MiB before decoding.
-2. **Storage validation** (this area, WP-11, 0.1.0): `StorageLimits` measures the exact bytes ActiveRecord will write and compares them with the column limit. It runs for the admin form, the plugin JSON API, the core `/custom_fields` API, other plugins and every project service, because all of them go through `CustomField#save`/`save!`.
-3. **Service mapping** (this area, WP-12, 0.1.0): `BaseService#call` turns a storage violation into a specific, translated, audited `OperationError`. A database `ValueTooLong` that got past the validation (a limit the app does not know) becomes a generic audited error instead of an HTTP 500.
-4. **Audit cap** (this area, WP-12, 0.1.0): every audit before/after value is at most 16,384 bytes, so the audit insert inside the change transaction can never overflow TEXT and roll the change back.
+1. **Transport guard** (editor area, section 12; WP-21 and WP-22, 0.1.0 (M3)): the single `dependencies_json` field is rejected above 4 MiB before decoding.
+2. **Storage validation** (this area, WP-11, 0.1.0 (M1)): `StorageLimits` measures the exact bytes ActiveRecord will write and compares them with the column limit. It runs for the admin form, the plugin JSON API, the core `/custom_fields` API, other plugins and every project service, because all of them go through `CustomField#save`/`save!`.
+3. **Service mapping** (this area, WP-12, 0.1.0 (M1)): `BaseService#call` turns a storage violation into a specific, translated, audited `OperationError`. A database `ValueTooLong` that got past the validation (a limit the app does not know) becomes a generic audited error instead of an HTTP 500.
+4. **Audit cap** (this area, WP-12, 0.1.0 (M1)): every audit before/after value is at most 16,384 bytes, so the audit insert inside the change transaction can never overflow TEXT and roll the change back.
 
-Operations tooling (report, widening; WP-13, 0.1.0) and documentation sit beside these layers and never run automatically. The project storage ceiling (4.11; WP-31, 0.3.0, UD-22) is an additional, smaller limit on project-page writes inside layer 2.
+Operations tooling (report, widening; WP-13, 0.1.0 (M1)) and documentation sit beside these layers and never run automatically. The project storage ceiling (4.11; WP-31, 0.1.0 (M3), UD-22) is an additional, smaller limit on project-page writes inside layer 2.
 
 ## 4. (a) Size validation
 
-Release: 4.1 to 4.9 ship in 0.1.0 (WP-11; UD-25, UD-28). The client estimate contract of 4.10 ships in 0.3.0 (attributes and key in WP-24, warning and its test in WP-25). The project storage ceiling of 4.11 ships in 0.3.0 (WP-31, UD-22).
+Release: 4.1 to 4.9 ship in 0.1.0 (M1) (WP-11; UD-25, UD-28). The client estimate contract of 4.10 ships in 0.1.0 (M3) (attributes and key in WP-24, warning and its test in WP-25). The project storage ceiling of 4.11 ships in 0.1.0 (M3) (WP-31, UD-22).
 
 ### 4.1 Files and registration
 
@@ -138,8 +138,8 @@ end
 
 - In `init.rb`, require it next to the other patch requires and add `CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldValidationPatch` right after the existing `CustomField.prepend ...CustomFieldPatch` (init.rb:61). This is the same convention as today: no `to_prepare`.
 - Symbol callbacks are deduplicated if init.rb runs twice (V12). The quality design removes the second load anyway.
-- `CustomFieldPatch.prepended` registers no new callback. Its `after_save` dispatch disappears with point 1 (WP-18, 0.2.0).
-- Staging of the module: WP-11 (0.1.0) creates it with only `validate :dcf_validate_storage_limits`; WP-22 (0.3.0) adds the two editor transport callbacks shown above to the same module; WP-31 (0.3.0) adds the non-persisted `dcf_storage_ceiling` accessor (4.11). There is no separate `CustomFieldStoragePatch` or transport patch module (compat section 2.4 row "CustomField callback registration").
+- `CustomFieldPatch.prepended` registers no new callback. Its `after_save` dispatch disappears with point 1 (WP-18, 0.1.0 (M2)).
+- Staging of the module: WP-11 (0.1.0 (M1)) creates it with only `validate :dcf_validate_storage_limits`; WP-22 (0.1.0 (M3)) adds the two editor transport callbacks shown above to the same module; WP-31 (0.1.0 (M3)) adds the non-persisted `dcf_storage_ceiling` accessor (4.11). There is no separate `CustomFieldStoragePatch` or transport patch module (compat section 2.4 row "CustomField callback registration").
 - Ordering: every `before_validation` runs before every `validate`. The storage validation therefore always measures the decoded and pruned mapping.
 - Why not the formats' `validate_custom_field`: core iterates `format.validate_custom_field(self).each do |attribute, message|` (core-5.1 `app/models/custom_field.rb:146`, core-7.0 `:160`). That drops interpolation options and error details, and the core `list` and `enumeration` formats are not plugin classes.
 
@@ -190,7 +190,7 @@ end
 
 The `errors.add` call passes explicit keys and values; there is no Ruby 3.1 hash shorthand anywhere. `too_large?` and `report` do not exist: callers use `violation_in`, and the rake report uses `StorageReport`.
 
-WP-31 (0.3.0) extends this API for the project storage ceiling (4.11): `effective_limit(record, column)` returning `[limit, source]`, `violations` comparing against it, `Violation` gaining `source`, and `errors.add` passing `source: v.source` with an explicit key. Until WP-31 the limit is `column_limit` alone.
+WP-31 (0.1.0 (M3)) extends this API for the project storage ceiling (4.11): `effective_limit(record, column)` returning `[limit, source]`, `violations` comparing against it, `Violation` gaining `source`, and `errors.add` passing `source: v.source` with an explicit key. Until WP-31 the limit is `column_limit` alone.
 
 ### 4.3 Column limit
 
@@ -213,7 +213,7 @@ end
 ### 4.4 Exact bytes: one sanitize-only normalizer (R8)
 
 - **possible_values.** Core `possible_values=` normalizes at assignment. Preview = `record.read_attribute('possible_values')`.
-- **format_store.** The depending formats normalize in `before_custom_field_save`, which core calls from `before_save` after validation. The shared depending-format module (point 6, `DependingFormatMethods`, server area, WP-06, 0.0.16) exposes ONE normalizer used by both paths. It is exactly today's before_save logic (`depending_list_format.rb:18-28`, `depending_enumeration_format.rb:18-28`) and contains no pruning. The canonical code is server design section 5; the excerpt below shows the parts this area relies on:
+- **format_store.** The depending formats normalize in `before_custom_field_save`, which core calls from `before_save` after validation. The shared depending-format module (point 6, `DependingFormatMethods`, server area, WP-06, 0.1.0 (M1)) exposes ONE normalizer used by both paths. It is exactly today's before_save logic (`depending_list_format.rb:18-28`, `depending_enumeration_format.rb:18-28`) and contains no pruning. The canonical code is server design section 5; the excerpt below shows the parts this area relies on:
 
 ```ruby
 # in DependingFormatMethods (point 6, WP-06)
@@ -286,14 +286,14 @@ end
 
 | Path | Mechanism | Result |
 |---|---|---|
-| Admin new/edit (core `CustomFieldsController#create/update`, core-7.0 `app/controllers/custom_fields_controller.rb:47-59,69-86`) | validation fails; core re-renders with `error_messages_for` | message in the form. On the failed-save re-render the hidden input stays blank and the parsed ok payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` (no `data-dcf-editor-echo`, no `input_value`; compat section 3 row "Failed-save re-render", gap 1; editor area, WP-22 and WP-25, 0.3.0), so no work is lost. |
+| Admin new/edit (core `CustomFieldsController#create/update`, core-7.0 `app/controllers/custom_fields_controller.rb:47-59,69-86`) | validation fails; core re-renders with `error_messages_for` | message in the form. On the failed-save re-render the hidden input stays blank and the parsed ok payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` (no `data-dcf-editor-echo`, no `input_value`; compat section 3 row "Failed-save re-render", gap 1; editor area, WP-22 and WP-25, 0.1.0 (M3)), so no work is lost. |
 | Plugin JSON API create/update (`depending_custom_fields_api_controller.rb:52-56,70-74`) | `save`/`update` returns false | HTTP 422 `{"errors":["Dependency mapping is too large to store (98,292 bytes, the database allows at most 65,535 bytes)"]}`. The contract is unchanged (same key, same status as any validation error). Create rolls back the enumerations transaction. |
 | Core `/custom_fields` API, jc-redmine_extended_api | model validation | 422 with the same message |
 | Project services (every BaseService subclass, including source=import and the A-Z sort) | `save!` raises RecordInvalid (from WP-31, through `BaseService#save_field!` with the project ceiling, 4.11) | `OperationError` with interpolations, 422 page with an escaped flash via `translate_error(e)`, audited `validation_failed` (section 5) |
 | Admin custom field reorder | columns unchanged | no check |
 | Enumeration `update_all` in the sort service | guarded columns untouched | no check |
 
-### 4.9 Server usage hint (Should; UD-28, WP-11, 0.1.0)
+### 4.9 Server usage hint (Should; UD-28, WP-11, 0.1.0 (M1))
 
 - **Admin custom field form.** New hook `RedmineDependingCustomFields::Hooks::CustomFieldStorageHook#view_custom_fields_form_upper_box` (core `app/views/custom_fields/_form.html.erb:21`, identical in 5.1 and 7.0, context `custom_field:`). It renders `custom_fields/_dcf_storage_usage` with explicit locals `usage:` and `admin: true`.
 - **Project values and dependency pages.** Helper `dcf_storage_usage_hint(field)` renders the same partial with `admin: false`.
@@ -317,7 +317,7 @@ end
 - `em.info` carries no icon, so the hint renders the same on 5.1 to 7.0 (UX-10).
 - The hint never runs on issue pages.
 
-### 4.10 Client estimate contract (R20; WP-24 and WP-25, 0.3.0)
+### 4.10 Client estimate contract (R20; WP-24 and WP-25, 0.1.0 (M3))
 
 The single presenter `DependencyEditorConfig.for_admin/for_project` (editor area, WP-24) renders these on the single editor root, in the editor namespace, using `StorageLimits`:
 
@@ -343,7 +343,7 @@ The single presenter `DependencyEditorConfig.for_admin/for_project` (editor area
   The server side (attributes present only when `column_limit` is non-nil, exact `storage-base`) is covered by the WP-24 presenter and fixture specs (10.4).
 - The JSON field is called `dependencies_json` everywhere: `custom_field[dependencies_json]` on the admin form and `dependencies_json` on the project page. Revision 1's `value_dependencies_json` was a naming error.
 
-### 4.11 Project storage ceiling (SP-03; WP-31, 0.3.0, UD-22)
+### 4.11 Project storage ceiling (SP-03; WP-31, 0.1.0 (M3), UD-22)
 
 On PostgreSQL and SQLite `column_limit` is nil, so without a ceiling a project manager could grow a field without bound. WP-31 adds an application ceiling that applies only to project-page writes. The project area owns `ProjectStoragePolicy` and `save_field!` (project design sections 2.4 and 9); the `StorageLimits` and `CustomFieldValidationPatch` additions below land in this area's files.
 
@@ -361,7 +361,7 @@ On PostgreSQL and SQLite `column_limit` is nil, so without a ceiling a project m
 
 ## 5. Service mapping, OperationError and flash escaping
 
-Release: section 5 ships in 0.1.0 (WP-12). WP-27 to WP-31 (0.3.0) call `translate_error(e)` from their new actions (gap 4).
+Release: section 5 ships in 0.1.0 (M1) (WP-12). WP-27 to WP-31 (0.1.0 (M3)) call `translate_error(e)` from their new actions (gap 4).
 
 ### 5.1 OperationError (one signature for all areas)
 
@@ -384,7 +384,7 @@ end
 
 - `summary` is the audit `changes_summary` of the failure row (project area).
 - `interpolations` are the flash values (this area).
-- `payload` is the already parsed `DependencyPayload::Result`, which the controller reuses on a 422 re-render so the input is parsed once per request (SP-17, project area). Only an ok payload is re-rendered: it goes to the editor as `posted: service.parsed_payload` of `DependencyEditorConfig.for_project`, which renders it in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` while the hidden input stays blank (gap 1; WP-27, 0.3.0).
+- `payload` is the already parsed `DependencyPayload::Result`, which the controller reuses on a 422 re-render so the input is parsed once per request (SP-17, project area). Only an ok payload is re-rendered: it goes to the editor as `posted: service.parsed_payload` of `DependencyEditorConfig.for_project`, which renders it in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` while the hidden input stays blank (gap 1; WP-27, 0.1.0 (M3)).
 - Defaults keep every existing call valid.
 
 ### 5.2 BaseService (`app/services/redmine_depending_custom_fields/base_service.rb`)
@@ -438,7 +438,7 @@ end
 - There is ONE service mapping: no pre-check before `save!`. The model validation already covers all four guarded formats, because it is a CustomField validation, not a format validation.
 - `e.record` is the record that failed, so a rename cascading into a child names the child field.
 - Exactly one failure row is written. An exception raised inside a rescue clause is not caught by sibling clauses. The success row never exists, because the transaction rolled back. The failure row is written in its own transaction (`AuditRecorder#record_failure!`).
-- Services keep calling plain `save!` in 0.1.0. From WP-31 (0.3.0) every custom field write of the project services goes through `BaseService#save_field!`, which sets the project ceiling and still calls `save!`, so this mapping is unchanged (4.11).
+- Services keep calling plain `save!` in 0.1.0 (M1). From WP-31 (0.1.0 (M3)) every custom field write of the project services goes through `BaseService#save_field!`, which sets the project ceiling and still calls `save!`, so this mapping is unchanged (4.11).
 
 ### 5.3 ValueTooLong row without DB content (SP-09)
 
@@ -492,7 +492,7 @@ end
 
 ## 6. (b) Audit value cap
 
-Release: 6.1 and 6.2 ship in 0.1.0 (WP-12). The project delta sizing of 6.3 is implemented by the project area's `DependencyDelta` in 0.3.0 (WP-27).
+Release: 6.1 and 6.2 ship in 0.1.0 (M1) (WP-12). The project delta sizing of 6.3 is implemented by the project area's `DependencyDelta` in 0.1.0 (M3) (WP-27).
 
 ### 6.1 AuditPayload v2 (`app/services/redmine_depending_custom_fields/audit_payload.rb`, Zeitwerk-autoloaded)
 
@@ -528,7 +528,7 @@ Prototype and tests: `SCRATCH/proto2/audit_payload.rb` (V19).
 - Bound per row: before and after at most 16 KB each, ids under 12 KB, error under 16 KB. All are far below 65,535.
 - No migration widens the plugin's audit table. The cap makes it unnecessary and avoids an ALTER (table copy) of an append-only table on MySQL.
 
-### 6.3 Project delta sizing (applies to the project area's `DependencyDelta`, WP-27, 0.3.0)
+### 6.3 Project delta sizing (applies to the project area's `DependencyDelta`, WP-27, 0.1.0 (M3))
 
 - **Caps.** Sample entries: `CAP = 20`. `DEFAULTS_PER_PARENT_CAP = 3`. The consolidated WP-27 delta (v2) additionally caps each sample list at 4,000 JSON-encoded bytes and names its digest `mapping_sha256`.
 - **Labels.** Labels are cut by ENCODED bytes, not characters: `LABEL_MAX_BYTES = 80`. A label is shortened until its `ActiveSupport::JSON.encode` form fits 80 bytes, then `...` is appended inside the budget (`SCRATCH/proto2/label_cap.rb`). A character cap cannot bound bytes, because `<` encodes as `<` (6 bytes) under Rails' `escape_html_entities_in_json`.
@@ -537,7 +537,7 @@ Prototype and tests: `SCRATCH/proto2/audit_payload.rb` (V19).
 
 ## 7. (c) Opt-in rake tasks, README and CHANGELOG
 
-Release: the rake tasks, `StorageReport`, `CoreColumnWidener`, the README section "MySQL / MariaDB and large lists", `.codex/test_setup.sh --db mysql` and the optional manual MariaDB workflow ship in 0.1.0 (WP-13; UD-26, UD-27). The README "Performance notes" (7.6 item 7) ship in 0.3.0 (WP-31).
+Release: the rake tasks, `StorageReport`, `CoreColumnWidener`, the README section "MySQL / MariaDB and large lists", `.codex/test_setup.sh --db mysql` and the optional manual MariaDB workflow ship in 0.1.0 (M1) (WP-13; UD-26, UD-27). The README "Performance notes" (7.6 item 7) ship in 0.1.0 (M3) (WP-31).
 
 ### 7.1 Files
 
@@ -614,7 +614,7 @@ The README is written in English, using only plain hyphens.
    - Check `max_allowed_packet`.
    - On Galera clusters, run it in a maintenance window.
 6. **Very large lists.** Prefer Key/Value list (depending): values are rows, the mapping stores ids, and the issue-form payload is about 2.7 times smaller.
-7. **Performance notes** (WP-31, 0.3.0).
+7. **Performance notes** (WP-31, 0.1.0 (M3)).
    - Per-request YAML parse cost; `load_ms` in the report.
    - Select sizes: keep selects below about 10,000 options.
    - The editors post one JSON field (4 MiB cap). Rack limits a urlencoded body to 4 MB. Reverse proxies often limit bodies to 1 MB by default (nginx `client_max_body_size`).
@@ -622,7 +622,7 @@ The README is written in English, using only plain hyphens.
 
 ### 7.7 CHANGELOG lines owned by this area (BC-14)
 
-These lines belong to the 0.1.0 CHANGELOG (WP-11 to WP-13). The canonical wording is the 0.1.0 list in `large_lists_work_packages.md` section 3; the lines below are this area's input to it. The project storage ceiling lines (plugin setting, 255-character cap, PostgreSQL/SQLite upgrade note) belong to 0.3.0 (WP-31) and are listed there.
+These lines belong to the 0.1.0 (M1) CHANGELOG (WP-11 to WP-13). The canonical wording is the 0.1.0 (M1) list in `large_lists_work_packages.md` section 3; the lines below are this area's input to it. The project storage ceiling lines (plugin setting, 255-character cap, PostgreSQL/SQLite upgrade note) belong to 0.1.0 (M3) (WP-31) and are listed there.
 
 - **Added:**
   - size validation against MySQL/MariaDB TEXT limits for list, enumeration and both depending formats;
@@ -649,7 +649,7 @@ These lines belong to the 0.1.0 CHANGELOG (WP-11 to WP-13). The canonical wordin
   - `data-dcf-defaults` is emitted only when non-empty.
   - The map is emitted only by `edit_tag`/`bulk_edit_tag` of fields actually rendered.
 - This area endorses the server's privacy variant: `data-dcf-parent-values`, gated by `parent.visible_by?` with a fail-closed rescue. The size table below does not depend on that choice.
-- Release: the attribute contract ships in 0.2.0 (WP-16 emits it additively, WP-18 switches the issue form over). This area adds no code there.
+- Release: the attribute contract ships in 0.1.0 (M2) (WP-16 emits it additively, WP-18 switches the issue form over). This area adds no code there.
 
 Measured with ActionView 8.1.4 escaping (`SCRATCH/proto/payload_bench.rb`):
 
@@ -673,7 +673,7 @@ Measured with ActionView 8.1.4 escaping (`SCRATCH/proto/payload_bench.rb`):
 | `value_from_keyword` | filtered options, then a linear scan per keyword | full option list (critic C2), one pass into a downcased label to value Hash per call |
 | D6 prune, import matching, JS rules | n/a | Set/Map |
 
-Where these criteria land: `DependencyRules.allowed_set`, `prune_mapping` and the format module's `possible_values_options` and `value_from_keyword` in 0.0.16 (WP-05, WP-06; `prune_mapping` first used by the admin JSON transport, WP-22, 0.3.0); the JS rules in 0.2.0 (WP-17); `DependencyMappingService#validate_mapping!` Set validation in 0.3.0 (WP-27); import matching in 0.3.0 (WP-26). The 5,000 x 25,000 `validate_mapping` budget (under 1 s) is an opt-in `:perf` spec of WP-31.
+Where these criteria land: `DependencyRules.allowed_set`, `prune_mapping` and the format module's `possible_values_options` and `value_from_keyword` in 0.1.0 (M1) (WP-05, WP-06; `prune_mapping` first used by the admin JSON transport, WP-22, 0.1.0 (M3)); the JS rules in 0.1.0 (M2) (WP-17); `DependencyMappingService#validate_mapping!` Set validation in 0.1.0 (M3) (WP-27); import matching in 0.1.0 (M3) (WP-26). The 5,000 x 25,000 `validate_mapping` budget (under 1 s) is an opt-in `:perf` spec of WP-31.
 
 ### 9.2 YAML parse cost per request
 
@@ -684,7 +684,7 @@ Where these criteria land: `DependencyRules.allowed_set`, `prune_mapping` and th
 
 ### 9.3 FieldIndex: the single topology helper (R18)
 
-`lib/redmine_depending_custom_fields/field_index.rb` defines `RedmineDependingCustomFields::FieldIndex`. It ships in 0.0.16 (WP-05). Consolidation (compat section 2.4 row "FieldIndex API") adopted the server names in one class: the server area owns the file and its canonical API is server design section 4; this area contributes the raw-regex extraction (V14), the cycle-safe walks and the acceptance criteria below. This area's revision 2 names (`build(type:)`, `child_ids`, `children`, `type_of`, `include?`, `PARENT_LINE`, `MAX_CHAIN`) are not created. Canonical API, as adopted:
+`lib/redmine_depending_custom_fields/field_index.rb` defines `RedmineDependingCustomFields::FieldIndex`. It ships in 0.1.0 (M1) (WP-05). Consolidation (compat section 2.4 row "FieldIndex API") adopted the server names in one class: the server area owns the file and its canonical API is server design section 4; this area contributes the raw-regex extraction (V14), the cycle-safe walks and the acceptance criteria below. This area's revision 2 names (`build(type:)`, `child_ids`, `children`, `type_of`, `include?`, `PARENT_LINE`, `MAX_CHAIN`) are not created. Canonical API, as adopted:
 
 ```ruby
 class FieldIndex
@@ -706,10 +706,10 @@ Mapping from this area's revision 2 sketch: `build(type:)` is `load` (optionally
 
 - **Extraction.** The parent id comes from the raw YAML with `PARENT_RE`, which anchors at column 0, so nested mapping keys and block scalars cannot match. If the regex does not match but the substring is present, that row is deserialized with `CustomField.type_for_attribute('format_store')` (V14: 0.04 ms vs 16.6 ms per S1 row).
 - **Consumers.** `DependencyRules::Graph` and the per-hop `find_parent` ancestor walk are removed. The server functions use `FieldIndex.load` or take an optional `index:`:
-  - `ancestor_ids`, `descendant_ids`, `in_cycle?`, `cycle_member_ids` and `parent_candidates` (point 5 parent select; WP-10, 0.1.0);
+  - `ancestor_ids`, `descendant_ids`, `in_cycle?`, `cycle_member_ids` and `parent_candidates` (point 5 parent select; WP-10, 0.1.0 (M1));
   - `parent_errors`: the cycle check is `candidate.id == cf.id || FieldIndex.load.ancestor_ids(candidate.id).include?(cf.id)`. The candidate comes from `resolve_parent_for_save`, and stored ancestors are unaffected by the current save;
   - `children_of(field, index: nil)`, which computes `(index || FieldIndex.load).children_ids(field.id)` and loads only those records; `FieldRelevance.children_of` delegates to it (WP-05);
-  - the project `UsageCalculator.page_usage` (WP-28, 0.3.0), which builds one `FieldIndex.load` per page and passes it as `index:`, so child records are loaded once per page.
+  - the project `UsageCalculator.page_usage` (WP-28, 0.1.0 (M3)), which builds one `FieldIndex.load` per page and passes it as `index:`, so child records are loaded once per page.
 - **Never used on issue pages or in the context menu.** Those use the already loaded `available_custom_fields` (server SelectionGraph).
 
 ### 9.4 Query invariance (R16)
@@ -729,7 +729,7 @@ Mapping from this area's revision 2 sketch: `build(type:)` is `load` (optionally
 
 ## 10. (f) Fixtures and testing the MySQL path
 
-Release: the generator, the `rails_helper` tags and the locale parity spec ship in 0.0.16 (WP-02). The storage specs of 10.2 and 10.3 ship with WP-11, WP-12 and WP-13 (0.1.0), the project ceiling specs with WP-31 (0.3.0). The editor fixture normalization of 10.4 ships in 0.3.0 (WP-24).
+Release: the generator, the `rails_helper` tags and the locale parity spec ship in 0.0.16 (WP-02). The storage specs of 10.2 and 10.3 ship with WP-11, WP-12 and WP-13 (0.1.0 (M1)), the project ceiling specs with WP-31 (0.1.0 (M3)). The editor fixture normalization of 10.4 ships in 0.1.0 (M3) (WP-24).
 
 ### 10.1 One generator (R12): `spec/support/dcf_large_list.rb` (WP-02, 0.0.16)
 
@@ -815,7 +815,7 @@ RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_colum
 
 `.codex/test_setup.sh --db mysql` (quality area script, option added by WP-13) writes the same database.yml.
 
-**Optional manual workflow (UD-27, WP-13, 0.1.0).** `.github/workflows/rspec-mysql.yml` runs this recipe for Redmine 5.1 and 7.0 on MariaDB, with `workflow_dispatch` as its only trigger; `spec/quality/ci_workflows_spec.rb` guards that. Dispatch follows UD-32 (resolved by the owner): Claude may dispatch it deliberately only after the local gates pass, at most once per workflow per commit SHA unless a fix was pushed, never edits workflow triggers, and reports every dispatch with workflow, SHA, run URL and result. CI never gets automatic triggers. If the owner declines UD-27, the `:mysql` specs and this local recipe remain the only MySQL evidence.
+**Optional manual workflow (UD-27, WP-13, 0.1.0 (M1)).** `.github/workflows/rspec-mysql.yml` runs this recipe for Redmine 5.1 and 7.0 on MariaDB, with `workflow_dispatch` as its only trigger; `spec/quality/ci_workflows_spec.rb` guards that. Dispatch follows UD-32 (resolved by the owner): Claude may dispatch it deliberately only after the local gates pass, at most once per workflow per commit SHA unless a fix was pushed, never edits workflow triggers, and reports every dispatch with workflow, SHA, run URL and result. CI never gets automatic triggers. If the owner declines UD-27, the `:mysql` specs and this local recipe remain the only MySQL evidence.
 
 ## 11. Locale keys owned by this area (registry entries; de, en, fr, nl at parity)
 
@@ -832,7 +832,7 @@ RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_colum
 | `text_dcf_storage_estimate` (JS key `storageEstimate`) | WP-24 (gap 8) | label, size, limit, percent | editor client estimate warning (4.10; shown by WP-25) | see large_lists_i18n_registry.md |
 | `text_dcf_storage_admin_help` (admin only) | WP-11 | none | admin-only README line under the usage line (4.9) | see large_lists_i18n_registry.md |
 
-Related keys owned by the project area for 4.11 (WP-31, 0.3.0): `label_dcf_project_storage_ceiling`, `text_dcf_project_storage_ceiling_info` (`%{default}`) and `error_dcf_value_length` (`%{max}`); texts in the registry.
+Related keys owned by the project area for 4.11 (WP-31, 0.1.0 (M3)): `label_dcf_project_storage_ceiling`, `text_dcf_project_storage_ceiling_info` (`%{default}`) and `error_dcf_value_length` (`%{max}`); texts in the registry.
 
 Notes:
 - **Terminology** follows the existing plugin files: `notice_dependencies_saved` (Abhängigkeitszuordnung / Mappage des dépendances / Afhankelijkheidskoppeling, locales `:63`) and `label_depending_enumeration` (`:9`). The README section name stays English on purpose, because the README is English. No value of this area is meant to equal its en value, so no English-leftover allowlist entry is expected; the registry texts and the WP-02 allowlist are authoritative.
@@ -847,15 +847,15 @@ Notes:
 
 ## 12. Cross-area contracts this area relies on (adopted, with owners)
 
-1. **Shared normalizer** (server, point 6; WP-06, 0.0.16). `normalized_store_pairs` / `storage_preview(custom_field, store)` / `before_custom_field_save` as in 4.4; `StorageLimits.preview_value` calls it as `format.storage_preview(record, record.format_store)` (gap 4, compat section 3 row "storage_preview"). It is sanitize-only, never prunes, memoizes the parent on the record, uses `Set` per 9.1 and never memoizes on the format singleton.
-2. **Payload** (owner: editor area; one `RedmineDependingCustomFields::DependencyPayload` for both entry points; WP-21, 0.3.0).
+1. **Shared normalizer** (server, point 6; WP-06, 0.1.0 (M1)). `normalized_store_pairs` / `storage_preview(custom_field, store)` / `before_custom_field_save` as in 4.4; `StorageLimits.preview_value` calls it as `format.storage_preview(record, record.format_store)` (gap 4, compat section 3 row "storage_preview"). It is sanitize-only, never prunes, memoizes the parent on the record, uses `Set` per 9.1 and never memoizes on the format singleton.
+2. **Payload** (owner: editor area; one `RedmineDependingCustomFields::DependencyPayload` for both entry points; WP-21, 0.1.0 (M3)).
    - Schema v1, strict, unknown top-level keys rejected: `{version, source ("editor"|"import"), base, value_dependencies, default_value_dependencies, import: {mode: "merge"|"replace", rows: Integer}}`.
    - `MAX_BYTES` 4 MiB on both paths; `max_nesting: 3`; `create_additions: false`.
    - A pre-scan rejects numeric tokens of 20 or more digits. Integers must be positive with `bit_length <= 63`, checked before `to_s`. Floats, booleans and null are rejected (SP-01).
    - `parse` returns `nil` (absent or blank: unchanged) or a Result with `ok?`/`error`. It is memoized on the record keyed by the raw String object.
    - The project service turns an error Result into `OperationError(:error_invalid_dependency_payload, summary: ..., payload: result)` and treats blank as an error (WP-27; the key is owned by WP-25, gap 8).
    - This area's only hard needs: decoding happens before validation (admin) or before `save!` inside the service (project), and the 4 MiB cap stays below the widened-column ceiling (7.4).
-3. **Editor partial** (editor area; WP-24 and WP-25, 0.3.0). One partial and one presenter, `DependencyEditorConfig.for_admin/for_project`, render the four storage attributes of 4.10 and `storageEstimate` in `data-dcf-editor-i18n` (from `DependencyEditorConfig::I18N`, gap 5). The editor's callbacks live in `CustomFieldValidationPatch` (4.1; added by WP-22). The failed-save re-render keeps the hidden input blank and renders the parsed ok payload in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` on both pages (gap 1). The client estimate test is `test/js/dependency_editor_storage.test.js` (WP-25, gap 12).
+3. **Editor partial** (editor area; WP-24 and WP-25, 0.1.0 (M3)). One partial and one presenter, `DependencyEditorConfig.for_admin/for_project`, render the four storage attributes of 4.10 and `storageEstimate` in `data-dcf-editor-i18n` (from `DependencyEditorConfig::I18N`, gap 5). The editor's callbacks live in `CustomFieldValidationPatch` (4.1; added by WP-22). The failed-save re-render keeps the hidden input blank and renders the parsed ok payload in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"` on both pages (gap 1). The client estimate test is `test/js/dependency_editor_storage.test.js` (WP-25, gap 12).
 4. **Project area.**
    - Delta caps per 6.3 (WP-27).
    - `AuditRecorder` uses `AuditPayload` (WP-12).
@@ -876,26 +876,26 @@ Notes:
 
 | File | Change |
 |---|---|
-| `lib/redmine_depending_custom_fields/storage_limits.rb` | NEW (4.2 to 4.10) [WP-11, 0.1.0]; `effective_limit`, `Violation#source` (4.11) [WP-31, 0.3.0] |
-| `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb` | NEW (4.1); this area owns the file, and the editor bodies go inside [WP-11 creates it with the storage validation, 0.1.0; WP-22 adds the editor callbacks, 0.3.0; WP-31 adds `dcf_storage_ceiling`, 0.3.0] |
+| `lib/redmine_depending_custom_fields/storage_limits.rb` | NEW (4.2 to 4.10) [WP-11, 0.1.0 (M1)]; `effective_limit`, `Violation#source` (4.11) [WP-31, 0.1.0 (M3)] |
+| `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb` | NEW (4.1); this area owns the file, and the editor bodies go inside [WP-11 creates it with the storage validation, 0.1.0 (M1); WP-22 adds the editor callbacks, 0.1.0 (M3); WP-31 adds `dcf_storage_ceiling`, 0.1.0 (M3)] |
 | `init.rb` | require and `CustomField.prepend ...CustomFieldValidationPatch` after line 61; require the storage hook [WP-11]; settings default `project_storage_ceiling_kib` [WP-31] |
-| `lib/redmine_depending_custom_fields.rb` | `require_relative` storage_limits [WP-11] and field_index [WP-05, 0.0.16] |
-| `lib/redmine_depending_custom_fields/depending_format_methods.rb` (point 6 file) | `normalized_store_pairs`, `storage_preview(custom_field, store)`, before_save through the same pairs (4.4) [WP-06, 0.0.16; consumed by WP-11] |
-| `app/services/redmine_depending_custom_fields/operation_error.rb` | consolidated signature (5.1) [WP-12, 0.1.0] |
-| `app/services/redmine_depending_custom_fields/base_service.rb` | rescue chain, `record_failure(status, message, summary)`, `storage_error`, `value_too_long_summary` (5.2, 5.3) [WP-12, 0.1.0]; `save_field!` (4.11) [WP-31, 0.3.0] |
-| `app/services/redmine_depending_custom_fields/audit_payload.rb` | NEW (6.1) [WP-12, 0.1.0] |
-| `app/services/redmine_depending_custom_fields/audit_recorder.rb` | `serialize`, `serialize_ids` and `record_failure!` use AuditPayload (6.2) [WP-12, 0.1.0] |
-| `app/controllers/project_custom_field_configuration_controller.rb` | `translate_error(error_or_key)` with escaping; call sites `:77`, `:147` pass `e` (5.4) [WP-12, 0.1.0]; new actions call `translate_error(e)` [WP-27 to WP-31, 0.3.0] |
-| `lib/redmine_depending_custom_fields/field_index.rb` | NEW (9.3), server-owned file with the server names [WP-05, 0.0.16] |
-| `lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook.rb`, `app/views/custom_fields/_dcf_storage_usage.html.erb`, helper `dcf_storage_usage_hint` in `app/helpers/project_custom_field_configuration_helper.rb` | NEW usage hint (4.9) [WP-11, 0.1.0, UD-28] |
-| `lib/redmine_depending_custom_fields/dependency_editor_config.rb` (editor file) | four storage attributes plus `storageEstimate` [WP-24, 0.3.0]; project-mode limit `ProjectStoragePolicy.format_store_limit(field)` [WP-31, 0.3.0, gap 14] |
-| `test/js/dependency_editor_storage.test.js` | NEW client estimate test (4.10) [WP-25, 0.3.0, gap 12] |
-| `app/services/redmine_depending_custom_fields/project_storage_policy.rb`, `app/views/settings/_dcf_project_config.html.erb` | project-owned ceiling policy and setting field (4.11) [WP-31, 0.3.0, UD-22] |
-| `lib/tasks/redmine_depending_custom_fields.rake` | NEW (7.1) [WP-13, 0.1.0] |
-| `lib/redmine_depending_custom_fields/storage_report.rb`, `core_column_widener.rb` | NEW (7.2, 7.3) [WP-13, 0.1.0, UD-26] |
-| `.codex/test_setup.sh`, `.github/workflows/rspec-mysql.yml` | `--db mysql`; optional manual MariaDB workflow, workflow_dispatch only (10.5) [WP-13, 0.1.0, UD-27] |
+| `lib/redmine_depending_custom_fields.rb` | `require_relative` storage_limits [WP-11] and field_index [WP-05, 0.1.0 (M1)] |
+| `lib/redmine_depending_custom_fields/depending_format_methods.rb` (point 6 file) | `normalized_store_pairs`, `storage_preview(custom_field, store)`, before_save through the same pairs (4.4) [WP-06, 0.1.0 (M1); consumed by WP-11] |
+| `app/services/redmine_depending_custom_fields/operation_error.rb` | consolidated signature (5.1) [WP-12, 0.1.0 (M1)] |
+| `app/services/redmine_depending_custom_fields/base_service.rb` | rescue chain, `record_failure(status, message, summary)`, `storage_error`, `value_too_long_summary` (5.2, 5.3) [WP-12, 0.1.0 (M1)]; `save_field!` (4.11) [WP-31, 0.1.0 (M3)] |
+| `app/services/redmine_depending_custom_fields/audit_payload.rb` | NEW (6.1) [WP-12, 0.1.0 (M1)] |
+| `app/services/redmine_depending_custom_fields/audit_recorder.rb` | `serialize`, `serialize_ids` and `record_failure!` use AuditPayload (6.2) [WP-12, 0.1.0 (M1)] |
+| `app/controllers/project_custom_field_configuration_controller.rb` | `translate_error(error_or_key)` with escaping; call sites `:77`, `:147` pass `e` (5.4) [WP-12, 0.1.0 (M1)]; new actions call `translate_error(e)` [WP-27 to WP-31, 0.1.0 (M3)] |
+| `lib/redmine_depending_custom_fields/field_index.rb` | NEW (9.3), server-owned file with the server names [WP-05, 0.1.0 (M1)] |
+| `lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook.rb`, `app/views/custom_fields/_dcf_storage_usage.html.erb`, helper `dcf_storage_usage_hint` in `app/helpers/project_custom_field_configuration_helper.rb` | NEW usage hint (4.9) [WP-11, 0.1.0 (M1), UD-28] |
+| `lib/redmine_depending_custom_fields/dependency_editor_config.rb` (editor file) | four storage attributes plus `storageEstimate` [WP-24, 0.1.0 (M3)]; project-mode limit `ProjectStoragePolicy.format_store_limit(field)` [WP-31, 0.1.0 (M3), gap 14] |
+| `test/js/dependency_editor_storage.test.js` | NEW client estimate test (4.10) [WP-25, 0.1.0 (M3), gap 12] |
+| `app/services/redmine_depending_custom_fields/project_storage_policy.rb`, `app/views/settings/_dcf_project_config.html.erb` | project-owned ceiling policy and setting field (4.11) [WP-31, 0.1.0 (M3), UD-22] |
+| `lib/tasks/redmine_depending_custom_fields.rake` | NEW (7.1) [WP-13, 0.1.0 (M1)] |
+| `lib/redmine_depending_custom_fields/storage_report.rb`, `core_column_widener.rb` | NEW (7.2, 7.3) [WP-13, 0.1.0 (M1), UD-26] |
+| `.codex/test_setup.sh`, `.github/workflows/rspec-mysql.yml` | `--db mysql`; optional manual MariaDB workflow, workflow_dispatch only (10.5) [WP-13, 0.1.0 (M1), UD-27] |
 | `config/locales/{en,de,fr,nl}.yml` | 8 keys (section 11) [WP-11, WP-12, WP-24 per key] |
-| `README.md`, `CHANGELOG.md` | 7.6, 7.7 [WP-11 to WP-13, 0.1.0; README "Performance notes" WP-31, 0.3.0] |
+| `README.md`, `CHANGELOG.md` | 7.6, 7.7 [WP-11 to WP-13, 0.1.0 (M1); README "Performance notes" WP-31, 0.1.0 (M3)] |
 | `spec/support/dcf_large_list.rb` | byte helpers in quality's arithmetic generator (10.1) [WP-02, 0.0.16] |
 | `spec/rails_helper.rb`, new specs | 10 and the WP test lists [`rails_helper` tags WP-02; storage specs WP-11 to WP-13; ceiling specs WP-31] |
 | `assets/stylesheets/depending_custom_fields.css` | `.dcf-storage-usage em.info { color: #a05a00; }` (optional; not in the WP-11 file list, so it ships only if WP-11 adopts it) |
@@ -910,7 +910,7 @@ Notes:
 | MySQL non-strict | the save "succeeds" with data silently cut; possible_values may become unreadable | save refused, nothing written |
 | MySQL, limit unknown to the app | HTTP 500 | service: `error_dcf_value_too_long` with a `save_failed` row holding no DB message; admin and API unchanged (500) |
 | API rename-only PUT of a depending field | mapping sanitized only | unchanged: sanitized only, never pruned |
-| PostgreSQL / SQLite | no limit | unchanged in 0.1.0 (no check); only the audit cap applies. From 0.3.0 (WP-31, UD-22) project-page writes that grow a field beyond `project_storage_ceiling_kib` (default 2,048 KiB) are refused; admin form and API stay unlimited |
+| PostgreSQL / SQLite | no limit | unchanged in 0.1.0 (M1) (no check); only the audit cap applies. From 0.1.0 (M3) (WP-31, UD-22) project-page writes that grow a field beyond `project_storage_ceiling_kib` (default 2,048 KiB) are refused; admin form and API stay unlimited |
 | Columns widened with the task | n/a | validation limit 16,777,215 after a restart |
 | Audit value under 16 KB (every compact project delta) | full JSON | byte-identical |
 | Audit value over 16 KB | full JSON; on MySQL the whole change rolls back | shrunk, top-level scalars kept, `payload_*` marker |
@@ -934,7 +934,7 @@ Notes:
 
 - **SECURITY: context-menu wizard save writes non-editable custom fields.**
   - `ContextMenuWizardController#save` assigns `issue.custom_field_values = values` directly (`app/controllers/context_menu_wizard_controller.rb:31-32`). This bypasses `editable_custom_field_values(user)` (core-5.1 `app/models/issue.rb:625-626`, core-7.0 `:647-648`), so workflow read-only and role-hidden fields can be written without a journal.
-  - Out of the 9 points (D4). Tracked as SD-01 (`large_lists_defects.md`) with a CHANGELOG "Security" entry. Timing is UD-03: recommended as its own PR merged before 0.0.16 is tagged; 0.2.0, the release that ships point 1, must not be tagged without it.
+  - Out of the 9 points (D4). Tracked as SD-01 (`large_lists_defects.md`) with a CHANGELOG "Security" entry. Timing is UD-03: recommended as its own PR merged before 0.0.16 is tagged; 0.1.0 (M2), the release that ships point 1, must not be tagged without it.
   - Minimal fix: assign through `issue.safe_attributes = { 'custom_field_values' => values }`, or filter by `editable_custom_field_values(User.current)`.
   - Spec: posted read-only and role-hidden fields stay unchanged; login, visibility and editability are still required.
 - Wizard save hardening (journal, `@can[:edit]`; SD-02), and the time-entry context menu (SD-03) (D4).

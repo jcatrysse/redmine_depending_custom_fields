@@ -1,15 +1,15 @@
 # Large lists: repo-specific quality protocol
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9 (cross-cutting: the gates, tooling and test strategy apply to every point; no point is implemented here). Owner area: quality (quality protocol, gates G1 to G12, `.codex` scripts, RuboCop ratchet and Ruby 2.7 syntax gate, JS toolchain, test strategy, fixture infrastructure, the large-list generator, the locale parity spec, CI policy, the per-WP definition of done). Work packages: WP-01 (tooling: `.codex` scripts, ratchet, JS toolchain, manual workflows) and WP-02 (test hygiene, shared test infrastructure, generator, locale parity and no-dash specs), primary, release 0.0.16; WP-04 (characterization specs, 0.0.16); quality-owned infrastructure delivered inside other WPs: WP-16 (`spec/support/dcf_js_fixtures.rb` and the generated markup fixtures, 0.2.0), WP-18 (head fixtures and the `ClientConfig::I18N` parity example, 0.2.0), WP-23 (payload golden files, 0.3.0) and WP-24 (editor fixtures, `value_options.json` and the `DependencyEditorConfig::I18N` parity example, 0.3.0); the gates and the definition of done (sections 3 and 7) apply to every WP-01 to WP-32, and the release WPs WP-07, WP-14, WP-20 and WP-32 rerun the full matrix. Decisions: UD-29, UD-30, UD-31, UD-32 (resolved), UD-33, UD-34; related: UD-01 (release structure), UD-03 (SD-01 timing), UD-10 (required '(none)', former C7), UD-16 (editors need JavaScript, admin multipart switch), UD-27 (optional manual MariaDB workflow).
+> Points: 1 to 9 (cross-cutting: the gates, tooling and test strategy apply to every point; no point is implemented here). Owner area: quality (quality protocol, gates G1 to G12, `.codex` scripts, RuboCop ratchet and Ruby 2.7 syntax gate, JS toolchain, test strategy, fixture infrastructure, the large-list generator, the locale parity spec, CI policy, the per-WP definition of done). Work packages: WP-01 (tooling: `.codex` scripts, ratchet, JS toolchain, manual workflows) and WP-02 (test hygiene, shared test infrastructure, generator, locale parity and no-dash specs), primary, release 0.0.16; WP-04 (characterization specs, 0.1.0 (M1)); quality-owned infrastructure delivered inside other WPs: WP-16 (`spec/support/dcf_js_fixtures.rb` and the generated markup fixtures, 0.1.0 (M2)), WP-18 (head fixtures and the `ClientConfig::I18N` parity example, 0.1.0 (M2)), WP-23 (payload golden files, 0.1.0 (M3)) and WP-24 (editor fixtures, `value_options.json` and the `DependencyEditorConfig::I18N` parity example, 0.1.0 (M3)); the gates and the definition of done (sections 3 and 7) apply to every WP-01 to WP-32, and the release WPs WP-07, WP-14, WP-20 and WP-32 rerun the full matrix. Decisions: UD-29, UD-30, UD-31, UD-32 (resolved), UD-33, UD-34; related: UD-01 (release structure), UD-03 (SD-01 timing), UD-10 (required '(none)', former C7), UD-16 (editors need JavaScript, admin multipart switch), UD-27 (optional manual MariaDB workflow).
 
-**Consolidation.** The final completeness critic (gaps 1, 5, 8, 10, 12 and 15, plus the quality parts of gaps 2, 3, 4 and 13) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts", subsection 4 of the compatibility matrix) and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text of this document conflicted with them, they win; section 2 of this document is aligned with them and with the owning area designs, never the other way round. Release targets follow the work packages: 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20, 0.3.0 = WP-21..WP-32. Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, owners and the G8 conventions.
+**Consolidation.** The final completeness critic (gaps 1, 5, 8, 10, 12 and 15, plus the quality parts of gaps 2, 3, 4 and 13) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts", subsection 4 of the compatibility matrix) and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text of this document conflicted with them, they win; section 2 of this document is aligned with them and with the owning area designs, never the other way round. Release targets follow the work packages: 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20, 0.1.0 (M3) = WP-21..WP-32. Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, owners and the G8 conventions.
 
 | Topic | Consolidated rule | Sections |
 |---|---|---|
 | Measured baseline | Plugin specs: 259 examples, 0 failures on Redmine 5.1 (Ruby 3.2.6), 6.0, 6.1 and 7.0 (Ruby 3.3.6), measured with a local replica of the CI steps (PostgreSQL 16; `libpq-dev` installed for the `pg` gem). RuboCop with core 7.0's config and `plugins/**` un-excluded: 107 offenses in 38 files (39 files inspected). These are the reference numbers for G2 and the G3 ratchet. | 1, 3, 4.8 |
 | Work package ids | Revision 2 used provisional ids WP0 to WP8. They map to the final ids as follows: WP0 = WP-01 (tooling) and WP-02 (test hygiene); WP1 = WP-04; WP2 = WP-05, WP-06, WP-08, WP-09, WP-10; WP3 = WP-15, WP-16, WP-18 (server part), WP-19 (sentinel), plus WP-03 (cache hotfix); WP4 = WP-17, WP-18, WP-19 (client part); WP5 = WP-21 to WP-26; WP6 = WP-27 to WP-31; WP7 = WP-11, WP-12, WP-13 (and WP-31 for project pages); WP8 = the release WPs WP-07, WP-14, WP-20, WP-32. Every WP reference below uses the final ids. | 3.13, 4.9, 5, 9, 11 |
-| Releases and deprecations | Four releases (UD-01). JS shims `setup`/`requestSetup` and `CustomFieldVisibility` are deprecated in 0.2.0, kept at least throughout 0.2.x, removable no earlier than 0.3.0 (recommended 0.4.0). Project nested params on `update_dependencies` are deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0. Admin nested safe attributes stay permanently (UD-15). The version bump happens only in the release WPs. | G7, G9, 9 |
+| Releases and deprecations | Four releases (UD-01). JS shims `setup`/`requestSetup` and `CustomFieldVisibility` are deprecated in 0.1.0, kept at least throughout 0.1.x, removable no earlier than 0.2.0. Project nested params on `update_dependencies` are deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0. Admin nested safe attributes stay permanently (UD-15). The version bump happens only in the release WPs. | G7, G9, 9 |
 | Failed-save re-render (gap 1) | Hidden input always blank on both pages; the parsed ok payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"`; no `data-dcf-editor-echo`, no `input_value`. Project: `posted: service.parsed_payload` passed to `DependencyEditorConfig.for_project`. WP-22, WP-25 and WP-27 each assert: mapping attribute holds the posted mapping, dirty=1, hidden input blank. | 2.4 P2, 8 FM-21 |
 | Canonical names (gaps 2, 3, 4) | `DependencyRules.parent_of(cf)` is the memoized raw parent lookup (WP-05); client emission uses `effective_parent_id` (WP-16). `DependencyRules.value_options` returns `[key, label, active]` tuples; the editor wire shape comes only from `DependencyEditorConfig.wire_values`, and `test/js/fixtures/value_options.json` is written from it (WP-24). `storage_preview(custom_field, store)` is called as `format.storage_preview(record, record.format_store)`. Flash errors go through `translate_error(e)` (one method `translate_error(error_or_key)`, WP-12). | 2.1, 2.2, 2.4, 2.5 |
 | i18n constant maps (gap 5) | The WP-02 parity spec iterates `RedmineDependingCustomFields::ClientConfig::I18N` and `DependencyEditorConfig::I18N`, each when it is defined. WP-18 and WP-24 each add an example proving their map is checked. The name `I18N_KEYS` is not used anywhere. | 2.3, G8 |
@@ -154,7 +154,7 @@ Mandatory fixture cases (each a generated markup fixture plus a jsdom test asser
 
 - **H1 order (consolidated, WP-18).** After core's jQuery: `<meta name="dcf-i18n">`, `depending_custom_fields.js`, `context_menu_wizard.js`, `depending_custom_fields.css`, then (editor pages only, H3) the editor assets. There is ONE UMD runtime file that holds the pure rules and the DOM runtime (compat section 2.4 "Rules asset"); `depending_custom_fields_rules.js` is not created, so there is no "rules missing" inert mode. Superseded revision 2 rule: a separate rules file before the runtime, with the runtime inert without `window.DependingCustomFieldsRules`.
 - **H2 one meta tag, flat payload, one key set (consolidated, compat section 2.4 "i18n meta tag").** `<meta name="dcf-i18n">` whose content is a flat JSON object with the frontend's 10 runtime keys `selectParent`, `noOptions`, `noOptionsGeneric`, `legacy`, `legacyLocked`, `legacyGeneric`, `bulkDefault`, `bulkCleared`, `liveMessage`, `saveFailed`, built per request in the current locale from `RedmineDependingCustomFields::ClientConfig::I18N` (gap 5): `text_dcf_hint_select_parent`, `text_dcf_hint_no_options`, `text_dcf_hint_no_options_generic`, `text_dcf_hint_legacy`, `text_dcf_hint_legacy_locked`, `text_dcf_hint_legacy_generic`, `text_dcf_hint_bulk_default`, `text_dcf_hint_bulk_cleared`, `text_dcf_live_message` (owner WP-18) and the existing `error_save_failed`. The frontend owns the key list, the server emits it. The hook writes it with `tag.meta(name: META_NAME, content: payload.to_json)`; the explicit `name: META_NAME` is required, because Ruby 3.1 hash shorthand fails the WP-01 Ruby 2.7 syntax gate (gap 15). Superseded revision 2 payload: 4 keys (`waiting`, `empty`, `legacy`, `saveFailed`) from `text_dcf_hint_select_parent_first`, `text_dcf_hint_no_options` and `text_dcf_hint_legacy_value`; those two `_first`/`_value` keys are not created. The server's `redmine-depending-custom-fields` meta with a nested `i18n` object and the `label_dcf_hint_*` keys stay dropped: the only non-i18n configuration the old global carried (`basePath`) is replaced by the wizard form `action`, so a nested config object has no content. Both the runtime and `context_menu_wizard.js` read this meta; English fallbacks when it is missing. The constant is never called `I18N_KEYS` (for example `ViewLayoutsBaseHtmlHeadHook::I18N_KEYS` does not exist).
-- **H3 one asset owner for the editor (WP-25, 0.3.0).** The head hook adds `dcf_dependency_editor_model.js`, `dcf_dependency_editor.js` and `dcf_dependency_editor.css` (after the base assets) when `context[:controller].class.name` is `CustomFieldsController` or `ProjectCustomFieldConfigurationController`, for every action (needed for the `/custom_fields/new` AJAX re-render). Project views do NOT `content_for` editor assets; they include only `dcf_config.css`, plus `dcf_value_reorder.js` when sortable and `dcf_values_page.js` in page mode (WP-30). Project test T-ASSET becomes: editor assets present on every `ProjectCustomFieldConfigurationController` page and absent on issue pages; every script `src` appears exactly once in the rendered head.
+- **H3 one asset owner for the editor (WP-25, 0.1.0 (M3)).** The head hook adds `dcf_dependency_editor_model.js`, `dcf_dependency_editor.js` and `dcf_dependency_editor.css` (after the base assets) when `context[:controller].class.name` is `CustomFieldsController` or `ProjectCustomFieldConfigurationController`, for every action (needed for the `/custom_fields/new` AJAX re-render). Project views do NOT `content_for` editor assets; they include only `dcf_config.css`, plus `dcf_value_reorder.js` when sortable and `dcf_values_page.js` in page mode (WP-30). Project test T-ASSET becomes: editor assets present on every `ProjectCustomFieldConfigurationController` page and absent on issue pages; every script `src` appears exactly once in the rendered head.
 - **H4 no inline script, no database, no cache.** The hook output contains no `<script>` element without `src` and performs no query (asserted with the query counter: 0 queries).
 
 ### 2.4 Editor and payload (owner: editor)
@@ -182,7 +182,7 @@ Mandatory fixture cases (each a generated markup fixture plus a jsdom test asser
 
 ### 2.6 D1 legacy leniency per value (owner: server)
 
-Core's own idiom is per value (`ListFormat#validate_custom_value` subtracts `value_was`). Rule: when the parent did not change (order-insensitive, or the parent is not available on the record), every child value contained in `value_was` is exempt; only newly added values are validated against the allowed set. When the parent changed, all values are validated. The whole-set rule of server design section 8 is replaced. The client keeps legacy values selectable until the first parent change (frontend F6), which is consistent; it learns the baseline from `data-dcf-stored` (2.2), including the copy source baseline for issue copies (UD-06). Releases: the server rule ships in 0.1.0 (WP-09; UD-04, UD-05, UD-06, UD-07), the client side in 0.2.0 (WP-16, WP-17), so in 0.1.0 the leniency applies to the REST API, email, bulk edit, the wizard and copies, and the issue form keeps such values from 0.2.0 on. The shared case table `test/js/fixtures/shared/rules_cases.json` holds rows `{parent_was, parent, child_was, child, map, multiple, valid}` run by the Ruby rules (spec/lib/dependency_rules_spec.rb evaluates each row through `DependencyRules.dependency_check` with a stubbed custom value and `ParentState`, server design section 8) and by the JS rules (asserting the client never produces a submission marked invalid). Mandatory rows: multi child add allowed (valid), add disallowed (invalid), remove legacy (valid), reorder (valid), keep legacy and change parent (invalid), single child change from legacy to allowed (valid), single child change legacy to another disallowed (invalid), parent not available and untouched (valid).
+Core's own idiom is per value (`ListFormat#validate_custom_value` subtracts `value_was`). Rule: when the parent did not change (order-insensitive, or the parent is not available on the record), every child value contained in `value_was` is exempt; only newly added values are validated against the allowed set. When the parent changed, all values are validated. The whole-set rule of server design section 8 is replaced. The client keeps legacy values selectable until the first parent change (frontend F6), which is consistent; it learns the baseline from `data-dcf-stored` (2.2), including the copy source baseline for issue copies (UD-06). Releases: the server rule ships in 0.1.0 (M1) (WP-09; UD-04, UD-05, UD-06, UD-07), the client side in 0.1.0 (M2) (WP-16, WP-17), so in 0.1.0 (M1) the leniency applies to the REST API, email, bulk edit, the wizard and copies, and the issue form keeps such values from 0.1.0 (M2) on. The shared case table `test/js/fixtures/shared/rules_cases.json` holds rows `{parent_was, parent, child_was, child, map, multiple, valid}` run by the Ruby rules (spec/lib/dependency_rules_spec.rb evaluates each row through `DependencyRules.dependency_check` with a stubbed custom value and `ParentState`, server design section 8) and by the JS rules (asserting the client never produces a submission marked invalid). Mandatory rows: multi child add allowed (valid), add disallowed (invalid), remove legacy (valid), reorder (valid), keep legacy and change parent (invalid), single child change from legacy to allowed (valid), single child change legacy to another disallowed (invalid), parent not available and untouched (valid).
 
 ### 2.7 Locale key registry (summary; texts in `large_lists_i18n_registry.md`)
 
@@ -250,7 +250,7 @@ Evidence rule: PASS is declared only from observed output. The report quotes the
 - `.codex/rubocop_ratchet.sh` prints `SYNTAX PASS`, `COMPAT PASS`, `RATCHET PASS ...`, exit 0 (4.8). The syntax step rejects Ruby 3.x syntax: endless defs, anonymous argument or block forwarding, and hash shorthand (a keyword passed without a value, gap 15: the head hook must be written `tag.meta(name: META_NAME, content: payload.to_json)`, WP-18). Ratchet reference: 107 offenses in 38 files at the baseline (section 1).
 - `npm run check` prints `ok   ES2017 <file>` for every `assets/javascripts/*.js`, exit 0.
 - CSS: core 7.0 stylelint on plugin CSS (`--suite css`), exit 0.
-- No inline script (from WP-18 on, 0.2.0), checked two ways:
+- No inline script (from WP-18 on, 0.1.0 (M2)), checked two ways:
   - source: `git grep -nE 'javascript_tag|<script|content_tag\(:script|tag\.script' -- app lib` returns nothing (E25: the current script uses `javascript_tag`);
   - rendered: `spec/hooks/view_layouts_base_html_head_hook_spec.rb` and the fixture specs assert `Nokogiri::HTML.fragment(html).css('script:not([src])')` is empty for the hook output, the wizard partial, the editor partial and the format partials.
 - Every new `html_safe` or `raw(` in the diff (`git diff -U0 <base> | grep -E '^\+.*(html_safe|raw\()'`) has a reviewer sign-off line.
@@ -316,8 +316,8 @@ Required checks:
   - `PUT /depending_custom_fields/:id.json` changing only the name leaves `value_dependencies` byte-identical, orphan and bracket-corrupted keys included;
   - an extended-API-style `safe_attributes=` save (E28) does not prune;
   - a project rename cascade `child.save!` keeps unrelated keys.
-- Legacy nested params accepted (project: deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0; admin `value_dependencies`/`default_value_dependencies` safe attributes: permanently, because other plugins write through `safe_attributes=`, E28, UD-15).
-- `window.DependingCustomFields.setup(root)` and `requestSetup(root)` exist as deprecated aliases of `init(root)` (jsdom; deprecated in 0.2.0, kept at least throughout 0.2.x, removable no earlier than 0.3.0, recommended 0.4.0); `CustomFieldVisibility` likewise (deprecated in 0.2.0 by WP-15).
+- Legacy nested params accepted (project: deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0; admin `value_dependencies`/`default_value_dependencies` safe attributes: permanently, because other plugins write through `safe_attributes=`, E28, UD-15).
+- `window.DependingCustomFields.setup(root)` and `requestSetup(root)` exist as deprecated aliases of `init(root)` (jsdom; deprecated in 0.1.0, kept at least throughout 0.1.x, removable no earlier than 0.2.0); `CustomFieldVisibility` likewise (deprecated in 0.1.0 by WP-15).
 - No migration alters core tables (`git diff <base> -- db/` reviewed); plugin migrations reversible (`rake redmine:plugins:migrate NAME=redmine_depending_custom_fields VERSION=<prev>`, then up, exit 0).
 
 ### G8 I18n
@@ -337,7 +337,7 @@ The WP report includes a `key | owner | en | de | fr | nl` table for every new o
 - `CHANGELOG.md` `## Unreleased` with Added / Changed / Fixed / Security / Deprecated / Removed / Upgrade notes. G9 PASS requires every upgrade-notes register entry (section 9) that the WP touches to have its line; each release WP (WP-07, WP-14, WP-20, WP-32) checks every entry of its release against the canonical CHANGELOG lines of `large_lists_work_packages.md` section 3.
 - README updated (Compatibility 5.1-7.0 written with a plain hyphen, Development with `.codex` and `npm`, MySQL rake tasks, integration notes for `data-dcf-state` and `dcf:updated`).
 - `docs/specs/project_custom_field_configuration_test_plan.md` section 8 amended: system specs exist, opt-in, never required by the default suite.
-- Version targets stated in the CHANGELOG (UD-01): four releases, 0.0.16 (WP-01..WP-07), 0.1.0 (WP-08..WP-14), 0.2.0 (WP-15..WP-20), 0.3.0 (WP-21..WP-32). JS shims and `CustomFieldVisibility` deprecated in 0.2.0, removable no earlier than 0.3.0 (recommended 0.4.0); project nested params deprecated in 0.3.0, removable no earlier than 0.4.0; admin nested safe attributes stay permanently (UD-15). The version bump happens only in the release WPs.
+- Version targets stated in the CHANGELOG (UD-01): two releases (UD-01 resolved): 0.0.16 (WP-01..WP-03, WP-07), 0.1.0 (M1) (WP-04..WP-06, WP-08..WP-14), 0.1.0 (M2) (WP-15..WP-20), 0.1.0 (M3) (WP-21..WP-32). JS shims and `CustomFieldVisibility` deprecated in 0.1.0, removable no earlier than 0.2.0; project nested params deprecated in 0.1.0, removable no earlier than 0.2.0; admin nested safe attributes stay permanently (UD-15). The version bump happens only in the release WPs.
 
 ### G10 Version matrix
 - One plugin SHA, four green rspec runs plus `SYNTAX PASS`; `requires_redmine version_or_higher: '5.0'` unchanged (UD-34; 5.0 declared but not tested, Ruby 2.7 or newer documented).
@@ -367,18 +367,18 @@ Revision 2 grouped the work into WP0 to WP8; the rows below use the final WP-01 
 | WP-01 | 0.0.16 | Tooling: `.codex` scripts, ratchet and syntax gate, JS toolchain, manual workflows (D10, UD-29, UD-30, UD-31) | G2 G3 G10 G11 | G4 G5 G6 G12 |
 | WP-02 | 0.0.16 | Test hygiene, generator, query counters, locale parity and no-dash specs, README/CHANGELOG dash cleanup, `field_default_value` fix | G2 G3 G8 G9 G10 G11 | G4 G6 G12 |
 | WP-03 | 0.0.16 | Hotfixes: MemCacheStore save crash, bulk-edit data loss (UD-02) | G1 (red-green) G2 (system) G12 | G6 G8 |
-| WP-04 | 0.0.16 | Characterization specs (Ruby + jsdom legacy), DB-backed rewrite of `custom_field_required_validation_spec.rb` | G1 G2 G10 | G4 G5 G6 G12 |
-| WP-05, WP-06 | 0.0.16 | Point 6 rules module (`DependencyRules`, `parent_of`, `value_options`), `FieldIndex`, shared format module, dead code removed | G1 G2 G6 G7 G10 | G4 G8 |
+| WP-04 | 0.1.0 (M1) | Characterization specs (Ruby + jsdom legacy), DB-backed rewrite of `custom_field_required_validation_spec.rb` | G1 G2 G10 | G4 G5 G6 G12 |
+| WP-05, WP-06 | 0.1.0 (M1) | Point 6 rules module (`DependencyRules`, `parent_of`, `value_options`), `FieldIndex`, shared format module, dead code removed | G1 G2 G6 G7 G10 | G4 G8 |
 | WP-07 | 0.0.16 | Release 0.0.16 | G9 G10 G11 + rerun all | |
-| WP-08, WP-09, WP-10 | 0.1.0 | Enumeration options fix, D1 per value incl. copies and non-editable children, effective parent and server cycle validation (point 5 server) | G1 G2 G5 G7 G8 G10 G12 | G4 (except WP-10 cycle warning) |
-| WP-11, WP-12, WP-13 | 0.1.0 | MySQL 64 KB safety, service error mapping, flash escaping, audit cap, rake tasks | G1 G5 G7 G8 G9 G12 | G4 (except the usage line, UD-28) |
-| WP-14 | 0.1.0 | Release 0.1.0 | G9 G10 G11 + rerun all | |
-| WP-15, WP-16 | 0.2.0 | Point 1 server side: context menu without cache, wizard route, per-field data contract, generated markup fixtures | G1 G3 G5 G6 G7 G10 | G12 |
-| WP-17, WP-18, WP-19 | 0.2.0 | Points 1 to 5 client runtime, switch-over (meta tag, cache removal, globals removed), radio sentinel and required '(none)' | G1 G2 (system) G3 G4 G5 G6 G7 G8 | G12 |
-| WP-20 | 0.2.0 | Release 0.2.0 (not before SD-01 is merged) | G9 G10 G11 + rerun all | |
-| WP-21 to WP-26 | 0.3.0 | Points 7 and 8: payload parser, admin JSON transport, editor model, values endpoint and presenter, admin editor UI, CSV import and export | all | |
-| WP-27 to WP-31 | 0.3.0 | Point 9 project pages and the project storage ceiling | all | |
-| WP-32 | 0.3.0 | Release 0.3.0 (version, README, CHANGELOG register, full matrix, optional CI dispatch per section 10) | G9 G10 G11 + rerun all | |
+| WP-08, WP-09, WP-10 | 0.1.0 (M1) | Enumeration options fix, D1 per value incl. copies and non-editable children, effective parent and server cycle validation (point 5 server) | G1 G2 G5 G7 G8 G10 G12 | G4 (except WP-10 cycle warning) |
+| WP-11, WP-12, WP-13 | 0.1.0 (M1) | MySQL 64 KB safety, service error mapping, flash escaping, audit cap, rake tasks | G1 G5 G7 G8 G9 G12 | G4 (except the usage line, UD-28) |
+| WP-14 | 0.1.0 (M1) | Release 0.1.0 (M1) | G9 G10 G11 + rerun all | |
+| WP-15, WP-16 | 0.1.0 (M2) | Point 1 server side: context menu without cache, wizard route, per-field data contract, generated markup fixtures | G1 G3 G5 G6 G7 G10 | G12 |
+| WP-17, WP-18, WP-19 | 0.1.0 (M2) | Points 1 to 5 client runtime, switch-over (meta tag, cache removal, globals removed), radio sentinel and required '(none)' | G1 G2 (system) G3 G4 G5 G6 G7 G8 | G12 |
+| WP-20 | 0.1.0 (M2) | Release 0.1.0 (M2) (not before SD-01 is merged) | G9 G10 G11 + rerun all | |
+| WP-21 to WP-26 | 0.1.0 (M3) | Points 7 and 8: payload parser, admin JSON transport, editor model, values endpoint and presenter, admin editor UI, CSV import and export | all | |
+| WP-27 to WP-31 | 0.1.0 (M3) | Point 9 project pages and the project storage ceiling | all | |
+| WP-32 | 0.1.0 (M3) | Release 0.1.0 (M3) (version, README, CHANGELOG register, full matrix, optional CI dispatch per section 10) | G9 G10 G11 + rerun all | |
 
 ## 4. Local commands and the `.codex` scripts
 
@@ -526,7 +526,7 @@ Baseline reference (informational, not an allowlist): 107 offenses in 38 files (
 | `spec/support/system_driver.rb` | WP-02. NEW: selenium headless chrome, `CHROME_BIN` only when set, `dcf_login` (`a.logout` visible: :all), `dcf_selectable_options(dom_id)` (DOM state, E9) |
 | `spec/support/dcf_large_list.rb` | WP-02. NEW: the limits generator API with the naive-fold `sizes()` (5.7) |
 | `spec/support/query_counter.rb` | WP-02. NEW `dcf_count_queries { }` and `dcf_count_yaml_loads { }` |
-| `spec/support/dcf_js_fixtures.rb` | WP-16 (0.2.0), owned by quality. NEW fixture infrastructure (5.5); it uses the fixed id ranges of `dcf_fixture_record` from WP-02 |
+| `spec/support/dcf_js_fixtures.rb` | WP-16 (0.1.0 (M2)), owned by quality. NEW fixture infrastructure (5.5); it uses the fixed id ranges of `dcf_fixture_record` from WP-02 |
 | `spec/support/dcf_config_helpers.rb` | WP-02. `dcf_tracker`/`dcf_status` always creating dedicated records; `dcf_fixture_record(klass, n, attrs)` with fixed id ranges |
 | `spec/quality/ci_workflows_spec.rb`, `spec/quality/rubocop_ratchet_spec.rb` (+ JSON fixtures in `spec/quality/fixtures/`) | WP-01. NEW |
 | `spec/quality/locale_parity_spec.rb`, `spec/quality/dcf_large_list_spec.rb`, `spec/quality/no_dash_spec.rb`, `spec/system/smoke_spec.rb` | WP-02. NEW (the parity spec iterates `ClientConfig::I18N` and `DependencyEditorConfig::I18N` when defined and carries the gap 10 allowlist) |
@@ -659,8 +659,8 @@ CHANGELOG or docs additions.
 Baseline (measured before any change): plugin specs 259 examples, 0 failures on Redmine
 5.1 (Ruby 3.2.6), 6.0, 6.1 and 7.0 (Ruby 3.3.6), via a local replica of the CI steps with
 PostgreSQL 16 and libpq-dev; RuboCop (core 7.0 config, plugins un-excluded): 107 offenses
-in 38 files. Releases: 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20,
-0.3.0 = WP-21..WP-32.
+in 38 files. Releases: 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20,
+0.1.0 (M3) = WP-21..WP-32.
 
 Shared contracts: the canonical definitions in the plan's "canonical cross-area contracts"
 section (issue-form attributes, head hook, payload schema and parser, editor DOM, value
@@ -740,7 +740,7 @@ added/updated, 5 independent review report, 6 QA report, 7 UX/consistency report
 Every WP-01 to WP-32 is DONE only with this report (the "Definition of done" line of each WP in `large_lists_work_packages.md` points here). The nine sections follow the owner OUTPUT FORMAT exactly, in this order: 1 minimal context/commands, 2 plan, 3 code changes, 4 tests added/updated, 5 independent review report, 6 QA report, 7 UX/consistency report, 8 gate checklist with PASS/FAIL and evidence, 9 next actions and exact diffs on FAIL. Sections 5, 6 and 7 are written by the reviewer roles of section 6, never by the implementer.
 
 ```markdown
-# WP-<nn>: <title>   (release: 0.0.16 | 0.1.0 | 0.2.0 | 0.3.0, points: <..>, decisions: UD-<..> (default decisions D<..> where relevant), status: DONE | NOT DONE)
+# WP-<nn>: <title>   (release: 0.0.16 | 0.1.0 (M1) | 0.1.0 (M2) | 0.1.0 (M3), points: <..>, decisions: UD-<..> (default decisions D<..> where relevant), status: DONE | NOT DONE)
 
 ## 1. Minimal context and commands
 - Base: origin/main @ <sha>; branch <name>; HEAD <sha>; dirty=0
@@ -858,74 +858,74 @@ Every change an existing 0.0.15 user can notice has one CHANGELOG line. G9 check
 
 | id | Change | Sections | WP (release) | Compat PC |
 |---|---|---|---|---|
-| UN-01 | Child fields are never disabled; disallowed options hidden and disabled; hint under the field | C U | WP-17, WP-18 (0.2.0) | PC-22 |
-| UN-02 | Stored values that no longer fit the parent are kept, marked and accepted until the parent changes (D1, per value) | C F U | WP-09 (0.1.0); WP-16, WP-17 (0.2.0) | PC-06, PC-23 |
-| UN-03 | Untouched child whose parent is not available on the record is accepted (UD-05) | C U | WP-09 (0.1.0) | PC-07 |
-| UN-04 | A read-only or hidden-from-form (but visible) parent now filters the child by the stored value; `hide_when_disabled` can hide that child | C U | WP-16, WP-17, WP-18 (0.2.0) | PC-25 |
-| UN-05 | `hide_when_disabled` works on single-record forms only, never while a legacy value is shown, never in bulk edit | C U | WP-17 (0.2.0) | PC-27 |
-| UN-06 | `change` fires only on a real value change; new `dcf:updated` event | C A U | WP-17, WP-18 (0.2.0) | PC-33 |
-| UN-07 | Last pick per parent value remembered across AJAX form refreshes | A | WP-17 (0.2.0) | PC-66 |
-| UN-08 | Without JavaScript, enumeration options are no longer filtered by the server; server still validates | C U | WP-18 (0.2.0) | PC-35 |
-| UN-09 | Enumeration gives one "is invalid" error and no duplicate option | F | WP-08 (0.1.0) | PC-13 |
-| UN-10 | Required radio children can be cleared (sentinel) | F | WP-19 (0.2.0) | PC-38 |
-| UN-11 | Fields rendered without Redmine's custom field helpers are no longer filtered in the browser (README Integration) | C U | WP-18 (0.2.0) | PC-34 |
-| UN-12 | Bulk edit no longer clears untouched multi-value children (data loss) | F | WP-03 (0.0.16); WP-19 (0.2.0, time-entry and required cases) | PC-02 |
-| UN-13 | A concrete parent in bulk edit or the wizard keeps "(no change)" on descendants, preselects the per-parent default with a hint and forces "(none)" only for parent "(none)" or a value without links (UD-09, revised D2); required children get a marked "(none)" (UD-10, former C7) | C U | WP-17, WP-19 (0.2.0) | PC-28, PC-39 |
-| UN-14 | Parent back to "(no change)" restores the child | C | WP-17 (0.2.0) | PC-28 |
-| UN-15 | The wizard opens every field, including the root, on "(no change)"; saving without choosing changes nothing (UD-11; it used to write the root default) | C U | WP-18 (0.2.0) | PC-29 |
-| UN-16 | Wizard errors are shown and the wizard stays open | F | WP-18 (0.2.0) | PC-30 |
-| UN-17 | Context menu hides only children available in the selection and their parents; dangling-parent children show as plain lists | C U | WP-15 (0.2.0) | PC-31 |
-| UN-18 | Context menu responses include dependency data for wizard fields and can be larger for very big mappings | C U | WP-18 (0.2.0) | PC-32 |
-| UN-19 | The admin editor replaces the matrix and needs JavaScript | C U | WP-25 (0.3.0) | PC-45, PC-55 |
-| UN-20 | Unrelated admin saves no longer touch the mapping | F | WP-22 (0.3.0) | PC-48 |
-| UN-21 | Unticking every link clears the mapping | F | WP-22 (0.3.0) | PC-47 |
-| UN-22 | Links to inactive enumerations are kept; links dropped by earlier versions are not restored | F U | WP-22 (0.3.0) | PC-49, PC-65 |
-| UN-23 | Orphan links (including keys corrupted by `[`/`]` in earlier versions) are reported and removed at the next editor save; re-link once | C U | WP-25, WP-27 (0.3.0) | PC-51, PC-65 |
-| UN-24 | A parent change in the form prunes links to the new parent's values | C | WP-22, WP-25 (0.3.0) | PC-50 |
-| UN-25 | Stale-mapping guard rejects an admin save after a concurrent change | A U | WP-22, WP-25 (0.3.0) | PC-52 |
-| UN-26 | Default value field shows until a parent is chosen | C | WP-25 (0.3.0) | PC-53 |
-| UN-27 | Parent select excludes descendants; cycle warning shown | C | WP-10 (0.1.0) | PC-11, PC-12 |
-| UN-28 | Values with brackets and mappings above 4,096 links now save | F | WP-22, WP-25, WP-27 (0.3.0) | PC-47 |
-| UN-29 | CSV import and export of links | A | WP-26 (0.3.0) | PC-56 |
-| UN-30 | Matrix partials and their CSS classes removed | R U | WP-25, WP-27 (0.3.0) | PC-64 |
-| UN-31 | Circular parent gives a form error or HTTP 422 | C U | WP-10 (0.1.0) | PC-10, PC-21 |
-| UN-32 | On MySQL, oversize values give a validation error instead of a 500 or silent truncation, core list and enumeration fields included; non-strict servers now refuse | F U | WP-11 (0.1.0) | PC-14, PC-15 |
-| UN-33 | Saves from the admin editor normalize the stored mapping, which can change API GET output | C U | WP-22, WP-25 (0.3.0) | PC-54 |
+| UN-01 | Child fields are never disabled; disallowed options hidden and disabled; hint under the field | C U | WP-17, WP-18 (0.1.0 (M2)) | PC-22 |
+| UN-02 | Stored values that no longer fit the parent are kept, marked and accepted until the parent changes (D1, per value) | C F U | WP-09 (0.1.0 (M1)); WP-16, WP-17 (0.1.0 (M2)) | PC-06, PC-23 |
+| UN-03 | Untouched child whose parent is not available on the record is accepted (UD-05) | C U | WP-09 (0.1.0 (M1)) | PC-07 |
+| UN-04 | A read-only or hidden-from-form (but visible) parent now filters the child by the stored value; `hide_when_disabled` can hide that child | C U | WP-16, WP-17, WP-18 (0.1.0 (M2)) | PC-25 |
+| UN-05 | `hide_when_disabled` works on single-record forms only, never while a legacy value is shown, never in bulk edit | C U | WP-17 (0.1.0 (M2)) | PC-27 |
+| UN-06 | `change` fires only on a real value change; new `dcf:updated` event | C A U | WP-17, WP-18 (0.1.0 (M2)) | PC-33 |
+| UN-07 | Last pick per parent value remembered across AJAX form refreshes | A | WP-17 (0.1.0 (M2)) | PC-66 |
+| UN-08 | Without JavaScript, enumeration options are no longer filtered by the server; server still validates | C U | WP-18 (0.1.0 (M2)) | PC-35 |
+| UN-09 | Enumeration gives one "is invalid" error and no duplicate option | F | WP-08 (0.1.0 (M1)) | PC-13 |
+| UN-10 | Required radio children can be cleared (sentinel) | F | WP-19 (0.1.0 (M2)) | PC-38 |
+| UN-11 | Fields rendered without Redmine's custom field helpers are no longer filtered in the browser (README Integration) | C U | WP-18 (0.1.0 (M2)) | PC-34 |
+| UN-12 | Bulk edit no longer clears untouched multi-value children (data loss) | F | WP-03 (0.0.16); WP-19 (0.1.0 (M2), time-entry and required cases) | PC-02 |
+| UN-13 | A concrete parent in bulk edit or the wizard keeps "(no change)" on descendants, preselects the per-parent default with a hint and forces "(none)" only for parent "(none)" or a value without links (UD-09, revised D2); required children get a marked "(none)" (UD-10, former C7) | C U | WP-17, WP-19 (0.1.0 (M2)) | PC-28, PC-39 |
+| UN-14 | Parent back to "(no change)" restores the child | C | WP-17 (0.1.0 (M2)) | PC-28 |
+| UN-15 | The wizard opens every field, including the root, on "(no change)"; saving without choosing changes nothing (UD-11; it used to write the root default) | C U | WP-18 (0.1.0 (M2)) | PC-29 |
+| UN-16 | Wizard errors are shown and the wizard stays open | F | WP-18 (0.1.0 (M2)) | PC-30 |
+| UN-17 | Context menu hides only children available in the selection and their parents; dangling-parent children show as plain lists | C U | WP-15 (0.1.0 (M2)) | PC-31 |
+| UN-18 | Context menu responses include dependency data for wizard fields and can be larger for very big mappings | C U | WP-18 (0.1.0 (M2)) | PC-32 |
+| UN-19 | The admin editor replaces the matrix and needs JavaScript | C U | WP-25 (0.1.0 (M3)) | PC-45, PC-55 |
+| UN-20 | Unrelated admin saves no longer touch the mapping | F | WP-22 (0.1.0 (M3)) | PC-48 |
+| UN-21 | Unticking every link clears the mapping | F | WP-22 (0.1.0 (M3)) | PC-47 |
+| UN-22 | Links to inactive enumerations are kept; links dropped by earlier versions are not restored | F U | WP-22 (0.1.0 (M3)) | PC-49, PC-65 |
+| UN-23 | Orphan links (including keys corrupted by `[`/`]` in earlier versions) are reported and removed at the next editor save; re-link once | C U | WP-25, WP-27 (0.1.0 (M3)) | PC-51, PC-65 |
+| UN-24 | A parent change in the form prunes links to the new parent's values | C | WP-22, WP-25 (0.1.0 (M3)) | PC-50 |
+| UN-25 | Stale-mapping guard rejects an admin save after a concurrent change | A U | WP-22, WP-25 (0.1.0 (M3)) | PC-52 |
+| UN-26 | Default value field shows until a parent is chosen | C | WP-25 (0.1.0 (M3)) | PC-53 |
+| UN-27 | Parent select excludes descendants; cycle warning shown | C | WP-10 (0.1.0 (M1)) | PC-11, PC-12 |
+| UN-28 | Values with brackets and mappings above 4,096 links now save | F | WP-22, WP-25, WP-27 (0.1.0 (M3)) | PC-47 |
+| UN-29 | CSV import and export of links | A | WP-26 (0.1.0 (M3)) | PC-56 |
+| UN-30 | Matrix partials and their CSS classes removed | R U | WP-25, WP-27 (0.1.0 (M3)) | PC-64 |
+| UN-31 | Circular parent gives a form error or HTTP 422 | C U | WP-10 (0.1.0 (M1)) | PC-10, PC-21 |
+| UN-32 | On MySQL, oversize values give a validation error instead of a 500 or silent truncation, core list and enumeration fields included; non-strict servers now refuse | F U | WP-11 (0.1.0 (M1)) | PC-14, PC-15 |
+| UN-33 | Saves from the admin editor normalize the stored mapping, which can change API GET output | C U | WP-22, WP-25 (0.1.0 (M3)) | PC-54 |
 | UN-34 | Saves work on MemCacheStore | F | WP-03 (0.0.16) | PC-01 |
-| UN-35 | Project dependency editor, no-JS notice, scope banner, parent-not-available notice, orphans removed on save (audited) | C A U | WP-27 (0.3.0) | PC-45, PC-51, PC-55, PC-67 |
-| UN-36 | Compact audit values; values over 16 KB truncated with a marker | C U | WP-12 (0.1.0, cap and marker); WP-27 (0.3.0, compact delta) | PC-18, PC-57 |
-| UN-37 | Values page: search box above 25 values (`FILTER_MIN`), pagination above 500 values, drag only at 500 or fewer unfiltered values, A-Z/Z-A sort, page-scoped enumeration save; `sort_values` granted to holders of `manage_project_custom_field_configuration` | A C U | WP-28, WP-29, WP-30 (0.3.0) | PC-59, PC-60, PC-61 |
-| UN-38 | "Show usage" counts are exact | C U | WP-28 (0.3.0) | PC-59 |
-| UN-39 | Redirects keep `q` and `page` | C | WP-28 (0.3.0) | PC-59 |
-| UN-40 | Globals `DependingCustomFieldData` and `ContextMenuWizardConfig` removed; `setup`/`requestSetup` and `CustomFieldVisibility` deprecated in 0.2.0 (removable no earlier than 0.3.0, recommended 0.4.0) | R D U | WP-15, WP-18 (0.2.0) | PC-41, PC-42 |
-| UN-41 | Removed: `MappingBuilder`, `ParentMenuBuilder`, `QueryCustomFieldColumnPatch`, `ContextMenuWizardController#options`, the `after_custom_field_save` dispatch, `data-depending-*` attributes, `depending_cf_N` ids, hidden mirror inputs | R U | WP-06 (0.0.16, QueryCustomFieldColumnPatch); WP-15, WP-18 (0.2.0) | PC-04, PC-42 |
-| UN-42 | Project nested params deprecated in 0.3.0 (accepted throughout 0.3.x, removable no earlier than 0.4.0); admin nested safe attributes kept permanently (UD-15) | D U | WP-22, WP-27 (0.3.0) | PC-63 |
-| UN-43 | Cache key `depending_custom_fields/mapping` no longer used; rollback note | R U | WP-18 (0.2.0) | PC-43 |
-| UN-44 | New asset files; restart (and on 5.1 `rake redmine:plugins:assets`) needed | U | WP-18 (0.2.0); WP-25 (0.3.0) | PC-43, PC-65 |
+| UN-35 | Project dependency editor, no-JS notice, scope banner, parent-not-available notice, orphans removed on save (audited) | C A U | WP-27 (0.1.0 (M3)) | PC-45, PC-51, PC-55, PC-67 |
+| UN-36 | Compact audit values; values over 16 KB truncated with a marker | C U | WP-12 (0.1.0 (M1), cap and marker); WP-27 (0.1.0 (M3), compact delta) | PC-18, PC-57 |
+| UN-37 | Values page: search box above 25 values (`FILTER_MIN`), pagination above 500 values, drag only at 500 or fewer unfiltered values, A-Z/Z-A sort, page-scoped enumeration save; `sort_values` granted to holders of `manage_project_custom_field_configuration` | A C U | WP-28, WP-29, WP-30 (0.1.0 (M3)) | PC-59, PC-60, PC-61 |
+| UN-38 | "Show usage" counts are exact | C U | WP-28 (0.1.0 (M3)) | PC-59 |
+| UN-39 | Redirects keep `q` and `page` | C | WP-28 (0.1.0 (M3)) | PC-59 |
+| UN-40 | Globals `DependingCustomFieldData` and `ContextMenuWizardConfig` removed; `setup`/`requestSetup` and `CustomFieldVisibility` deprecated in 0.1.0 (removable no earlier than 0.2.0) | R D U | WP-15, WP-18 (0.1.0 (M2)) | PC-41, PC-42 |
+| UN-41 | Removed: `MappingBuilder`, `ParentMenuBuilder`, `QueryCustomFieldColumnPatch`, `ContextMenuWizardController#options`, the `after_custom_field_save` dispatch, `data-depending-*` attributes, `depending_cf_N` ids, hidden mirror inputs | R U | WP-06 (0.1.0 (M1), QueryCustomFieldColumnPatch); WP-15, WP-18 (0.1.0 (M2)) | PC-04, PC-42 |
+| UN-42 | Project nested params deprecated in 0.1.0 (accepted throughout 0.1.x, removable no earlier than 0.2.0); admin nested safe attributes kept permanently (UD-15) | D U | WP-22, WP-27 (0.1.0 (M3)) | PC-63 |
+| UN-43 | Cache key `depending_custom_fields/mapping` no longer used; rollback note | R U | WP-18 (0.1.0 (M2)) | PC-43 |
+| UN-44 | New asset files; restart (and on 5.1 `rake redmine:plugins:assets`) needed | U | WP-18 (0.1.0 (M2)); WP-25 (0.1.0 (M3)) | PC-43, PC-65 |
 | UN-45 | Ruby >= 2.7 | U | WP-02, WP-07 (0.0.16) | PC-05 |
 | UN-46 | Admin form header shows Default value (core `field_default_value`) | F | WP-02 (0.0.16) | PC-03 |
-| UN-47 | Issue copies keep unchanged legacy combinations | C F U | WP-09 (0.1.0); WP-16 (0.2.0) | PC-08 |
-| UN-48 | Non-editable dependent field no longer blocks a parent change | C | WP-09 (0.1.0) | PC-09 |
-| UN-49 | Opt-in rake tasks `report_sizes` and `widen_core_columns` | A | WP-13 (0.1.0) | PC-16 |
-| UN-50 | Storage usage line at 90 percent | A | WP-11 (0.1.0) | PC-17 |
-| UN-51 | Audit overflow no longer rolls back saves | F | WP-12 (0.1.0) | PC-19 |
-| UN-52 | Flash messages escape field names | F | WP-12 (0.1.0) | PC-20 |
-| UN-53 | Per-parent defaults at load only for new records | C | WP-17 (0.2.0) | PC-24 |
-| UN-54 | Invisible parent: child unfiltered, no mapping leak | C | WP-16, WP-18 (0.2.0) | PC-26 |
-| UN-55 | No browser recursion on cycles | F | WP-10 (0.1.0); WP-17 (0.2.0) | PC-36 |
-| UN-56 | Mapping no longer embedded in every page | F | WP-18 (0.2.0) | PC-37 |
-| UN-57 | Hints announced to screen readers | A | WP-17, WP-18 (0.2.0) | PC-40 |
-| UN-58 | Wizard writes only editable fields (SD-01) | S | separate SD-01 PR (0.2.0 at the latest) | PC-44 |
-| UN-59 | Admin form sends one JSON field and is multipart while the editor is active | C U | WP-22, WP-25 (0.3.0) | PC-46 |
-| UN-60 | Corrected resubmit after a failed project save no longer gives 409 | F | WP-27 (0.3.0) | PC-58 |
-| UN-61 | Project storage ceiling setting and 255-character cap | A C U | WP-31 (0.3.0) | PC-62 |
-| UN-62 | Format-change confirmation, leave warning, editor placement on the admin form | C | WP-25 (0.3.0) | PC-68 |
+| UN-47 | Issue copies keep unchanged legacy combinations | C F U | WP-09 (0.1.0 (M1)); WP-16 (0.1.0 (M2)) | PC-08 |
+| UN-48 | Non-editable dependent field no longer blocks a parent change | C | WP-09 (0.1.0 (M1)) | PC-09 |
+| UN-49 | Opt-in rake tasks `report_sizes` and `widen_core_columns` | A | WP-13 (0.1.0 (M1)) | PC-16 |
+| UN-50 | Storage usage line at 90 percent | A | WP-11 (0.1.0 (M1)) | PC-17 |
+| UN-51 | Audit overflow no longer rolls back saves | F | WP-12 (0.1.0 (M1)) | PC-19 |
+| UN-52 | Flash messages escape field names | F | WP-12 (0.1.0 (M1)) | PC-20 |
+| UN-53 | Per-parent defaults at load only for new records | C | WP-17 (0.1.0 (M2)) | PC-24 |
+| UN-54 | Invisible parent: child unfiltered, no mapping leak | C | WP-16, WP-18 (0.1.0 (M2)) | PC-26 |
+| UN-55 | No browser recursion on cycles | F | WP-10 (0.1.0 (M1)); WP-17 (0.1.0 (M2)) | PC-36 |
+| UN-56 | Mapping no longer embedded in every page | F | WP-18 (0.1.0 (M2)) | PC-37 |
+| UN-57 | Hints announced to screen readers | A | WP-17, WP-18 (0.1.0 (M2)) | PC-40 |
+| UN-58 | Wizard writes only editable fields (SD-01) | S | separate SD-01 PR (0.1.0 (M2) at the latest) | PC-44 |
+| UN-59 | Admin form sends one JSON field and is multipart while the editor is active | C U | WP-22, WP-25 (0.1.0 (M3)) | PC-46 |
+| UN-60 | Corrected resubmit after a failed project save no longer gives 409 | F | WP-27 (0.1.0 (M3)) | PC-58 |
+| UN-61 | Project storage ceiling setting and 255-character cap | A C U | WP-31 (0.1.0 (M3)) | PC-62 |
+| UN-62 | Format-change confirmation, leave warning, editor placement on the admin form | C | WP-25 (0.1.0 (M3)) | PC-68 |
 
-Security line (separately tracked as SD-01, section 11; UN-58, PC-44): the context-menu wizard save writes read-only and role-hidden fields. Recommended as its own pull request merged before tagging 0.0.16 (UD-03); it is a hard prerequisite for tagging 0.2.0, the release that ships point 1.
+Security line (separately tracked as SD-01, section 11; UN-58, PC-44): the context-menu wizard save writes read-only and role-hidden fields. Recommended as its own pull request merged before tagging 0.0.16 (UD-03); it is merged before 0.0.16 is tagged (UD-03 resolved) and therefore long before 0.1.0, the release that ships point 1.
 
 Suggested Upgrade-note wording for entries no area design listed (from BC-14): UN-04 "Dependent fields whose parent is read-only on the form are now filtered by the stored parent value and may be hidden when 'Hide when no valid options' is set."; UN-08 "Without JavaScript, Key/Value list (depending) fields show all active values; the server still rejects invalid combinations."; UN-11 "Fields rendered without Redmine's custom field helpers are no longer filtered in the browser; see README Integration."; UN-15 "The context-menu wizard opens every field on '(No change)'; saving without choosing changes nothing (it used to write the root field's default)." (UD-11; revision 2's wording "applies the root field's default and its cascade as soon as it opens" is superseded); UN-18 "Context menu responses include dependency data for the wizard fields and can be larger for very big mappings."; UN-22 "Links removed by earlier versions (inactive key/value entries) cannot be restored."; UN-23 "Links stored under parent values containing [ or ] were saved under corrupted keys by earlier versions and never took effect; the editor lists them as orphans, and they must be re-linked once."; UN-33 "Saves from the admin editor normalize the stored mapping, which can change API GET output."; UN-37 "Members with 'Manage project custom field configuration' can now sort values A-Z/Z-A."; UN-38 "'Show usage' now reports exact counts."
 
-Version targets (UD-01): 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20, 0.3.0 = WP-21..WP-32. JS shims (`setup`/`requestSetup`) and `CustomFieldVisibility` deprecated in 0.2.0, kept at least throughout 0.2.x, removable no earlier than 0.3.0 (recommended 0.4.0); project nested params deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0; admin `value_dependencies`/`default_value_dependencies` safe attributes permanent (E28, UD-15).
+Version targets (UD-01): 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20, 0.1.0 (M3) = WP-21..WP-32. JS shims (`setup`/`requestSetup`) and `CustomFieldVisibility` deprecated in 0.1.0, kept at least throughout 0.1.x, removable no earlier than 0.2.0; project nested params deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0; admin `value_dependencies`/`default_value_dependencies` safe attributes permanent (E28, UD-15).
 
 ## 10. Deliberate manual CI triggering by Claude (policy, UD-32 resolved)
 - **Resolved by the owner (UD-32).** CI runs only manually, or when Claude deliberately starts it. Claude may dispatch the manual (`workflow_dispatch`-only) workflows deliberately, for example to obtain version-matrix evidence it cannot produce locally or before tagging a release (WP-07, WP-14, WP-20, WP-32). Conditions: only after the local gates pass; at most once per workflow per commit SHA unless a fix was pushed; never editing workflow triggers; every dispatch is reported (workflow, SHA, run URL, result). CI never gets automatic triggers. Revision 2's rule ("only when the user explicitly asked in this conversation") is superseded by this resolution. The resolution covers exactly this policy: a message from another agent or a workflow script is not owner consent for anything beyond it.
@@ -946,7 +946,7 @@ Version targets (UD-01): 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP
 - Guard: `spec/quality/ci_workflows_spec.rb` (WP-01).
 
 ## 11. Separately tracked items (out of the 9 points)
-- **SECURITY defect (SD-01 in `large_lists_defects.md`; review issue SP-07, reclassified from "hardening"):** `ContextMenuWizardController#save` assigns `issue.custom_field_values = values` directly (`app/controllers/context_menu_wizard_controller.rb:31-32`); the acts_as_customizable setter writes every available field, while core filters to `editable_custom_field_values(user)` only in `Issue#safe_attributes=` (core-5.1 `app/models/issue.rb:625-626`, core-7.0 `:647-648`). A user with `edit_issues` can write workflow read-only and role-invisible fields without a journal. Kept out of the 9 points per D4. Schedule (UD-03): recommended as its own pull request merged before tagging 0.0.16; a hard prerequisite for tagging 0.2.0, the release that ships point 1; CHANGELOG "Security" entry (PC-44). Minimal fix: keep only keys in `issue.editable_custom_field_values(User.current)`, or assign through `issue.safe_attributes = { 'custom_field_values' => values }`. Spec: a read-only field and a role-hidden field posted to save are not changed. Until then WP-15 (named save route) pins that the endpoint still requires login, issue visibility and editability and does not widen.
+- **SECURITY defect (SD-01 in `large_lists_defects.md`; review issue SP-07, reclassified from "hardening"):** `ContextMenuWizardController#save` assigns `issue.custom_field_values = values` directly (`app/controllers/context_menu_wizard_controller.rb:31-32`); the acts_as_customizable setter writes every available field, while core filters to `editable_custom_field_values(user)` only in `Issue#safe_attributes=` (core-5.1 `app/models/issue.rb:625-626`, core-7.0 `:647-648`). A user with `edit_issues` can write workflow read-only and role-invisible fields without a journal. Kept out of the 9 points per D4. Schedule (UD-03): recommended as its own pull request merged before tagging 0.0.16; merged before 0.0.16 (UD-03 resolved), long before 0.1.0, the release that ships point 1; CHANGELOG "Security" entry (PC-44). Minimal fix: keep only keys in `issue.editable_custom_field_values(User.current)`, or assign through `issue.safe_attributes = { 'custom_field_values' => values }`. Spec: a read-only field and a role-hidden field posted to save are not changed. Until then WP-15 (named save route) pins that the endpoint still requires login, issue visibility and editability and does not widen.
 - Wizard save hardening beyond the security fix (journal, `@can[:edit]`, 7.0 webhooks / `updated_on`): SD-02.
 - Time-entry context menu (leaks `__group_*` rows, unfiltered depending fields): SD-03.
 - `copy_from` enumeration-id remap: SD-06 (README note in WP-25).

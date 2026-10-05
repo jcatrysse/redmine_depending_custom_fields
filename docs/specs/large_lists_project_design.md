@@ -1,13 +1,13 @@
 # Project-level pages (points 7, 8, 9, project side): implementation design, revision 2
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 9; plus the project side of 7 and 8 (shared editor on the project dependency page, project-mode CSV import and export through the shared editor). Owner area: project (project configuration controller, project services, values page, sort, page-scoped enumeration save, project storage ceiling, project views, `dcf_config.css`, `dcf_values_page.js`, project locale keys). Work packages: WP-27, WP-28, WP-29, WP-30, WP-31 (primary, release 0.3.0); consumed: WP-04 (project characterization specs, 0.0.16), WP-05 (`DependencyRules.parent_of`, `value_options`, `FieldIndex`, 0.0.16), WP-06 (`storage_preview(custom_field, store)`, 0.0.16), WP-11 and WP-12 (`CustomFieldValidationPatch`, `StorageLimits`, service error mapping, `OperationError` kwargs, `translate_error(e)`, `dcf_status_code`, `AuditPayload`, 0.1.0), WP-18 (head hook, `ClientConfig.editor_page?`, 0.2.0), WP-21 to WP-26 (`DependencyPayload`, shared editor partial, presenter, JS, CSV import and export, 0.3.0); WP-32 (release 0.3.0: CHANGELOG, README, docs amendments A5 and A6). Decisions: UD-01, UD-03, UD-15, UD-16, UD-17, UD-18, UD-19, UD-21, UD-22, UD-23, UD-24, UD-28.
+> Points: 9; plus the project side of 7 and 8 (shared editor on the project dependency page, project-mode CSV import and export through the shared editor). Owner area: project (project configuration controller, project services, values page, sort, page-scoped enumeration save, project storage ceiling, project views, `dcf_config.css`, `dcf_values_page.js`, project locale keys). Work packages: WP-27, WP-28, WP-29, WP-30, WP-31 (primary, release 0.1.0 (M3)); consumed: WP-04 (project characterization specs, 0.1.0 (M1)), WP-05 (`DependencyRules.parent_of`, `value_options`, `FieldIndex`, 0.1.0 (M1)), WP-06 (`storage_preview(custom_field, store)`, 0.1.0 (M1)), WP-11 and WP-12 (`CustomFieldValidationPatch`, `StorageLimits`, service error mapping, `OperationError` kwargs, `translate_error(e)`, `dcf_status_code`, `AuditPayload`, 0.1.0 (M1)), WP-18 (head hook, `ClientConfig.editor_page?`, 0.1.0 (M2)), WP-21 to WP-26 (`DependencyPayload`, shared editor partial, presenter, JS, CSV import and export, 0.1.0 (M3)); WP-32 (release 0.1.0 (M3): CHANGELOG, README, docs amendments A5 and A6). Decisions: UD-01, UD-03, UD-15, UD-16, UD-17, UD-18, UD-19, UD-21, UD-22, UD-23, UD-24, UD-28.
 
-**Consolidation.** The final completeness critic (gaps 1, 2, 3, 4, 8, 11, 12 and 14, project parts) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20, 0.3.0 = WP-21..WP-32; every project item of this document ships in 0.3.0, except the service error mapping, `translate_error` escaping and `dcf_status_code` (WP-12, 0.1.0). Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, interpolations and owner WPs.
+**Consolidation.** The final completeness critic (gaps 1, 2, 3, 4, 8, 11, 12 and 14, project parts) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20, 0.1.0 (M3) = WP-21..WP-32; every project item of this document ships in 0.1.0 (M3), except the service error mapping, `translate_error` escaping and `dcf_status_code` (WP-12, 0.1.0 (M1)). Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, interpolations and owner WPs.
 
 | Topic | Consolidated rule | Sections |
 |---|---|---|
-| Release and deprecation | Project items ship in 0.3.0 (WP-27 to WP-31). Project nested params on `update_dependencies` are deprecated in 0.3.0 (accepted throughout 0.3.x, deprecation log) and removable no earlier than 0.4.0 (UD-01). | 1, 3.3, 13, 16 |
+| Release and deprecation | Project items ship in 0.1.0 (M3) (WP-27 to WP-31). Project nested params on `update_dependencies` are deprecated in 0.1.0 (accepted throughout 0.1.x, deprecation log) and removable no earlier than 0.2.0 (UD-01). | 1, 3.3, 13, 16 |
 | Failed-save re-render (gap 1) | Hidden input always blank on both pages; the parsed ok payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"`; no `data-dcf-editor-echo`, no `input_value`. Project: `posted: service.parsed_payload` passed to `DependencyEditorConfig.for_project`. | 1, 2.1, 3.2, 3.5, 15 |
 | 409 conflict and submit gate | Editor names: `data-dcf-editor-conflict-mapping` (from `conflict:`) with the shared conflict panel (UD-17), and `data-dcf-editor-submit` on the Save button. The project's `data-dcf-editor-pending` and `data-dcf-editor-submit-gate` are withdrawn. | 1, 2.1, 3.2, 3.5, 14, 15 |
 | `DependencyRules.parent_of` (gap 2) | WP-05 API: memoized on the record, returns the parent record or nil for blank, dangling, wrong type or family, or self. WP-27 uses it for `text_dcf_parent_missing` and `text_dcf_parent_not_available` and in `DependencyMappingService#perform!`. | 2.6, 3.2, 3.3, 3.4 |
@@ -99,7 +99,7 @@ New probes for revision 2 are in `$S/design/project/proto2/`. All files pass `Li
 1. **Transport.**
    - `edit_dependencies` posts ONE hidden field, `dependencies_json`, plus `state_hash`, in a multipart PATCH form.
    - The value is decoded inside `DependencyMappingService` with the shared `DependencyPayload.parse!` (schema v1, section 2.2), so every bad input is audited.
-   - Key absent: the request uses the legacy nested params (deprecated in 0.3.0; accepted throughout 0.3.x, removable no earlier than 0.4.0; UD-01).
+   - Key absent: the request uses the legacy nested params (deprecated in 0.1.0; accepted throughout 0.1.x, removable no earlier than 0.2.0; UD-01).
    - Key present but blank or invalid: audited 422.
 2. **Initial state.**
    - The editor reads it from `data-dcf-editor-mapping`. The hidden input is ALWAYS rendered blank (GET and every re-render), so a server pre-fill never counts as dirty.
@@ -232,7 +232,7 @@ The revision 2 hash contract spec `spec/lib/dcf_value_options_contract_spec.rb` 
 
 ### 2.4 Storage limits, project ceiling, error mapping (owner: limits area, plus the project ceiling)
 
-**Limits area, consumed as designed (WP-11, WP-12, 0.1.0):**
+**Limits area, consumed as designed (WP-11, WP-12, 0.1.0 (M1)):**
 - The single `Patches::CustomFieldValidationPatch` (WP-11, compat section 2.4 row "CustomField callback registration") registers `validate :dcf_validate_storage_limits`. There is no separate `CustomFieldStoragePatch` module.
 - Error `activerecord.errors.messages.dcf_storage_too_large`.
 - `StorageLimits.violation_in(record)`.
@@ -243,7 +243,7 @@ The revision 2 hash contract spec `spec/lib/dcf_value_options_contract_spec.rb` 
   - `ActiveRecord::ValueTooLong` gives `OperationError(:error_dcf_value_too_long, audit_status: 'save_failed')`.
 - Audit row for `ValueTooLong` (limits design 5.3): `error_message` is `error_dcf_value_too_long`; `changes_summary` is `ActiveRecord::ValueTooLong column=<column> field_id=<id> possible_values_bytes=<n> format_store_bytes=<n>` (falls back to `ActiveRecord::ValueTooLong` if building it raises); never `e.message`, SQL, the DB message or values (SP-09; the project audit view shows `changes_summary` or `error_message` to managers, both through `h()`).
 
-**Additions requested by this area (SP-03, UD-22; implemented in WP-31, 0.3.0), small and additive:**
+**Additions requested by this area (SP-03, UD-22; implemented in WP-31, 0.1.0 (M3)), small and additive:**
 - `CustomFieldValidationPatch` adds `attr_accessor :dcf_storage_ceiling` (Integer bytes or nil; never persisted, defaults to nil, so admin, API and import saves are unaffected).
 - `StorageLimits.effective_limit(record, column)` returns `[limit, source]`:
   - `limit` is the smaller of `column_limit(...)` and the ceiling, `source` is `'column'` or `'ceiling'`;
@@ -286,7 +286,7 @@ end
 
 **Service error texts** for project pages (owner: limits) use neutral wording that is correct for both the column and the ceiling, and no README reference (UX-04). See section 11, "requested from limits".
 
-### 2.5 Audit cap (owner: limits area, WP-12, 0.1.0)
+### 2.5 Audit cap (owner: limits area, WP-12, 0.1.0 (M1))
 
 - `AuditPayload::MAX_BYTES = 16_384` per before/after value.
 - The marker uses the limits names (compat section 2.4 row "Audit marker keys"): `{"payload_truncated":true,"payload_bytes":N,"payload_sha256":"..."}`, with top-level scalars kept when a value is shrunk. R10's rename from `sha256` to `payload_sha256` is part of it; none of the marker keys collides with the project delta's own `truncated` and `mapping_sha256`.
@@ -468,7 +468,7 @@ end
 
 def legacy_input
   Rails.logger.warn('[redmine_depending_custom_fields] update_dependencies received legacy nested params; ' \
-                    'send dependencies_json (deprecated in 0.3.0, removable no earlier than 0.4.0)')
+                    'send dependencies_json (deprecated in 0.1.0, removable no earlier than 0.2.0)')
   { json: false, value_dependencies: @params[:value_dependencies],
     default_value_dependencies: @params[:default_value_dependencies], source: 'form', import: nil }
 end
@@ -494,7 +494,7 @@ end
   - the labels belong to this field and its parent, both relevant to the project.
 - **Full replacement is preserved.** A missing parent key means no links, and `{"value_dependencies":{}}` clears.
 - **Legacy path.** A post without any mapping param still clears, as today (T-DEPJ-9). Legacy defaults are stored as submitted (characterized). When both JSON and nested params are posted, JSON wins.
-- **`OperationError`** gains the additive kwargs (limits plus project, one signature, owner limits WP-12, 0.1.0): `OperationError.new(key, http_status: :unprocessable_entity, audit_status: 'validation_failed', summary: nil, interpolations: nil, payload: nil)`.
+- **`OperationError`** gains the additive kwargs (limits plus project, one signature, owner limits WP-12, 0.1.0 (M1)): `OperationError.new(key, http_status: :unprocessable_entity, audit_status: 'validation_failed', summary: nil, interpolations: nil, payload: nil)`.
 - **`BaseService#record_failure(status, message, summary = nil)`** passes `summary` to `AuditRecorder#record_failure!(summary:)`, which already accepts it (`audit_recorder.rb:31`).
 
 ### 3.4 View (`app/views/project_custom_field_configuration/edit_dependencies.html.erb`, rewritten)
@@ -692,7 +692,7 @@ end
 
 ## 6. Sort A-Z / Z-A
 
-Implemented by WP-29 (0.3.0). Decisions: UD-23 (shared and global fields: JS confirm only, no server confirmation panel) and UD-24 (inactive enumerations sorted together with active ones). Errors reach the flash through `translate_error(e)` (gap 4).
+Implemented by WP-29 (0.1.0 (M3)). Decisions: UD-23 (shared and global fields: JS confirm only, no server confirmation panel) and UD-24 (inactive enumerations sorted together with active ones). Errors reach the flash through `translate_error(e)` (gap 4).
 
 **Route:**
 
@@ -729,7 +729,7 @@ patch 'custom_field_configuration/fields/:field_id/values/sort',
 
 ## 7. Enumeration page-scoped batch (`UpdateEnumerationsService`)
 
-Implemented by WP-30 (0.3.0, depends on WP-28). Errors reach the flash through `translate_error(e)` (gap 4). WP-31 later changes the same service (`clear_dangling_default!` through `save_field!`) and therefore depends on WP-30 (gap 14).
+Implemented by WP-30 (0.1.0 (M3), depends on WP-28). Errors reach the flash through `translate_error(e)` (gap 4). WP-31 later changes the same service (`clear_dangling_default!` through `save_field!`) and therefore depends on WP-30 (gap 14).
 
 - **`batch_scope`:**
   - absent or blank: full mode, unchanged (T-ACT-21);
@@ -760,7 +760,7 @@ Implemented by WP-30 (0.3.0, depends on WP-28). Errors reach the flash through `
 
 ## 9. Storage, ceiling, per-value cap, failure auditing
 
-The storage validation, the `RecordInvalid` and `ValueTooLong` mapping and the audit cap ship with the limits area in 0.1.0 (WP-11, WP-12). The project ceiling, `save_field!`, the per-value cap and the editor's project storage limit ship in WP-31 (0.3.0, UD-22; depends on WP-11, WP-12, WP-27, WP-29 and WP-30). Errors reach the flash through `translate_error(e)` (gap 4).
+The storage validation, the `RecordInvalid` and `ValueTooLong` mapping and the audit cap ship with the limits area in 0.1.0 (M1) (WP-11, WP-12). The project ceiling, `save_field!`, the per-value cap and the editor's project storage limit ship in WP-31 (0.1.0 (M3), UD-22; depends on WP-11, WP-12, WP-27, WP-29 and WP-30). Errors reach the flash through `translate_error(e)` (gap 4).
 
 **`BaseService` additions (project-owned parts, WP-31):**
 
@@ -848,7 +848,7 @@ The global CSS keeps only the runtime and wizard rules (frontend area).
 | label_dcf_project_storage_ceiling | WP-31 | none | plugin settings field label | see large_lists_i18n_registry.md |
 | text_dcf_project_storage_ceiling_info | WP-31 | `%{default}` | plugin settings info text | see large_lists_i18n_registry.md |
 
-### Requested from the limits registry (owner: limits, WP-12, 0.1.0)
+### Requested from the limits registry (owner: limits, WP-12, 0.1.0 (M1))
 
 Neutral limit wording, correct for both the column limit and the project ceiling ("at most %{limit} bytes can be stored for this field", compat section 2.4 row "Service storage error text"). No README reference on project-facing copy (UX-04).
 
@@ -910,7 +910,7 @@ Elsewhere:
 ### Assets, locales, docs, specs
 - `assets/stylesheets/dcf_config.css` (new) and `assets/stylesheets/depending_custom_fields.css` (project rules removed) [WP-28]; `assets/javascripts/dcf_values_page.js` (new) [WP-30].
 - `config/locales/{en,de,fr,nl}.yml`: the owned keys of section 11, each in its owner WP; `text_dependency_matrix_help` removed [WP-27]. Texts from `large_lists_i18n_registry.md`.
-- `CHANGELOG.md` (each WP adds its lines; WP-32 finalizes 0.3.0), `README.md` [WP-31 performance notes; WP-32], `docs/specs/*` [A5 in WP-27, A6 in WP-29, finalized in WP-32] (section 15).
+- `CHANGELOG.md` (each WP adds its lines; WP-32 finalizes 0.1.0 (M3)), `README.md` [WP-31 performance notes; WP-32], `docs/specs/*` [A5 in WP-27, A6 in WP-29, finalized in WP-32] (section 15).
 - Specs and JS tests (section 15).
 
 ## 13. Behaviour table (before and after)
@@ -918,7 +918,7 @@ Elsewhere:
 | Surface | Before | After |
 |---|---|---|
 | edit_dependencies markup | NxM checkbox matrix with nested names (50x5,000 is about 58 MB) | shared editor partial, data attributes, one hidden JSON input |
-| Transport | nested params | `dependencies_json` (multipart); nested still accepted (deprecated in 0.3.0, accepted throughout 0.3.x, removable no earlier than 0.4.0) |
+| Transport | nested params | `dependencies_json` (multipart); nested still accepted (deprecated in 0.1.0, accepted throughout 0.1.x, removable no earlier than 0.2.0) |
 | Parent values with `[` or `]` | corrupted or moved (Rack 2.2) | exact |
 | More than about 4,090 links | PATCH becomes POST, 404, not audited | saved, up to 4 MiB of JSON |
 | No JavaScript | matrix usable | noscript text, Save disabled; nothing can be posted |
@@ -936,8 +936,8 @@ Elsewhere:
 | Show usage | about 4 capped queries per row | 2 queries per page plus one child load; exact counts |
 | Writes on PostgreSQL/SQLite via project pages | unbounded | refused above max(2,048 KiB setting, current size) with an audited 422 |
 | New list values via project pages | any length | at most 255 characters |
-| MySQL oversize | 500 or silent truncation | audited 422 (limits mapping, from 0.1.0), neutral message |
-| Flash with a field name containing HTML | rendered as HTML (`html_safe`) | escaped (`translate_error`, from 0.1.0) |
+| MySQL oversize | 500 or silent truncation | audited 422 (limits mapping, from 0.1.0 (M1)), neutral message |
+| Flash with a field name containing HTML | rendered as HTML (`html_safe`) | escaped (`translate_error`, from 0.1.0 (M1)) |
 | Assets | global CSS from the head hook | editor assets from the head hook only; project views include `dcf_config.css` and page-specific JS |
 
 ## 14. Edge cases
@@ -982,7 +982,7 @@ Elsewhere:
 
 ## 15. Specs and docs
 
-### Characterization first (WP-04, 0.0.16, committed alone, green on the base matrix; revision 2 WP-P0)
+### Characterization first (WP-04, 0.1.0 (M1), committed alone, green on the base matrix; revision 2 WP-P0)
 - A legacy `update_dependencies` with no mapping params clears the mapping and writes one audit row (T-DEPJ-9).
 - The current `update_dependencies` audit shape (flipped in WP-27).
 - The current re-render after a validation failure (flipped in WP-27).
@@ -1107,7 +1107,7 @@ The WP evidence runs it under seeds 1 and 4242.
   - §D: drag at most 500 values, unfiltered;
   - §J: sort;
   - §E: `batch_scope`;
-  - §F and §G: payload schema v1, legacy fallback and removal target (deprecated in 0.3.0, removable no earlier than 0.4.0), aggregated validation, delta, 409 conflict panel (`data-dcf-editor-conflict-mapping`);
+  - §F and §G: payload schema v1, legacy fallback and removal target (deprecated in 0.1.0, removable no earlier than 0.2.0), aggregated validation, delta, 409 conflict panel (`data-dcf-editor-conflict-mapping`);
   - error table: `error_invalid_dependency_payload` and `error_dcf_dependencies_too_large_to_send` (editor keys, WP-25), `error_dcf_value_length`, the limits keys.
 - **Audit spec:**
   - §3: v2 delta, client-reported `source`/`import`, AuditPayload marker;
@@ -1133,64 +1133,64 @@ The WP evidence runs it under seeds 1 and 4242.
 
 ## 16. CHANGELOG lines for project items (BC-14), version targets
 
-**Version targets.** The project items ship in 0.3.0 (WP-27 to WP-31; the 0.3.0 CHANGELOG is finalized by WP-32). Two lines below belong to 0.1.0 because their WP ships there (WP-11 and WP-12: MySQL oversize mapping, escaped flash interpolations). The legacy nested project params are deprecated in 0.3.0, accepted throughout 0.3.x and removable no earlier than 0.4.0 (UD-01, compat section 2.3). The admin safe attributes are the editor area's decision (UD-15: kept permanently). Each line carries its release, WP and compat PC id; the PC wording in `large_lists_compatibility.md` section 4 is canonical where it differs.
+**Version targets.** The project items ship in 0.1.0 (M3) (WP-27 to WP-31; the 0.1.0 (M3) CHANGELOG is finalized by WP-32). Two lines below belong to 0.1.0 (M1) because their WP ships there (WP-11 and WP-12: MySQL oversize mapping, escaped flash interpolations). The legacy nested project params are deprecated in 0.1.0, accepted throughout 0.1.x and removable no earlier than 0.2.0 (UD-01, compat section 2.3). The admin safe attributes are the editor area's decision (UD-15: kept permanently). Each line carries its release, WP and compat PC id; the PC wording in `large_lists_compatibility.md` section 4 is canonical where it differs.
 
 **Added:**
-- [0.3.0, WP-27, PC-45] Project settings: a scalable dependency editor replaces the checkbox matrix (search, sections per parent value, check or uncheck all shown, unlinked filters, per parent defaults, CSV import with preview, CSV export).
-- [0.3.0, WP-28, PC-59] Search on the values page for fields with more than 25 values, and pagination for fields with more than 500 values (gap 11).
-- [0.3.0, WP-29, PC-60] Sort A-Z / Sort Z-A buttons. Members with "Manage project custom field configuration" get the new sort action automatically.
-- [0.3.0, WP-30, PC-61] Page-scoped save of key/value list values on paginated or filtered pages, with a warning before leaving unsaved changes.
-- [0.3.0, WP-31, PC-62] New plugin setting: maximum stored size for changes made in project settings (default 2,048 KiB).
-- [0.3.0, WP-27, PC-52] A stale save on the project dependency page shows the current version and your version, with use, keep and export actions (same conflict panel as the admin form, UD-17).
+- [0.1.0 (M3), WP-27, PC-45] Project settings: a scalable dependency editor replaces the checkbox matrix (search, sections per parent value, check or uncheck all shown, unlinked filters, per parent defaults, CSV import with preview, CSV export).
+- [0.1.0 (M3), WP-28, PC-59] Search on the values page for fields with more than 25 values, and pagination for fields with more than 500 values (gap 11).
+- [0.1.0 (M3), WP-29, PC-60] Sort A-Z / Sort Z-A buttons. Members with "Manage project custom field configuration" get the new sort action automatically.
+- [0.1.0 (M3), WP-30, PC-61] Page-scoped save of key/value list values on paginated or filtered pages, with a warning before leaving unsaved changes.
+- [0.1.0 (M3), WP-31, PC-62] New plugin setting: maximum stored size for changes made in project settings (default 2,048 KiB).
+- [0.1.0 (M3), WP-27, PC-52] A stale save on the project dependency page shows the current version and your version, with use, keep and export actions (same conflict panel as the admin form, UD-17).
 
 **Changed:**
-- [0.3.0, WP-27, PC-47] The dependency page sends the mapping as one JSON field, so parent values containing [ or ] are stored exactly.
-- [0.3.0, WP-27, PC-67] The project dependency page shows the global/shared field warning, and a notice instead of the editor when the parent field is not available in the project or no longer exists.
-- [0.3.0, WP-27, PC-51] Links to values that no longer exist are reported by the editor and removed when the mapping is saved; the audit counts them.
-- [0.3.0, WP-27 and WP-29, PC-57] Dependency audit rows store a compact summary (counts, samples, SHA-256 of the mapping); sort and reorder rows store the SHA-256 of the order. The source and import details are reported by the browser and are informational.
-- [0.3.0, WP-28, PC-59] Drag-and-drop ordering is offered only for unfiltered lists with at most 500 values.
-- [0.3.0, WP-28, PC-59] "Show usage" reports exact counts.
-- [0.3.0, WP-28, PC-59] Redirects keep the search and the page.
-- [0.3.0, WP-31, PC-62] Values added or renamed in project settings are limited to 255 characters, and project-settings changes cannot grow a field beyond the new storage setting.
-- [0.3.0, WP-27, PC-55] The dependency editors need JavaScript; without it the project page disables Save (UD-16).
+- [0.1.0 (M3), WP-27, PC-47] The dependency page sends the mapping as one JSON field, so parent values containing [ or ] are stored exactly.
+- [0.1.0 (M3), WP-27, PC-67] The project dependency page shows the global/shared field warning, and a notice instead of the editor when the parent field is not available in the project or no longer exists.
+- [0.1.0 (M3), WP-27, PC-51] Links to values that no longer exist are reported by the editor and removed when the mapping is saved; the audit counts them.
+- [0.1.0 (M3), WP-27 and WP-29, PC-57] Dependency audit rows store a compact summary (counts, samples, SHA-256 of the mapping); sort and reorder rows store the SHA-256 of the order. The source and import details are reported by the browser and are informational.
+- [0.1.0 (M3), WP-28, PC-59] Drag-and-drop ordering is offered only for unfiltered lists with at most 500 values.
+- [0.1.0 (M3), WP-28, PC-59] "Show usage" reports exact counts.
+- [0.1.0 (M3), WP-28, PC-59] Redirects keep the search and the page.
+- [0.1.0 (M3), WP-31, PC-62] Values added or renamed in project settings are limited to 255 characters, and project-settings changes cannot grow a field beyond the new storage setting.
+- [0.1.0 (M3), WP-27, PC-55] The dependency editors need JavaScript; without it the project page disables Save (UD-16).
 
 **Fixed:**
-- [0.3.0, WP-27, PC-47] Saving large dependency mappings (more than about 4,000 links) in project settings no longer ends on "page not found".
-- [0.1.0, WP-11 and WP-12, PC-14] On MySQL/MariaDB, a too large value list or mapping gives a clear, audited error instead of an internal error or silent truncation.
-- [0.3.0, WP-27, PC-58] Correcting a failed dependency save and saving again no longer reports a conflict.
-- [0.1.0, WP-12, PC-20] Error messages no longer interpret HTML in field names.
+- [0.1.0 (M3), WP-27, PC-47] Saving large dependency mappings (more than about 4,000 links) in project settings no longer ends on "page not found".
+- [0.1.0 (M1), WP-11 and WP-12, PC-14] On MySQL/MariaDB, a too large value list or mapping gives a clear, audited error instead of an internal error or silent truncation.
+- [0.1.0 (M3), WP-27, PC-58] Correcting a failed dependency save and saving again no longer reports a conflict.
+- [0.1.0 (M1), WP-12, PC-20] Error messages no longer interpret HTML in field names.
 
 **Deprecated:**
-- [0.3.0, WP-27, PC-63] Posting `value_dependencies` / `default_value_dependencies` as nested params to the project dependency page. Send `dependencies_json` (removed no earlier than 0.4.0).
+- [0.1.0 (M3), WP-27, PC-63] Posting `value_dependencies` / `default_value_dependencies` as nested params to the project dependency page. Send `dependencies_json` (removed no earlier than 0.2.0).
 
 **Removed:**
-- [0.3.0, WP-27, PC-64] The matrix markup of the project dependency page.
-- [0.3.0, WP-27, PC-64] The locale key `text_dependency_matrix_help`.
+- [0.1.0 (M3), WP-27, PC-64] The matrix markup of the project dependency page.
+- [0.1.0 (M3), WP-27, PC-64] The locale key `text_dependency_matrix_help`.
 
 **Upgrade notes:**
-- [0.3.0, WP-27, PC-55] Managers need JavaScript to change dependency mappings in project settings.
-- [0.3.0, WP-31, PC-62] On PostgreSQL and SQLite, changes from project settings are limited by the new storage setting; the administration and the API are not.
-- [0.3.0, WP-28 and WP-30, PC-65] Restart Redmine after upgrading (new assets `dcf_config.css`, `dcf_values_page.js`).
+- [0.1.0 (M3), WP-27, PC-55] Managers need JavaScript to change dependency mappings in project settings.
+- [0.1.0 (M3), WP-31, PC-62] On PostgreSQL and SQLite, changes from project settings are limited by the new storage setting; the administration and the API are not.
+- [0.1.0 (M3), WP-28 and WP-30, PC-65] Restart Redmine after upgrading (new assets `dcf_config.css`, `dcf_values_page.js`).
 
 ## 17. Work packages and order
 
-The canonical work packages are those of `large_lists_work_packages.md` (WP-27 to WP-31 for this area, all 0.3.0). The revision 2 project-local ids WP-P0 to WP-P7 are kept only as a mapping; every reference to them elsewhere in this document means the canonical WP named here.
+The canonical work packages are those of `large_lists_work_packages.md` (WP-27 to WP-31 for this area, all 0.1.0 (M3)). The revision 2 project-local ids WP-P0 to WP-P7 are kept only as a mapping; every reference to them elsewhere in this document means the canonical WP named here.
 
 | Revision 2 id | Canonical WP (release) | Content | Depends on (canonical) |
 |---|---|---|---|
-| WP-P0 | WP-04 (0.0.16) | Characterization specs (`spec/characterization/project_dependencies_spec.rb`: legacy clear-all, audit shape, re-render, enumeration reorder with 3 or more rows); flips listed in WP-27 | WP-02, WP-03 |
-| WP-P1 | WP-12 (0.1.0), WP-31 (0.3.0), WP-27 (0.3.0) | WP-12: `OperationError` kwargs, `record_failure` summary, `translate_error(error_or_key)` escaping, `dcf_status_code`. WP-31: `save_field!` with ceiling, `ProjectStoragePolicy` + setting, per-value cap, every `save!` replaced, editor project storage limit in `dependency_editor_config.rb`, settings page request spec. WP-27: `dcf_flash_box` | WP-12: WP-11. WP-31: WP-11, WP-12, WP-27, WP-29, WP-30 (gap 14: WP-30 because both change `update_enumerations_service.rb`) |
-| WP-P2 | WP-27 (0.3.0) | `DependencyMappingService` JSON path (`parsed_payload` from `parse!`, `labels` from `value_options` tuples, `shape_defaults!`, Set validation), `DependencyDelta`, controller update path (reload, `posted:`, `conflict:`), request specs | WP-12, WP-21, WP-25, WP-26 (gap 14: WP-26 for the project-mode import end to end); transitively WP-05 (`parent_of`, `value_options`) and WP-18 (point 1 cache removal, head hook) |
-| WP-P3 | WP-27 (0.3.0), WP-28 (0.3.0) | WP-27: edit_dependencies view, fixture scenario. WP-28: `dcf_config.css` split, per-view asset includes | WP-27: editor partial, presenter and JS (WP-24, WP-25: `data-dcf-editor-submit`, conflict panel, max payload) |
-| WP-P4 | WP-28 (0.3.0) | `ValueCollation` + shared fixture, `ValuesPage` (rows from `value_options` tuples, `FILTER_MIN` 25, `UNPAGINATED_MAX` 500), `page_usage` with `FieldIndex`, show view, toolbar, empty state, state preservation | WP-05 (`FieldIndex`, `value_options`), WP-12, WP-23 |
-| WP-P5 | WP-29 (0.3.0) | `SortValuesService`, route, `init.rb`, buttons, `order_sha256` in reorder | WP-28 |
-| WP-P6 | WP-30 (0.3.0) | Enumeration page mode, `dcf_values_page.js` + jsdom test | WP-28 |
-| WP-P7 | WP-27 to WP-31, WP-32 (0.3.0) | Locales (each owner WP adds its keys; texts from `large_lists_i18n_registry.md`), docs amendments (A5 in WP-27, A6 in WP-29), CHANGELOG lines per WP; WP-32 finalizes CHANGELOG 0.3.0, README and docs | WP-32: WP-21 to WP-31 |
+| WP-P0 | WP-04 (0.1.0 (M1)) | Characterization specs (`spec/characterization/project_dependencies_spec.rb`: legacy clear-all, audit shape, re-render, enumeration reorder with 3 or more rows); flips listed in WP-27 | WP-02, WP-03 |
+| WP-P1 | WP-12 (0.1.0 (M1)), WP-31 (0.1.0 (M3)), WP-27 (0.1.0 (M3)) | WP-12: `OperationError` kwargs, `record_failure` summary, `translate_error(error_or_key)` escaping, `dcf_status_code`. WP-31: `save_field!` with ceiling, `ProjectStoragePolicy` + setting, per-value cap, every `save!` replaced, editor project storage limit in `dependency_editor_config.rb`, settings page request spec. WP-27: `dcf_flash_box` | WP-12: WP-11. WP-31: WP-11, WP-12, WP-27, WP-29, WP-30 (gap 14: WP-30 because both change `update_enumerations_service.rb`) |
+| WP-P2 | WP-27 (0.1.0 (M3)) | `DependencyMappingService` JSON path (`parsed_payload` from `parse!`, `labels` from `value_options` tuples, `shape_defaults!`, Set validation), `DependencyDelta`, controller update path (reload, `posted:`, `conflict:`), request specs | WP-12, WP-21, WP-25, WP-26 (gap 14: WP-26 for the project-mode import end to end); transitively WP-05 (`parent_of`, `value_options`) and WP-18 (point 1 cache removal, head hook) |
+| WP-P3 | WP-27 (0.1.0 (M3)), WP-28 (0.1.0 (M3)) | WP-27: edit_dependencies view, fixture scenario. WP-28: `dcf_config.css` split, per-view asset includes | WP-27: editor partial, presenter and JS (WP-24, WP-25: `data-dcf-editor-submit`, conflict panel, max payload) |
+| WP-P4 | WP-28 (0.1.0 (M3)) | `ValueCollation` + shared fixture, `ValuesPage` (rows from `value_options` tuples, `FILTER_MIN` 25, `UNPAGINATED_MAX` 500), `page_usage` with `FieldIndex`, show view, toolbar, empty state, state preservation | WP-05 (`FieldIndex`, `value_options`), WP-12, WP-23 |
+| WP-P5 | WP-29 (0.1.0 (M3)) | `SortValuesService`, route, `init.rb`, buttons, `order_sha256` in reorder | WP-28 |
+| WP-P6 | WP-30 (0.1.0 (M3)) | Enumeration page mode, `dcf_values_page.js` + jsdom test | WP-28 |
+| WP-P7 | WP-27 to WP-31, WP-32 (0.1.0 (M3)) | Locales (each owner WP adds its keys; texts from `large_lists_i18n_registry.md`), docs amendments (A5 in WP-27, A6 in WP-29), CHANGELOG lines per WP; WP-32 finalizes CHANGELOG 0.1.0 (M3), README and docs | WP-32: WP-21 to WP-31 |
 
 ## 18. Out of scope (tracked separately)
 - Move to position N on paginated lists.
 - Autocomplete for the default-value select on very large lists.
 - Counting the issues that become legacy combinations after links are removed.
 - Adding missing child values during an import at project level (admin form only, point 8).
-- Wizard save hardening: a SECURITY defect (SP-07, SD-01), tracked separately with a CHANGELOG Security entry, scheduled no later than the point 1 release (0.2.0; owner decision UD-03, WP-07 or WP-20).
+- Wizard save hardening: a SECURITY defect (SP-07, SD-01), tracked separately with a CHANGELOG Security entry, scheduled no later than the point 1 release (0.1.0 (M2); owner decision UD-03, WP-07 or WP-20).
 - The time-entry context menu.

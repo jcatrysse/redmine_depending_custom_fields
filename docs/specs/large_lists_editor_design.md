@@ -1,13 +1,13 @@
 # Admin dependency editor, shared editor component, single JSON transport, CSV import/export (revision 2)
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 7, 8 (admin side); section 7 fixes the editor contract that point 9 implements. Owner area: editor (payload schema and parser, admin JSON transport, values endpoint and value wire format, shared editor partial, presenter and JS, CSV import/export, editor locale keys). Work packages: WP-21, WP-22, WP-23, WP-24, WP-25, WP-26 (primary, release 0.3.0); WP-27 (project page on the shared editor, section 7) and WP-31 (project storage limit on the editor root), both 0.3.0; prerequisites WP-05 (`DependencyRules.prune_mapping`, `value_keys`, `value_options`, `resolve_parent_for_save`, `parent_of`, 0.0.16), WP-11 (`CustomFieldValidationPatch`, `StorageLimits`, 0.1.0), WP-16 (`spec/support/dcf_js_fixtures.rb`, 0.2.0) and WP-18 (head hook and `ClientConfig`, 0.2.0). Decisions: UD-01, UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-22, UD-23.
+> Points: 7, 8 (admin side); section 7 fixes the editor contract that point 9 implements. Owner area: editor (payload schema and parser, admin JSON transport, values endpoint and value wire format, shared editor partial, presenter and JS, CSV import/export, editor locale keys). Work packages: WP-21, WP-22, WP-23, WP-24, WP-25, WP-26 (primary, release 0.1.0 (M3)); WP-27 (project page on the shared editor, section 7) and WP-31 (project storage limit on the editor root), both 0.1.0 (M3); prerequisites WP-05 (`DependencyRules.prune_mapping`, `value_keys`, `value_options`, `resolve_parent_for_save`, `parent_of`, 0.1.0 (M1)), WP-11 (`CustomFieldValidationPatch`, `StorageLimits`, 0.1.0 (M1)), WP-16 (`spec/support/dcf_js_fixtures.rb`, 0.1.0 (M2)) and WP-18 (head hook and `ClientConfig`, 0.1.0 (M2)). Decisions: UD-01, UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-22, UD-23.
 
-**Consolidation.** The final completeness critic (gaps 1, 8, 9 and 12, plus the editor parts of gaps 2 to 5 and 14) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-07, 0.1.0 = WP-08..WP-14, 0.2.0 = WP-15..WP-20, 0.3.0 = WP-21..WP-32; everything in this document ships in 0.3.0. Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, JS keys and owner WPs.
+**Consolidation.** The final completeness critic (gaps 1, 8, 9 and 12, plus the editor parts of gaps 2 to 5 and 14) and the binding contracts of `large_lists_compatibility.md` section 2.4 ("Reconciled cross-area contracts") and section 3 ("Contract rows added during consolidation") are applied inline below. Where the revision 2 text conflicted with them, they win. Release targets follow the work packages: 0.0.16 = WP-01..WP-03 and WP-07, 0.1.0 (M1) = WP-04..WP-06 and WP-08..WP-14, 0.1.0 (M2) = WP-15..WP-20, 0.1.0 (M3) = WP-21..WP-32; everything in this document ships in 0.1.0 (M3). Locale texts live only in `large_lists_i18n_registry.md`; this document names keys, JS keys and owner WPs.
 
 | Topic | Consolidated rule | Sections |
 |---|---|---|
-| Release | All editor items ship in 0.3.0 (UD-01; WP-21 to WP-27, WP-31, release WP-32). Project nested params on `update_dependencies` are deprecated in 0.3.0 (accepted throughout 0.3.x) and removable no earlier than 0.4.0. | 7, 14, 15 |
+| Release | All editor items ship in 0.1.0 (M3) (UD-01; WP-21 to WP-27, WP-31, release WP-32). Project nested params on `update_dependencies` are deprecated in 0.1.0 (accepted throughout 0.1.x) and removable no earlier than 0.2.0. | 7, 14, 15 |
 | Failed-save re-render (gap 1) | Hidden input always blank on both pages; the parsed ok payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"`; no `data-dcf-editor-echo`, no `input_value`. Project: `posted: service.parsed_payload` passed to `DependencyEditorConfig.for_project`. Tests in WP-22, WP-25 and WP-27. | 3.4, 5.2, 5.3, 7, 11, 13 |
 | Callback registration | The transport callbacks live in the single `Patches::CustomFieldValidationPatch` created by WP-11 (compat section 2.4), registered before the storage validation; there is no separate `CustomFieldDependenciesTransportPatch` module. | 1, 3.1, 10, 13 |
 | Storage attributes | `StorageLimits.column_limit(column, model = CustomField)`, `StorageLimits.base_bytes(field)`, new `data-dcf-editor-storage-warn` (`StorageLimits::WARN_PERCENT`, 90); one client key `text_dcf_storage_estimate` (owner WP-24). Project mode uses `ProjectStoragePolicy.format_store_limit(field)` (WP-31, UD-22). | 5.3, 5.9, 8, 9 |
@@ -86,7 +86,7 @@ Admin form (core CustomFieldsController, PUT/POST)          Project page (Projec
 
 Live parent change on the admin form uses `GET /dcf_dependency_editor/values?custom_field_id=&type=&kind=` (admin-only, session, no format). The plugin JSON API (`/depending_custom_fields/*.json`) is untouched.
 
-## 2. Payload contract v1 and the single parser (owner: editor area; WP-21, 0.3.0)
+## 2. Payload contract v1 and the single parser (owner: editor area; WP-21, 0.1.0 (M3))
 
 One file, one constant, one spec, used by the admin virtual attribute AND `DependencyMappingService` (resolves R3, QA-02, BC-03, SP-02).
 
@@ -177,11 +177,11 @@ DependencyRules.prune_mapping(vd, dd, parent_keys: parent_keys, child_keys: chil
 
 Key owners (gap 8, section 9): the admin model errors are added by WP-22; the flash keys `error_invalid_dependency_payload` and `error_dcf_dependencies_too_large_to_send` are added by WP-25 (the client pre-check uses the latter too) and reused, never redefined, by WP-27. The project design's `error_dcf_dependency_payload_too_large` (`%{max}`) is not created (compat section 2.4, row "Payload-too-large key").
 
-## 3. Admin transport (WP-22, 0.3.0)
+## 3. Admin transport (WP-22, 0.1.0 (M3))
 
 ### 3.1 Transport callbacks in the single validation module (R5, BC-13; WP-22)
 
-Consolidated (compat section 2.4, row "CustomField callback registration"): the transport lives in `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb`, the ONE module `RedmineDependingCustomFields::Patches::CustomFieldValidationPatch` that WP-11 (0.1.0) creates and prepends in `init.rb` right after the existing `CustomField.prepend ...CustomFieldPatch` (init.rb:61). WP-22 adds the transport callbacks and methods below to that module, registered before WP-11's storage validation, so the storage check always measures the decoded and pruned mapping. Revision 2's separate `CustomFieldDependenciesTransportPatch` file and the limits area's separate `CustomFieldStoragePatch` are not created. `CustomFieldPatch` gets no new callbacks, so the stand-in classes of `spec/patches/custom_field_required_validation_spec.rb` keep working unchanged (WP-04 rewrites that spec DB-backed anyway). Symbol callbacks are deduplicated if init.rb runs twice (limits V12).
+Consolidated (compat section 2.4, row "CustomField callback registration"): the transport lives in `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb`, the ONE module `RedmineDependingCustomFields::Patches::CustomFieldValidationPatch` that WP-11 (0.1.0 (M1)) creates and prepends in `init.rb` right after the existing `CustomField.prepend ...CustomFieldPatch` (init.rb:61). WP-22 adds the transport callbacks and methods below to that module, registered before WP-11's storage validation, so the storage check always measures the decoded and pruned mapping. Revision 2's separate `CustomFieldDependenciesTransportPatch` file and the limits area's separate `CustomFieldStoragePatch` are not created. `CustomFieldPatch` gets no new callbacks, so the stand-in classes of `spec/patches/custom_field_required_validation_spec.rb` keep working unchanged (WP-04 rewrites that spec DB-backed anyway). Symbol callbacks are deduplicated if init.rb runs twice (limits V12).
 
 ```ruby
 # frozen_string_literal: true
@@ -331,7 +331,7 @@ Requirement on the server and limits areas (BC-02): `before_custom_field_save` a
 - **Non-depending formats.** `dependencies_json` is ignored entirely.
 - **GET /custom_fields/new?custom_field[dependencies_json]=...** The writer stores it, validation never runs, nothing is applied or rendered (SP-11).
 
-## 4. Values endpoint and the value wire format (R7; WP-24, 0.3.0)
+## 4. Values endpoint and the value wire format (R7; WP-24, 0.1.0 (M3))
 
 ### 4.1 Wire format (one shape everywhere)
 Ruby side: `DependencyRules.value_options(cf)` (server area) returns ordered tuples `[[key, label, active], ...]` (list: possible_values order, label = key, active = true; enumeration: all enumerations by position, inactive included). One function turns them into the wire format, used by the endpoint and by both presenter modes:
@@ -360,7 +360,7 @@ Consolidated (gap 3, compat section 3, row "value_options"): Ruby consumers (WP-
 - Contract spec: for the same field, the endpoint's `values` equals the presenter's `data-dcf-editor-parent-values` and the committed `test/js/fixtures/value_options.json` (endpoint == presenter == fixture, WP-24).
 - The client fetches this URL only after the same-origin check of 5.6 (SP-15).
 
-## 5. Shared editor component (single owner of the editor DOM contract: R4, QA-03, UX-01; WP-23 model, WP-24 partial and presenter, WP-25 DOM layer and CSS, 0.3.0)
+## 5. Shared editor component (single owner of the editor DOM contract: R4, QA-03, UX-01; WP-23 model, WP-24 partial and presenter, WP-25 DOM layer and CSS, 0.1.0 (M3))
 
 ### 5.1 Files
 | File | Purpose |
@@ -569,7 +569,7 @@ The capture-phase listener on `document` sees the `change` of `#custom_field_fie
 
 Removed from `depending_custom_fields.css`: `.dependencies-matrix*`, `.dependencies-defaults*`, `.dcf-dependencies-matrix td.center`. Reused core classes: `box`, `tabular`, `warning`, `flash warning`/`flash error`, `icon icon-warning`, `badge badge-status-locked`, `table.list`, `em.info`, `hidden-for-sighted`, `buttons`.
 
-## 6. Import and export (client-side, pure model, node tests; WP-26, 0.3.0)
+## 6. Import and export (client-side, pure model, node tests; WP-26, 0.1.0 (M3))
 
 Nothing posts until the normal Save; import inputs have no `name`.
 
@@ -641,14 +641,14 @@ details.dcf-dep-editor__panel.dcf-dep-editor__export > summary "Export links (CS
 
 Panels are hidden when there are no parent or child values.
 
-## 7. Project-level integration contract (point 9 implements in WP-27, 0.3.0; editor owns the contract)
+## 7. Project-level integration contract (point 9 implements in WP-27, 0.1.0 (M3); editor owns the contract)
 
 - **View.** `edit_dependencies.html.erb` keeps its PATCH `form_tag(..., multipart: true)` and `state_hash`, renders the parent-not-available notice itself (server side, before the editor), and otherwise renders `render 'depending_custom_fields/dependency_editor', editor: RedmineDependingCustomFields::DependencyEditorConfig.for_project(field: @field, parent: @parent, view: self, posted: @posted_payload, conflict: @conflict_payload)` followed by `<p class="buttons"><%= submit_tag l(:button_save), disabled: true, data: { dcf_editor_submit: 1 } %> cancel link</p>`. Without JS (or with an inert editor) Save stays disabled: a no-op is never reported as success and nobody is told to reload (UX-01). The page does not render `text_dependency_matrix_help` (deleted by WP-27, its last user) nor its own orphan or empty-state copy; the editor provides help, orphans and empty states on both pages. No editor assets through `content_for`.
 - **Parent notices (gap 2).** The parent-missing and parent-not-available notices (`text_dcf_parent_missing`, `text_dcf_parent_not_available`, project keys) are decided with `DependencyRules.parent_of(field)` (WP-05: memoized raw lookup, nil for blank, dangling, wrong type or family, or self); the editor is rendered only when a parent is available.
 - **Shared/global fields (UD-23).** Only the scope banner (WP-27, `dcf_flash_box`); no server-side confirmation panel for dependency saves, including replace imports.
 - **Controller.**
   - `params.key?(:dependencies_json)` selects the JSON path; a blank value raises (via `parse!`) `error_invalid_dependency_payload`, audited, never a clear.
-  - Key absent: legacy nested params with today's semantics (nothing posted clears), deprecated in 0.3.0 (accepted throughout 0.3.x, with a deprecation log), removable no earlier than 0.4.0.
+  - Key absent: legacy nested params with today's semantics (nothing posted clears), deprecated in 0.1.0 (accepted throughout 0.1.x, with a deprecation log), removable no earlier than 0.2.0.
   - 422 re-render: `@posted_payload = service.parsed_payload` (the service's memoized `Result`, no second parse, SP-17) when ok, passed as `posted:` to `DependencyEditorConfig.for_project`. Failed-save rule (gap 1): the hidden input stays blank, the parsed payload is rendered in `data-dcf-editor-mapping` with `data-dcf-editor-dirty="1"`; no `input_value`, no `data-dcf-editor-echo`. When the payload did not parse, the stored mapping is rendered, not dirty.
   - 409 re-render: the service never parsed (state_hash preamble), so the controller parses once: `@conflict_payload = DependencyPayload.parse(params[:dependencies_json])` when ok; the editor shows the fresh mapping and the conflict panel (5.8), identical to the admin stale case (UX-09).
   - Flash interpolations go through the project area's escaping helper (SP-06), called as `translate_error(e)` with the `OperationError` (gap 4, compat section 3); editor interpolations are integers only.
@@ -799,12 +799,12 @@ Flat keys (JS key in parentheses when sent through `data-dcf-editor-i18n`):
 Reused through the JS map: core `button_collapse_all` (collapse_all), `button_clear` (clear), `button_export` (export), `label_preview` (preview), `label_fields_separator` (separator), `label_comma_char` (comma), `label_semi_colon_char` (semicolon), `general_text_Yes` (yes), `general_text_No` (no), `field_default_value` (default_value), `field_status` (status), `text_warn_on_leaving_unsaved` (unsaved); plugin `text_dcf_no_default` (no_default); `text_dcf_storage_estimate` (storageEstimate, owner WP-24, in the table above; replaces revision 2's limits `text_dcf_storage_estimate_over` (storage_over)). Map entries for reused keys are added by the WP whose UI uses them: WP-25 `collapse_all`, `clear`, `default_value`, `unsaved`, `no_default`; WP-26 `export`, `preview`, `separator`, `comma`, `semicolon`, `yes`, `no`, `status`; WP-24 `storageEstimate`. Phrasing avoids plural forms ("Label: %{count}"). JS interpolates `%{name}` tokens; `%{size}`/`%{limit}` are delimited with Intl.NumberFormat. YAML: values containing `"` single-quoted (en and nl); de and fr use „…“ and « … » instead of ASCII quotes (registry).
 
 ## 10. File-by-file changes
-| file | change | WP (all 0.3.0 unless noted) |
+| file | change | WP (all 0.1.0 (M3) unless noted) |
 |---|---|---|
 | `init.rb` | add `'dependencies_json'` to `CustomField.safe_attributes` (nested attributes stay permanently, UD-15); no new prepend: `CustomFieldValidationPatch` is already prepended after `CustomFieldPatch` by WP-11 (revision 2's `CustomFieldDependenciesTransportPatch` prepend is superseded) | WP-22 |
 | `lib/redmine_depending_custom_fields.rb` | `require_relative` `dependency_payload` and `dependency_editor_config` | WP-21, WP-24 |
 | `lib/redmine_depending_custom_fields/dependency_payload.rb` | NEW (section 2) | WP-21 |
-| `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb` | transport callbacks and methods added (3.1) to the module created by WP-11 (0.1.0); replaces revision 2's NEW `custom_field_dependencies_transport_patch.rb` | WP-22 |
+| `lib/redmine_depending_custom_fields/patches/custom_field_validation_patch.rb` | transport callbacks and methods added (3.1) to the module created by WP-11 (0.1.0 (M1)); replaces revision 2's NEW `custom_field_dependencies_transport_patch.rb` | WP-22 |
 | `lib/redmine_depending_custom_fields/dependency_editor_config.rb` | NEW presenter (5.3, 4.1, 9); `I18N` extended by WP-25 and WP-26; project storage limit from `ProjectStoragePolicy.format_store_limit(field)` | WP-24 (WP-25, WP-26, WP-31) |
 | `lib/redmine_depending_custom_fields/patches/custom_field_patch.rb` | no editor change | - |
 | `app/controllers/dcf_dependency_editor_controller.rb`, `config/routes.rb` | NEW endpoint and route (4.2) | WP-24 |
@@ -812,11 +812,11 @@ Reused through the JS map: core `button_collapse_all` (collapse_all), `button_cl
 | `app/views/custom_fields/formats/_depending_list.html.erb`, `_depending_enumeration.html.erb` | new order; default row always rendered; editor last; old inline required warning removed | WP-25 |
 | `app/views/custom_fields/formats/_dependencies_matrix.html.erb`, `_default_dependencies.html.erb` | DELETED | WP-25 |
 | `app/views/project_custom_field_configuration/edit_dependencies.html.erb` | point 9 per section 7 | WP-27 |
-| `lib/redmine_depending_custom_fields/client_config.rb` (server area, created by WP-18 in 0.2.0) | `editor_asset_tags` list of 5.1 | WP-25 |
+| `lib/redmine_depending_custom_fields/client_config.rb` (server area, created by WP-18 in 0.1.0 (M2)) | `editor_asset_tags` list of 5.1 | WP-25 |
 | `assets/javascripts/dcf_dependency_editor_model.js`, `dcf_dependency_editor.js` | NEW | WP-23 (model), WP-25 (DOM layer), WP-26 (import/export additions) |
 | `assets/stylesheets/dcf_dependency_editor.css` | NEW; matrix rules removed from `depending_custom_fields.css` | WP-25 |
 | `config/locales/{en,de,fr,nl}.yml` | section 9 keys (texts from `large_lists_i18n_registry.md`); `text_dependency_matrix_help` deleted | owner WP per key (WP-22, WP-24, WP-25, WP-26, WP-28); deletion WP-27 |
-| `spec/support/dcf_js_fixtures.rb` | shared fixture mechanism (section 8), used by the editor fixtures | created by WP-16 (0.2.0); used by WP-24 |
+| `spec/support/dcf_js_fixtures.rb` | shared fixture mechanism (section 8), used by the editor fixtures | created by WP-16 (0.1.0 (M2)); used by WP-24 |
 | `test/js/fixtures/editor/*.html`, `test/js/fixtures/payload/*.json` (WP-23 path; revision 2 wrote `payloads/`), `test/js/fixtures/value_options.json` | NEW generated fixtures | WP-24 (editor, value_options), WP-23 (payload), WP-26 (import goldens) |
 | `test/js/dcf_dependency_editor.test.js`, `test/js/dependency_editor_storage.test.js` | NEW jsdom tests (including the same-origin and storage cases of gap 12) | WP-25 (WP-26, WP-27 extend the first) |
 | `README.md`, `CHANGELOG.md` | section 15 | WP-25, WP-26, WP-27, WP-32 |
@@ -868,10 +868,10 @@ Reused through the JS map: core `button_collapse_all` (collapse_all), `button_cl
 - JS cases added by the final critic (gap 12): WP-25 jsdom, cross-origin `data-dcf-editor-values-url` gives no fetch and the `load_failed` notice; WP-25 `test/js/dependency_editor_storage.test.js` (warning with `text_dcf_storage_estimate` at or above `data-dcf-editor-storage-warn` percent of `data-dcf-editor-storage-limit`, no warning without the attribute, possible-values estimate against `data-dcf-editor-values-limit`); WP-26 jsdom, "Add missing child values" is not rendered on the project fixture nor for enumeration children.
 - Opt-in system spec (`DCF_SYSTEM_SPECS=1`; WP-25, WP-26, WP-27).
 - QA step for R13: `bundle exec rspec spec/frontend --seed 1` and `--seed 4242` both compare clean.
-- Characterization first: admin nested-param behavior (including documented bugs) and the project update, pinned in WP-04 (0.0.16) and flipped in the switching commits (WP-25 admin, WP-27 project) with listed flips.
+- Characterization first: admin nested-param behavior (including documented bugs) and the project update, pinned in WP-04 (0.1.0 (M1)) and flipped in the switching commits (WP-25 admin, WP-27 project) with listed flips.
 
 ## 14. Implementation order
-1. Characterization request specs (admin nested params, project update). WP-04, 0.0.16.
+1. Characterization request specs (admin nested params, project update). WP-04, 0.1.0 (M1).
 2. `DependencyPayload` + spec (both entry points). WP-21.
 3. Transport callbacks in `CustomFieldValidationPatch`, safe attribute, model error locales, admin request specs, BC-02 specs (needs server `prune_mapping`, `value_keys`, `resolve_parent_for_save` from WP-05 and the module from WP-11). WP-22.
 4. Endpoint + route + wire format + spec. WP-24.
@@ -880,13 +880,13 @@ Reused through the JS map: core `button_collapse_all` (collapse_all), `button_cl
 7. Editor JS + CSS + hook asset list + jsdom tests (conflict panel, pre-check, multipart switch, inert mode, same-origin check, storage estimate). WP-25.
 8. Import/export UI + tests. WP-26.
 9. Project page integration with point 9 + payload contract spec. WP-27 (project storage limit attribute: WP-31).
-10. Locales at parity (key list of section 9, texts from `large_lists_i18n_registry.md`), README, CHANGELOG, system spec. Each owner WP adds its own keys and lines in its own commit (section 9); WP-32 finalizes CHANGELOG and README for 0.3.0.
+10. Locales at parity (key list of section 9, texts from `large_lists_i18n_registry.md`), README, CHANGELOG, system spec. Each owner WP adds its own keys and lines in its own commit (section 9); WP-32 finalizes CHANGELOG and README for 0.1.0 (M3).
 
-All steps from 2 on ship in 0.3.0 (WP-21 to WP-27, WP-31, release WP-32); the old matrix is deleted in WP-25, together with the switch of the admin form to the editor.
+All steps from 2 on ship in 0.1.0 (M3) (WP-21 to WP-27, WP-31, release WP-32); the old matrix is deleted in WP-25, together with the switch of the admin form to the editor.
 
-## 15. CHANGELOG lines (editor area, for the 0.3.0 section; BC-14 items 19-30)
+## 15. CHANGELOG lines (editor area, for the 0.1.0 (M3) section; BC-14 items 19-30)
 
-These lines go into the 0.3.0 section. The canonical wording is the 0.3.0 CHANGELOG list of `large_lists_work_packages.md` section 3; where the two differ, that list wins. Owner WPs: WP-25 (editor, transport switch, no-JS behavior, removed partials), WP-26 (import/export), WP-27 (project page and deprecation), WP-32 (release).
+These lines go into the 0.1.0 (M3) section. The canonical wording is the 0.1.0 (M3) CHANGELOG list of `large_lists_work_packages.md` section 3; where the two differ, that list wins. Owner WPs: WP-25 (editor, transport switch, no-JS behavior, removed partials), WP-26 (import/export), WP-27 (project page and deprecation), WP-32 (release).
 - Added: dependency editor for the admin custom field form (collapsible sections per parent value, search, check or uncheck all shown, filters for values without links, counters, inactive values), also used on the project dependency page.
 - Added: CSV import (paste or file, preview, merge or replace, undo) and CSV export of the dependency mapping, with optional formula protection; "Add missing child values" for List (depending) fields in the admin import.
 - Added: live update of the editor when the parent field or the possible values change in the admin form.
@@ -901,6 +901,6 @@ These lines go into the 0.3.0 section. The canonical wording is the 0.3.0 CHANGE
 - Fixed: unticking every link now clears the mapping; parent values containing `[` or `]` and mappings with more than 4,096 links can be saved; the "Translation missing: label_default_value" header is gone.
 - Fixed: links to inactive key/value entries are kept on admin saves. Links already dropped by earlier versions cannot be restored.
 - Fixed: orphan links (to values that no longer exist, including keys corrupted by `[` or `]` in earlier versions) are reported and removed at the next editor save; affected parent values must be re-linked once.
-- Deprecated: project page nested params `value_dependencies[...]` (deprecated in 0.3.0, accepted throughout 0.3.x, removed no earlier than 0.4.0). The admin safe attributes `value_dependencies` and `default_value_dependencies` remain permanently for integrations such as jc-redmine_extended_api.
+- Deprecated: project page nested params `value_dependencies[...]` (deprecated in 0.1.0, accepted throughout 0.1.x, removed no earlier than 0.2.0). The admin safe attributes `value_dependencies` and `default_value_dependencies` remain permanently for integrations such as jc-redmine_extended_api.
 - Removed: partials `custom_fields/formats/_dependencies_matrix` and `_default_dependencies`; CSS classes `.dependencies-matrix*`, `.dependencies-defaults*`, `.dcf-dependencies-matrix`; locale key `text_dependency_matrix_help` (WP-27).
 - Upgrade notes: copied Key/Value list (depending) fields keep links to the source field's entries (no remap); they show as orphans and are removed at the first editor save. Reverse proxies limit request bodies (nginx `client_max_body_size` is 1 MB by default): raise it for very large mappings. Restart Redmine after upgrading (new asset files).

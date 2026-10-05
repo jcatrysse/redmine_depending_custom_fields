@@ -1,6 +1,6 @@
 # Frontend runtime design, revision 2: points 1 (client), 2, 3, 4, 5 (client)
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 (client side), 2, 3, 4, 5 (client side). Owner area: frontend (issue-form runtime, context-menu wizard script, plugin CSS, runtime locale keys, client contract C1 jointly with the server area). Work packages: WP-16, WP-17, WP-18, WP-19, WP-20 (primary, release 0.2.0); WP-15 (named wizard save route and form action, 0.2.0); WP-01 (JS toolchain), WP-03 (legacy bulk hotfix that pre-ships row B1m) and WP-04 (legacy jsdom characterization), all 0.0.16; WP-05 (`DependencyRules.parent_of`, `effective_parent_id`, shared rules case table, 0.0.16), WP-09 and WP-10 (server D1 per value, copies, effective parent, 0.1.0) for the server requirements of section 14. Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-08, UD-09, UD-10, UD-11, UD-12, UD-13, UD-30, UD-32.
+> Points: 1 (client side), 2, 3, 4, 5 (client side). Owner area: frontend (issue-form runtime, context-menu wizard script, plugin CSS, runtime locale keys, client contract C1 jointly with the server area). Work packages: WP-16, WP-17, WP-18, WP-19, WP-20 (primary, release 0.1.0 (M2)); WP-15 (named wizard save route and form action, 0.1.0 (M2)); WP-01 (JS toolchain), WP-03 (legacy bulk hotfix that pre-ships row B1m) all 0.0.16, and WP-04 (legacy jsdom characterization, 0.1.0 (M1)); WP-05 (`DependencyRules.parent_of`, `effective_parent_id`, shared rules case table, 0.1.0 (M1)), WP-09 and WP-10 (server D1 per value, copies, effective parent, 0.1.0 (M1)) for the server requirements of section 14. Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-08, UD-09, UD-10, UD-11, UD-12, UD-13, UD-30, UD-32.
 
 Scope:
 - Replace `assets/javascripts/depending_custom_fields.js` with one UMD file. The file holds the pure rules and the DOM runtime, and is driven by per-field data attributes.
@@ -49,7 +49,7 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
 9. **Fixtures (R13, QA-01).** One fixture mechanism: real request rendering, explicit record ids, a shared normalizer and a self-check. Every required contract case has a jsdom outcome test.
 10. **Wizard.** Same-origin check before posting (SP-15). Wizard labels wrap their selects, and hint width is capped (UX-13).
 11. **CSS fix found while revising.** Core `.check_box_group label { display: block }` overrides the UA `[hidden]` rule. A plugin rule is therefore mandatory to hide disallowed choices (section 8).
-12. **CHANGELOG and README.** Full list of the frontend changes users will notice, with explicit version targets (BC-08, BC-09, BC-14). Release targets follow UD-01: every frontend runtime item of this document ships in 0.2.0 (WP-15 to WP-20).
+12. **CHANGELOG and README.** Full list of the frontend changes users will notice, with explicit version targets (BC-08, BC-09, BC-14). Release targets follow UD-01: every frontend runtime item of this document ships in 0.1.0 (M2) (WP-15 to WP-20).
 
 ### 0.1 Deviations from the default decisions, with the concrete reason
 
@@ -58,7 +58,7 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
 | D1 (whole-set "neither child nor parent changed") | Per value (UD-04): while the parent is unchanged, values contained in the child's `value_was` (or, for issue copies, the copy source's values, UD-06) are exempt and only newly added values must be allowed | With the whole-set rule, adding an allowed value to a multi child that holds a legacy value posts `[legacy, new]` and is always rejected (R14). Per value matches core `ListFormat#validate_custom_value` (`values - Array.wrap(value_was) - possible_values`, core-7.0 `lib/redmine/field_format.rb`). |
 | D2 ("(no change)" hidden on descendants; child becomes default, else "(none)") | UD-09 (required children: UD-10). "(no change)" stays visible and enabled. The child becomes the per-parent default when one exists (shown with a hint), otherwise it stays on "(no change)". It is forced to "(none)" only for parent "(none)" or a parent value without links. | Example: setting Country=Belgium on 50 issues where some already hold City=Ghent would clear City on all of them. Today single children stay on "(no change)" (harness A1 posts `''`, which core bulk update skips), so this would be new data loss (BC-05, UX-08). |
 | D4 ("wizard behaviour otherwise unchanged") | The wizard root opens on "(no change)" instead of `cf.default_value` (UD-11) | Today Save without touching anything writes the root default onto every selected issue (`app/helpers/context_menu_wizard_helper.rb:11`). Any cascade would make that worse (QA-09). The controller already skips blanks (`app/controllers/context_menu_wizard_controller.rb:49-62`), so "(no change)" posts nothing. |
-| D5 ("at least one minor version") | Explicit targets (UD-01): the shims are deprecated in 0.2.0, kept throughout 0.2.x, and removable no earlier than 0.3.0 (recommended 0.4.0, together with the project nested params, which are deprecated in 0.3.0 and removable no earlier than 0.4.0) | BC-14 asks for explicit targets. `init.rb:14` is 0.0.15; per UD-01 the work ships in four releases, and this document's runtime ships in 0.2.0 (WP-15 to WP-20). |
+| D5 ("at least one minor version") | Explicit targets (UD-01): the shims are deprecated in 0.1.0, kept throughout 0.1.x, and removable no earlier than 0.2.0 (together with the project nested params, which are deprecated in 0.1.0 and removable no earlier than 0.2.0) | BC-14 asks for explicit targets. `init.rb:14` is 0.0.15; per UD-01 the work ships in four releases, and this document's runtime ships in 0.1.0 (M2) (WP-15 to WP-20). |
 | D10 (jsdom only) | Add `jquery 3.7.1` as a devDependency (same as quality Q6; acorn ~8.18.0 for the ES2017 gate; UD-30) | Needed to test `updateIssueFrom` serialize parity and jQuery-triggered (select2) changes against real jQuery. |
 | Point 3 wording ("filtered, debounced MutationObserver") | Filtered, and coalesced per observer callback: all mutations of one callback are handled together and the added roots are initialised synchronously in that callback; no timer debounce (FD-15, gap 13) | A timer debounce leaves an unfiltered window after an AJAX re-render in which stale disallowed values can be submitted (QA-15, QA-20b). One task's mutations already arrive in one callback, so `replaceIssueFormWith` and `#content` replacement are still initialised once. Recorded in `large_lists_compatibility.md` section 3; implemented and tested in WP-17. |
 
@@ -68,7 +68,7 @@ These amendments come from the consolidated plan and override older wording else
 
 | Topic | Binding rule | Sections touched |
 |---|---|---|
-| Release | All frontend runtime items ship in 0.2.0 (WP-15 to WP-20, UD-01). Prerequisites: JS toolchain and legacy characterization in 0.0.16 (WP-01, WP-04), `DependencyRules` in 0.0.16 (WP-05), server D1 per value, copies and effective parent in 0.1.0 (WP-09, WP-10). JS shims deprecated in 0.2.0, removable no earlier than 0.3.0 (recommended 0.4.0). | 0.1, 5.1, 9, 10, 13 |
+| Release | All frontend runtime items ship in 0.1.0 (M2) (WP-15 to WP-20, UD-01). Prerequisites: the JS toolchain in 0.0.16 (WP-01), legacy characterization and `DependencyRules` in 0.1.0 (M1) (WP-04, WP-05), server D1 per value, copies and effective parent in 0.1.0 (M1) (WP-09, WP-10). JS shims deprecated in 0.1.0, removable no earlier than 0.2.0. | 0.1, 5.1, 9, 10, 13 |
 | Context vocabulary | `data-dcf-context` is `form` or `bulk`; the client reads missing or unknown values as `form`. | 3.3, 3.7, 5.3, 5.4 |
 | Emission predicate (gap 2) | Client emission relies on `DependencyRules.effective_parent_id(cf)`: valid (exists, same type and family, not self), acyclic and visible to the user (fail closed). `DependencyRules.parent_of(cf)` (WP-05) is the memoized raw lookup it builds on: it returns the parent record, or nil for blank, dangling, wrong type or family, or self. Stored cycle members and chains reaching a cycle get no parent attributes (UD-08). | 3.2, 12.1, 14 |
 | Legacy marker (gap 6) | `data-dcf-stored` = server D1 baseline: `value_was` for persisted records, copy source values for issue copies (UD-06), absent for other new records. Row F6b is split into F6b-a (copy, kept) and F6b-b (plain new record, dropped). | 3.3, 5.4, 6, 9, 12.1 |
@@ -198,7 +198,7 @@ This supersedes limits L11 on pruning; L11's integer enumeration ids stay. It is
 
 ### 3.5 Wizard markup (server renders)
 
-- `<form class="cf-wizard-form" action="<%= depending_custom_fields_save_path %>" method="post">`. The path stays `/depending_custom_fields/save`; the route name `depending_custom_fields_save` is added in WP-15 (0.2.0).
+- `<form class="cf-wizard-form" action="<%= depending_custom_fields_save_path %>" method="post">`. The path stays `/depending_custom_fields/save`; the route name `depending_custom_fields_save` is added in WP-15 (0.1.0 (M2)).
 - `render_custom_field(cf, issues)` passes `nil` as the value for every field, so all wizard fields, including the root, open on "(no change)" (deviation from D4, section 0.1, UD-11, WP-18). The `data-field-id` injection is dropped.
 - Each field is `<div class="cf-wizard-field"><label class="cf-wizard-label"><span class="field-description" title="...">Name</span> SELECT</label></div>`. An implicit label gives the select an accessible name without ids (UX-13; ids collide with the issue form on the issue page). WP-18 also marks the wrapper with `data-dcf-wizard-field` (not a C1 name and not starting with `data-dcf-parent`).
 
@@ -234,7 +234,7 @@ Head hook output, in this order. jQuery is already loaded by `javascript_heads` 
 | `liveMessage` | `text_dcf_live_message` |
 | `saveFailed` | `error_save_failed` (exists in all four locales, `config/locales/en.yml:76`) |
 
-New locale keys. They are flat, with key parity across de/en/fr/nl. Values that start with `%{` or contain `: ` are double-quoted in YAML. `%{values}` is a comma-joined list of option labels: at most 3, then `, ...`. The colon-list phrasing avoids plural forms. Interpolation variables: `%{parent}` in all hint keys that name the parent, `%{values}` in the three `text_dcf_hint_legacy*` keys, `%{field}` and `%{message}` in `text_dcf_live_message`. The en, de, fr and nl texts have a single source of truth, `large_lists_i18n_registry.md`; this document keeps only the key names and owners. All nine keys are added in WP-18 (0.2.0); `error_save_failed` already exists and is reused.
+New locale keys. They are flat, with key parity across de/en/fr/nl. Values that start with `%{` or contain `: ` are double-quoted in YAML. `%{values}` is a comma-joined list of option labels: at most 3, then `, ...`. The colon-list phrasing avoids plural forms. Interpolation variables: `%{parent}` in all hint keys that name the parent, `%{values}` in the three `text_dcf_hint_legacy*` keys, `%{field}` and `%{message}` in `text_dcf_live_message`. The en, de, fr and nl texts have a single source of truth, `large_lists_i18n_registry.md`; this document keeps only the key names and owners. All nine keys are added in WP-18 (0.1.0 (M2)); `error_save_failed` already exists and is reused.
 
 | key | owner WP | en, de, fr, nl texts |
 |---|---|---|
@@ -310,7 +310,7 @@ optionEnabled(filter, value), orderByDepth(nodes) (cycle-safe), interpolate(text
 | `t(key, vars)` | i18n lookup. |
 | `__runtime`, `VERSION` | Markers. |
 
-`setup` and `requestSetup` are deprecated in 0.2.0 (the release that ships this runtime, WP-17 and WP-18), stay throughout 0.2.x, and are removable no earlier than 0.3.0 (recommended 0.4.0, UD-01; compat section 2.3).
+`setup` and `requestSetup` are deprecated in 0.1.0 (the release that ships this runtime, WP-17 and WP-18), stay throughout 0.1.x, and are removable no earlier than 0.2.0 (UD-01; compat section 2.3).
 
 **Dropped globals:** `window.DependingCustomFieldData` and `window.ContextMenuWizardConfig`.
 
@@ -497,7 +497,7 @@ Grandchild cascades follow naturally:
 - **Issue copy** (`GET /issues/:id/copy`, gap 6): new record with `data-dcf-stored` = the copy source's stored child and parent values (UD-06). Under the unchanged parent a legacy value copied from the source stays enabled, marked and posted, and the server accepts it (row F6b-a). A plain new record without `data-dcf-stored` drops disallowed values (row F6b-b).
 - **Bulk refresh** (`updateBulkEditFrom` replaces `#content`): the observer initialises the new form with the posted values; memory starts fresh.
 
-## 7. context_menu_wizard.js (global-dependent parts only; other wizard behaviour unchanged except 3.5; WP-18, 0.2.0)
+## 7. context_menu_wizard.js (global-dependent parts only; other wizard behaviour unchanged except 3.5; WP-18, 0.1.0 (M2))
 
 1. **`submitForm(form)`:**
    - `url = new URL(form.getAttribute('action') || '', window.location.href)`.
@@ -510,11 +510,11 @@ Grandchild cascades follow naturally:
 4. **Observer hygiene:** replace the body-wide `{attributes: true, attributeFilter: ['style']}` observer with a `childList` subtree observer filtered on added `li.cf-parent`. Create `#cf-wizard-container` lazily.
 
 Out of scope, tracked separately (D4):
-- **Wizard save authorization (SP-07, SECURITY; tracked as SD-01, UD-03).** `ContextMenuWizardController#save` assigns `custom_field_values` without the editable filter. Recommended as its own PR merged before tagging 0.0.16; hard deadline: no 0.2.0 tag (the release that ships point 1) without it, with a CHANGELOG Security entry (WP-07, WP-20).
+- **Wizard save authorization (SP-07, SECURITY; tracked as SD-01, UD-03).** `ContextMenuWizardController#save` assigns `custom_field_values` without the editable filter. Recommended as its own PR merged before tagging 0.0.16; hard deadline: no 0.1.0 (M2) tag (the release that ships point 1) without it, with a CHANGELOG Security entry (WP-07, WP-20).
 - Journal and `@can[:edit]` hardening.
 - The time-entry context menu.
 
-## 8. CSS (`assets/stylesheets/depending_custom_fields.css`; WP-18, 0.2.0)
+## 8. CSS (`assets/stylesheets/depending_custom_fields.css`; WP-18, 0.1.0 (M2))
 
 ```css
 .depending-child { margin-left: 20px; }                                        /* unchanged */
@@ -537,7 +537,7 @@ option.dcf-legacy-option, label.dcf-legacy-option { font-style: italic; }
 
 Class: P = preserved, F = bug fix, C = intentional change, N = new.
 
-Release: every "after" column ships in 0.2.0 (WP-16 to WP-19; rows F10 and B3r need WP-19). Exception: the untouched multi-value bulk data loss (rows B1m and B7 for multi children) is already fixed in the legacy script in 0.0.16 by the WP-03 hotfix (UD-02); the 0.2.0 runtime keeps that outcome. Rows F6 and F6d depend on the server D1 per value from 0.1.0 (WP-09, UD-04); in 0.1.0 the legacy script still drops such values on the issue form.
+Release: every "after" column ships in 0.1.0 (M2) (WP-16 to WP-19; rows F10 and B3r need WP-19). Exception: the untouched multi-value bulk data loss (rows B1m and B7 for multi children) is already fixed in the legacy script in 0.0.16 by the WP-03 hotfix (UD-02); the 0.1.0 (M2) runtime keeps that outcome. Rows F6 and F6d depend on the server D1 per value from 0.1.0 (M1) (WP-09, UD-04); in 0.1.0 (M1) the legacy script still drops such values on the issue form.
 
 | id | scenario | before | after | class |
 |---|---|---|---|---|
@@ -595,19 +595,19 @@ Release: every "after" column ships in 0.2.0 (WP-16 to WP-19; rows F10 and B3r n
 | X3 | discovery | every mapping key scanned | only [data-dcf-parent] | C (point 4) |
 | X4 | select2 jQuery-triggered change | missed | handled | F |
 | X6 | context-menu observer | never attached | childList-only, filtered | F |
-| X7 | setup / requestSetup | rescan with the global mapping | thin wrappers, deprecated in 0.2.0, kept throughout 0.2.x, removable no earlier than 0.3.0 (recommended 0.4.0) | P (deprecated) |
+| X7 | setup / requestSetup | rescan with the global mapping | thin wrappers, deprecated in 0.1.0, kept throughout 0.1.x, removable no earlier than 0.2.0 | P (deprecated) |
 | X8 | globals DependingCustomFieldData, ContextMenuWizardConfig | inline script on every page | removed | C |
 | X9 | anonymous pages | full mapping inline | only the i18n meta | F |
 | X10 | hints for assistive technology | none | aria-describedby plus one polite live region | N |
 
-## 10. CHANGELOG, README, version targets (frontend lines; release 0.2.0)
+## 10. CHANGELOG, README, version targets (frontend lines; release 0.1.0 (M2))
 
-All lines below belong to the 0.2.0 CHANGELOG (WP-20) unless marked otherwise. The canonical wording of every CHANGELOG line is in `large_lists_work_packages.md` section 3 and `large_lists_compatibility.md` section 4 (PC-22 to PC-44); the lines here are the frontend's source list.
+All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwise. The canonical wording of every CHANGELOG line is in `large_lists_work_packages.md` section 3 and `large_lists_compatibility.md` section 4 (PC-22 to PC-44); the lines here are the frontend's source list.
 
 **Fixed:**
-- Bulk edit no longer clears untouched multi-value depending fields. (Already released in 0.0.16 by the WP-03 legacy hotfix, UD-02; the 0.2.0 runtime keeps it.)
+- Bulk edit no longer clears untouched multi-value depending fields. (Already released in 0.0.16 by the WP-03 legacy hotfix, UD-02; the 0.1.0 (M2) runtime keeps it.)
 - Required radio-style children can be cleared.
-- Stored values that no longer match an unchanged parent are kept and accepted instead of being silently removed on save (also when only other values of a multi-value field change). The server accepts them since 0.1.0 (WP-09, UD-04); from 0.2.0 the issue form keeps them too, also on issue copies (UD-06).
+- Stored values that no longer match an unchanged parent are kept and accepted instead of being silently removed on save (also when only other values of a multi-value field change). The server accepts them since 0.1.0 (M1) (WP-09, UD-04); from 0.1.0 (M2) the issue form keeps them too, also on issue copies (UD-06).
 - No more event recursion with cyclic configurations.
 - The wizard reports server errors and stays open.
 - Switching the parent back restores the child value you picked, including a stored value.
@@ -632,14 +632,14 @@ All lines below belong to the 0.2.0 CHANGELOG (WP-20) unless marked otherwise. T
 - The `data-depending-*`, `data-value-map` and `depending_cf_N` ids.
 - The hidden mirror inputs.
 
-**Deprecated (0.2.0):** `DependingCustomFields.setup` and `requestSetup` (aliases of `DependingCustomFields.init`). Kept throughout 0.2.x, removable no earlier than 0.3.0 (recommended 0.4.0, UD-01). `CustomFieldVisibility` is deprecated in the same release with the same targets (server area, WP-15).
+**Deprecated (0.1.0 (M2)):** `DependingCustomFields.setup` and `requestSetup` (aliases of `DependingCustomFields.init`). Kept throughout 0.1.x, removable no earlier than 0.2.0 (UD-01). `CustomFieldVisibility` is deprecated in the same release with the same targets (server area, WP-15).
 
 **Upgrade:**
 - Restart Redmine.
 - If `mirror_plugins_assets_on_startup` (5.1) or `config.assets.redmine_detect_update` (6.x/7.0) is disabled, or assets are baked into an image, run `rake redmine:plugins:assets` (5.1) or `rake assets:precompile` (6.x/7.0).
 - Reload open browser tabs: an old cached script with the new pages leaves fields unfiltered until reload.
 
-**Security (tracked separately as SD-01, UD-03):** the wizard save writes only fields the user may edit (SP-07). Recommended before the 0.0.16 tag; no 0.2.0 tag without it.
+**Security (tracked separately as SD-01, UD-03):** the wizard save writes only fields the user may edit (SP-07). Decided (UD-03): its own pull request, merged before the 0.0.16 tag.
 
 **README:**
 - Rewrite lines 22-24 (disabled until a parent value is chosen), 31 and 36-37 (bulk "(No change)").
@@ -711,7 +711,7 @@ All lines below belong to the 0.2.0 CHANGELOG (WP-20) unless marked otherwise. T
 
 ### 12.2 Tooling (D10 plus jquery)
 
-The toolchain lands in WP-01 (0.0.16); the support helpers below are completed in WP-17 (0.2.0).
+The toolchain lands in WP-01 (0.0.16); the support helpers below are completed in WP-17 (0.1.0 (M2)).
 
 - `package.json`: private, `"license": "SEE LICENSE IN LICENSE"`, `engines.node ">=22.13"`.
 - devDependencies: `jsdom ~29.1.1`, `jquery 3.7.1`, `acorn ~8.18.0` (quality Q6; UD-30).
@@ -725,8 +725,8 @@ The toolchain lands in WP-01 (0.0.16); the support helpers below are completed i
 
 ### 12.3 Order
 
-1. Commit 1 adds `test/js/legacy_characterization.test.js`, pinning the current script for harness scenarios A0..U2. In the consolidated plan this is WP-04 (0.0.16), pinned on the WP-03 hotfixed legacy script; WP-17 points it at the renamed `depending_custom_fields_legacy.js`.
-2. The rewrite commit deletes it. In the consolidated plan the switch WP-18 (0.2.0) deletes it, together with `test/js/legacy_bulk_hotfix.test.js`. The PR lists each flipped row id from section 9.
+1. Commit 1 adds `test/js/legacy_characterization.test.js`, pinning the current script for harness scenarios A0..U2. In the consolidated plan this is WP-04 (0.1.0 (M1)), pinned on the WP-03 hotfixed legacy script; WP-17 points it at the renamed `depending_custom_fields_legacy.js`.
+2. The rewrite commit deletes it. In the consolidated plan the switch WP-18 (0.1.0 (M2)) deletes it, together with `test/js/legacy_bulk_hotfix.test.js`. The PR lists each flipped row id from section 9.
 
 ## 13. Implementation order
 
@@ -743,19 +743,19 @@ The toolchain lands in WP-01 (0.0.16); the support helpers below are completed i
 6. CSS, locales (parity), README, CHANGELOG.
 7. Opt-in system specs.
 
-Steps 2 to 5 ship in the same release, 0.2.0 (the server D1 per value and effective parent of step 2 ship earlier, in 0.1.0): removing the global before the attributes exist would disable all dependency logic.
+Steps 2 to 5 ship in the same release, 0.1.0 (M2) (the server D1 per value and effective parent of step 2 ship earlier, in 0.1.0 (M1)): removing the global before the attributes exist would disable all dependency logic.
 
 **Mapping to the canonical work packages (releases per UD-01):**
 
 | Step | Work packages | Release |
 |---|---|---|
-| 1. Tooling plus legacy characterization | WP-01 (toolchain, `js-tests.yml`), WP-03 (legacy hotfixes), WP-04 (`legacy_characterization.test.js`) | 0.0.16 |
-| 2. Server prerequisites | WP-05 (`DependencyRules`, `parent_of`, `effective_parent_id`, shared rules cases), 0.0.16; WP-09 (D1 per value, copy baseline), WP-10 (effective parent, cycle validation), 0.1.0 | 0.0.16 / 0.1.0 |
-| 2. Server C1 emission | WP-15 (named wizard route, selection graph), WP-16 (per-field attributes incl. `data-dcf-stored`, fixture spec and normalizer, additive) | 0.2.0 |
-| 3 and 4. Rules and runtime | WP-17 (UMD file shipped behind the renamed legacy script, jsdom suites) | 0.2.0 |
-| 2, 5 and 6. Switch | WP-18 (head hook and `dcf-i18n` meta, globals and `Rails.cache` removed, wizard JS, CSS, locales, README Integration, opt-in system specs) | 0.2.0 |
-| 2. Sentinel and required '(none)' | WP-19 | 0.2.0 |
-| 6. Release | WP-20 (README rewrite, CHANGELOG 0.2.0, version) | 0.2.0 |
+| 1. Tooling plus legacy characterization | WP-01 (toolchain, `js-tests.yml`), WP-03 (legacy hotfixes), WP-04 (`legacy_characterization.test.js`) | 0.0.16 (WP-01, WP-03); 0.1.0 (M1) (WP-04) |
+| 2. Server prerequisites | WP-05 (`DependencyRules`, `parent_of`, `effective_parent_id`, shared rules cases), 0.1.0 (M1); WP-09 (D1 per value, copy baseline), WP-10 (effective parent, cycle validation), 0.1.0 (M1) | 0.1.0 (M1) / 0.1.0 (M1) |
+| 2. Server C1 emission | WP-15 (named wizard route, selection graph), WP-16 (per-field attributes incl. `data-dcf-stored`, fixture spec and normalizer, additive) | 0.1.0 (M2) |
+| 3 and 4. Rules and runtime | WP-17 (UMD file shipped behind the renamed legacy script, jsdom suites) | 0.1.0 (M2) |
+| 2, 5 and 6. Switch | WP-18 (head hook and `dcf-i18n` meta, globals and `Rails.cache` removed, wizard JS, CSS, locales, README Integration, opt-in system specs) | 0.1.0 (M2) |
+| 2. Sentinel and required '(none)' | WP-19 | 0.1.0 (M2) |
+| 6. Release | WP-20 (README rewrite, CHANGELOG 0.1.0 (M2), version) | 0.1.0 (M2) |
 
 WP-18 changes server and JS in one PR, so no state without filtering exists on main.
 
@@ -774,9 +774,9 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
    - when the parent changed, every value must be allowed.
    - for issue copies the baseline is the copy source's stored child and parent values (UD-06, server S7), which is exactly what `data-dcf-stored` carries;
    - This replaces whole-set `legacy_combination?` (R14). The shared parity cases in `test/js/fixtures/shared/rules_cases.json` cover add, remove and reorder for multi children.
-   - Delivered by WP-09 in 0.1.0 (UD-04, UD-05, UD-06).
-4. **The blank sentinel** (3.4.1; WP-19, 0.2.0), with specs: present only for single radio active children; no id; label `for` unchanged; request spec posting `x=&x=r1` (stored r1) and `x=` (cleared) on all four versions.
-5. **`__none__` for required active children in `bulk_edit_tag`** (3.4.2; marked `data-dcf-required-none="1"`; WP-19, 0.2.0, UD-10), with request specs:
+   - Delivered by WP-09 in 0.1.0 (M1) (UD-04, UD-05, UD-06).
+4. **The blank sentinel** (3.4.1; WP-19, 0.1.0 (M2)), with specs: present only for single radio active children; no id; label `for` unchanged; request spec posting `x=&x=r1` (stored r1) and `x=` (cleared) on all four versions.
+5. **`__none__` for required active children in `bulk_edit_tag`** (3.4.2; marked `data-dcf-required-none="1"`; WP-19, 0.1.0 (M2), UD-10), with request specs:
    - `bulk_update` with `__none__` on a required child whose parent maps to nothing is accepted through the no-options bypass;
    - with a parent that maps to options, it gives the per-issue "cannot be blank" failure.
 6. **Wizard:** named route action (WP-15); `render_custom_field` with value `nil` (UD-11); implicit labels; request spec that Save without a choice changes nothing (WP-18).
