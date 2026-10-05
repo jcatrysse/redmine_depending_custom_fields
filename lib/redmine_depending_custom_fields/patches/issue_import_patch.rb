@@ -3,9 +3,13 @@ module RedmineDependingCustomFields
     module IssueImportPatch
       def build_object(row, item)
         issue = super
-        return issue unless issue.respond_to?(:custom_field_values)
+        # Fail closed: without the editable filter nothing is written.
+        return issue unless issue.respond_to?(:editable_custom_field_values)
 
-        issue.custom_field_values.each do |cfv|
+        # Same filter as core's Issue#safe_attributes=, which core applies to the
+        # other custom fields of this import: only fields the importing user may
+        # edit (visible for the user's roles and not read-only by workflow).
+        issue.editable_custom_field_values(user).each do |cfv|
           cf = cfv.custom_field
           next unless cf.field_format == RedmineDependingCustomFields::FIELD_FORMAT_EXTENDED_USER
 
@@ -16,9 +20,9 @@ module RedmineDependingCustomFields
             keyword = token.strip
             next if keyword.blank?
 
-            user = Principal.detect_by_keyword(User.all, keyword)
-            user ||= User.find_by_id(keyword.to_i)
-            user&.id&.to_s
+            found = Principal.detect_by_keyword(User.all, keyword)
+            found ||= User.find_by_id(keyword.to_i)
+            found&.id&.to_s
           end.compact
 
           cfv.value = cf.multiple? ? users : users.first

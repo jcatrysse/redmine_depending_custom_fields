@@ -11,8 +11,15 @@ RSpec.describe RedmineDependingCustomFields::Patches::IssueImportPatch do
       row[token]
     end
 
+    def user
+      nil
+    end
+
     def build_object(_row, _item)
-      Struct.new(:project, :custom_field_values).new(@project, [@cfv])
+      cfv = @cfv
+      issue = Struct.new(:project, :custom_field_values).new(@project, [cfv])
+      issue.define_singleton_method(:editable_custom_field_values) { |_user| [cfv] }
+      issue
     end
   end
 

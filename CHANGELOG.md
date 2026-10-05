@@ -132,4 +132,13 @@
   current user may edit on each issue, like Redmine's own bulk edit. Before,
   a user allowed to edit an issue could also change fields that are read-only
   for their role by workflow, or hidden for their role, by posting those field
-  ids to `/depending_custom_fields/save`.
+  ids to `/depending_custom_fields/save`. Values for such fields are now
+  ignored (the save still answers HTTP 200). As in core, a workflow read-only
+  rule also applies to administrators when every role that follows the
+  workflow has it. Known limitation: the wizard can still show a field that is
+  read-only for the user; its value is not saved.
+* **Security:** CSV issue import of `User (extended)` fields now writes only
+  the fields the importing user may edit, the same filter Redmine applies to
+  every other custom field of the import. Before, a user allowed to import
+  issues could set such fields that are hidden for their role or read-only by
+  workflow by mapping them in the import settings.

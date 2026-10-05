@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-12)
+1. Defects tracked separately (SD-01 to SD-13)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -27,8 +27,11 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-10 | minor | query_filter_values is asymmetric between the two depending formats |
 | SD-11 | minor | block_removal_when_used is not applied to replace-mode imports |
 | SD-12 | minor | No report of stored invalid combinations and stored cycles |
+| SD-13 | security (medium) | SECURITY: CSV import of extended_user fields bypasses the editable filter |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
+
+**Status.** Fixed in 0.0.16 (own commit, UD-03): the save assigns through `Issue#safe_attributes=`. An independent review approved it and added SD-13 (same class of defect in the import patch) and a UX item for WP-15 (the wizard still offers fields that are read-only for the user; their values are ignored).
 
 **Severity.** security (medium)
 
@@ -39,6 +42,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Verified during consolidation.** `ContextMenuWizardController#save` (`app/controllers/context_menu_wizard_controller.rb:19-35`) assigns `issue.custom_field_values = values` for every posted field id. Before that it only checks that the user may view and edit each issue (`check_edit_permission`, `:141-147`) and that `custom_field_values` is a safe attribute at all (`:23-28`). Core `Issue#safe_attributes=` instead filters custom field values through `editable_custom_field_values(user)`, which excludes fields that are read-only by workflow or not visible for the user's role. A user who may edit an issue can therefore write such fields by posting their ids to `/depending_custom_fields/save`. No journal entry is created, so the change leaves no history. Timing: own pull request, merged before 0.0.16 is tagged (UD-03); hard prerequisite for 0.1.0 (M2).
 
 ### SD-02: Wizard save hardening: no journal, :edit_issues instead of core @can[:edit], 7.0 webhooks and updated_on
+
+**Correction (review of SD-01).** Wizard saves without a journal do change `updated_on` and `lock_version`: core's `save_custom_field_values` touches the record when only custom values changed (core-5.1 `lib/plugins/acts_as_customizable/lib/acts_as_customizable.rb:149`, probed on 5.1 and 7.0). The effect on 7.0 webhooks still needs checking.
 
 **Severity.** major
 
@@ -125,6 +130,14 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Evidence.** D1 leniency (WP-09) and cycle-member leniency (WP-10) let legacy invalid data persist by design; the only visibility is the admin cycle warning and per-issue errors when the parent changes.
 
 **Recommendation.** Follow-up rake task (read-only) listing issues with combinations outside the mapping and fields in cycles, built on DependencyRules and FieldIndex.
+
+### SD-13: SECURITY: CSV import of extended_user fields bypasses the editable filter
+
+**Severity.** security (medium)
+
+**Evidence.** Found by the independent review of SD-01. Core `IssueImport#build_object` filters the custom field values of an import through `issue.send :safe_attributes=, attributes, user` (core-5.1 `app/models/issue_import.rb:136`, core-7.0 `:136`), which keeps only `editable_custom_field_values(user)`. The plugin's `IssueImportPatch#build_object` (`lib/redmine_depending_custom_fields/patches/issue_import_patch.rb:8,24` before the fix) then looped over every `issue.custom_field_values` and set `cfv.value` directly for `extended_user` fields. Import mappings accept any `cf_<id>` key (core `ImportsController#update_from_params` merges `params[:import_settings].to_unsafe_hash`), so a user with `:import_issues` could set extended_user fields that are hidden for their role or read-only by workflow; those values are not validated either, because core validates editable values only.
+
+**Status.** Fixed in 0.0.16 (own commit, same treatment as SD-01 per UD-03): the patch loops over `issue.editable_custom_field_values(user)` with the import's user and fails closed when that method is missing. DB-backed spec `spec/patches/issue_import_patch_editable_spec.rb` (editable field written; role-hidden field without any workflow rule and workflow read-only field not written) fails on the old code and passes with the fix.
 
 ## 2. Defects fixed inside the plan
 
