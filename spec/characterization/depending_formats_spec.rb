@@ -1,0 +1,429 @@
+# frozen_string_literal: true
+
+require_relative '../rails_helper'
+
+# WP-04 characterization: pins what both depending formats do today (0.0.16),
+# including known defects, before the WP-05/WP-06 refactor. A later work
+# package may change an expectation here only as a listed flip; every other
+# example must stay unchanged. Planned flips:
+# - WP-08 (enumeration): "rejects a disallowed value on a new issue" (two
+#   errors become one) and "offers a stored disallowed value twice".
+# - WP-09: "rejects a stored child ... assigned unchanged", "rejects an issue
+#   copy holding a legacy combination", "silently skips an issue ... when the
+#   project is copied", "rejects adding an allowed value next to the legacy
+#   value". Not flipped by owner decision: the unavailable parent (UD-05).
+# - WP-10: "validates the members of a stored cycle against their mappings".
+module DcfFormatCharacterization
+  HIDDEN = { hidden: true, style: 'display:none;' }.freeze
+
+  # The stored value of +name+: the name itself for list fields, the
+  # enumeration id (String) for enumeration fields.
+  def kit_key(field, name)
+    return name if field.field_format.end_with?('list')
+
+    field.enumerations.detect { |e| e.name == name }.id.to_s
+  end
+
+  # Parent values A, B, C; A allows a1 and a2, B allows b1, C allows nothing.
+  def build_kit(kind, multiple: false, type: IssueCustomField, child_names: %w[a1 a2 b1])
+    if kind == :list
+      parent = dcf_list_field(values: %w[A B C], type: type)
+      child = dcf_list_field(format: 'depending_list', values: child_names, parent: parent,
+                             multiple: multiple, type: type)
+    else
+      parent = dcf_enum_field(names: %w[A B C], type: type)
+      child = dcf_enum_field(format: 'depending_enumeration', names: child_names, parent: parent, type: type)
+      child.update!(multiple: true) if multiple
+    end
+    dcf_set_dependencies(
+      child,
+      value_dependencies: { kit_key(parent, 'A') => [kit_key(child, 'a1'), kit_key(child, 'a2')],
+                            kit_key(parent, 'B') => [kit_key(child, 'b1')] },
+      default_value_dependencies: { kit_key(parent, 'A') => kit_key(child, 'a2') }
+    )
+    [parent, child.reload]
+  end
+
+  # What the core list or enumeration format offers for +field+.
+  def core_base(field)
+    return field.possible_values if field.field_format.end_with?('list')
+
+    field.enumerations.active.map { |e| [e.name, e.id.to_s] }
+  end
+
+  def pair(field, name, *extra)
+    [name, kit_key(field, name), *extra]
+  end
+
+  def kit_value(field, names)
+    keys = Array(names).map { |n| kit_key(field, n) }
+    field.multiple? ? keys : keys.first
+  end
+
+  # A persisted issue holding +values+ (field => name or names), stored without
+  # validation so legacy combinations can be set up. Reloaded, so value_was is
+  # what the database holds.
+  def kit_issue(project, values)
+    tracker, status, priority = dcf_issue_infra(project)
+    values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+    issue = Issue.new(project: project, tracker: tracker, subject: 'S', author: dcf_admin,
+                      status: status, priority: priority)
+    issue.custom_field_values = values.to_h { |f, names| [f.id.to_s, kit_value(f, names)] }
+    issue.save!(validate: false)
+    Issue.find(issue.id)
+  end
+
+  def kit_new_issue(project, values)
+    tracker, status, priority = dcf_issue_infra(project)
+    values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+    issue = Issue.new(project: project, tracker: tracker, subject: 'S', author: dcf_admin,
+                      status: status, priority: priority)
+    issue.custom_field_values = values.to_h { |f, names| [f.id.to_s, kit_value(f, names)] }
+    issue
+  end
+
+  # Core adds custom value errors under the field name (CustomFieldValue#validate_value).
+  def errors_for(record, field)
+    record.valid?
+    record.errors[field.name]
+  end
+end
+
+RSpec.describe 'Depending formats (characterization)' do
+  include DcfFormatCharacterization
+
+  fixtures :users
+
+  let(:invalid) { I18n.t('activerecord.errors.messages.invalid') }
+  let(:blank) { I18n.t('activerecord.errors.messages.blank') }
+  let(:hidden) { DcfFormatCharacterization::HIDDEN }
+
+  # Errors for a disallowed value on a new record (value_was is empty): the list
+  # format gives one error, the enumeration format adds core's inclusion error.
+  shared_examples 'a depending format today' do |kind, new_disallowed|
+    let(:new_disallowed_errors) { new_disallowed.map { |key| I18n.t("activerecord.errors.messages.#{key}") } }
+    let(:kit) { build_kit(kind) }
+    let(:parent) { kit.first }
+    let(:child) { kit.last }
+    let(:project) { kit && dcf_create_project }
+    let(:fmt) { child.format }
+
+    describe 'possible_values_options' do
+      it 'returns the core list for nil' do
+        expect(fmt.possible_values_options(child, nil)).to eq(core_base(child))
+      end
+
+      it 'returns the core list, unfiltered, for an Array of records' do
+        issues = [kit_issue(project, parent => 'A'), kit_issue(project, parent => 'B')]
+        expect(fmt.possible_values_options(child, issues)).to eq(core_base(child))
+      end
+
+      it 'keeps every option for a record and hides the disallowed ones as 3-tuples' do
+        issue = kit_issue(project, parent => 'A')
+        expect(fmt.possible_values_options(child, issue))
+          .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1', hidden)])
+      end
+
+      it 'hides every option for a record whose parent is blank' do
+        issue = kit_issue(project, parent => [], child => [])
+        expect(fmt.possible_values_options(child, issue))
+          .to eq([pair(child, 'a1', hidden), pair(child, 'a2', hidden), pair(child, 'b1', hidden)])
+      end
+
+      it 'hides every option when a Project is passed for an issue field' do
+        expect(fmt.possible_values_options(child, project))
+          .to eq([pair(child, 'a1', hidden), pair(child, 'a2', hidden), pair(child, 'b1', hidden)])
+      end
+
+      it 'returns the core list for a record when the parent field no longer exists' do
+        issue = kit_issue(project, parent => 'A')
+        CustomField.where(id: parent.id).delete_all
+        expect(fmt.possible_values_options(child.reload, issue)).to eq(core_base(child))
+      end
+    end
+
+    describe 'value_from_keyword' do
+      let(:issue) { kit_issue(project, parent => 'A') }
+
+      it 'matches labels case-insensitively and strips spaces' do
+        expect(fmt.value_from_keyword(child, ' A1 ', issue)).to eq(kit_key(child, 'a1'))
+      end
+
+      it 'returns nil for an unknown keyword' do
+        expect(fmt.value_from_keyword(child, 'zz', issue)).to be_nil
+      end
+
+      it 'matches a value the parent does not allow (hidden options still match)' do
+        expect(fmt.value_from_keyword(child, 'b1', issue)).to eq(kit_key(child, 'b1'))
+      end
+
+      it 'matches the full list while the parent is not set yet (import order)' do
+        unset = kit_issue(project, parent => [], child => [])
+        expect(fmt.value_from_keyword(child, 'a2', unset)).to eq(kit_key(child, 'a2'))
+      end
+
+      it 'matches against the core list without a customized object' do
+        expect(fmt.value_from_keyword(child, 'b1', nil)).to eq(kit_key(child, 'b1'))
+      end
+
+      it 'returns nil for a blank keyword' do
+        expect(fmt.value_from_keyword(child, '', issue)).to be_nil
+      end
+
+      context 'with a multiple child' do
+        let(:kit) { build_kit(kind, multiple: true, child_names: %w[a1 a2 b1 c,d]) }
+
+        it 'splits on ; and , and returns Strings' do
+          expect(fmt.value_from_keyword(child, 'a1;b1, a2', issue))
+            .to eq([kit_key(child, 'a1'), kit_key(child, 'b1'), kit_key(child, 'a2')])
+          expect(fmt.value_from_keyword(child, 'a1', issue)).to all(be_a(String))
+        end
+
+        it 'keeps duplicates' do
+          expect(fmt.value_from_keyword(child, 'a1,a1', issue)).to eq([kit_key(child, 'a1')] * 2)
+        end
+
+        it 'cannot import a value that contains a comma' do
+          expect(fmt.value_from_keyword(child, 'c,d', issue)).to be_nil
+        end
+
+        it 'returns nil when nothing matches' do
+          expect(fmt.value_from_keyword(child, 'zz;yy', issue)).to be_nil
+        end
+      end
+
+      context 'with a single child whose value contains a comma' do
+        let(:kit) { build_kit(kind, child_names: %w[a1 a2 b1 c,d]) }
+
+        it 'imports the value as a whole' do
+          expect(fmt.value_from_keyword(child, 'c,d', issue)).to eq(kit_key(child, 'c,d'))
+        end
+      end
+    end
+
+    describe 'validation of issue values' do
+      it 'accepts an allowed value on a new issue' do
+        expect(errors_for(kit_new_issue(project, parent => 'A', child => 'a1'), child)).to eq([])
+      end
+
+      it 'accepts a blank child under a parent value without links' do
+        expect(errors_for(kit_new_issue(project, parent => 'C', child => []), child)).to eq([])
+      end
+
+      it 'rejects a disallowed value on a new issue' do
+        expect(errors_for(kit_new_issue(project, parent => 'B', child => 'a1'), child)).to eq(new_disallowed_errors)
+      end
+
+      it 'rejects a non-blank child under a parent value without links with one error' do
+        expect(errors_for(kit_new_issue(project, parent => 'C', child => 'a1'), child)).to eq([invalid])
+      end
+
+      it 'rejects a stored child that the parent does not allow when values are assigned unchanged' do
+        issue = kit_issue(project, parent => 'A', child => 'b1')
+        issue.custom_field_values = { child.id.to_s => kit_value(child, 'b1') }
+        expect(errors_for(issue, child)).to eq([invalid])
+      end
+
+      it 'does not validate a stored legacy combination when no custom value is assigned' do
+        issue = kit_issue(project, parent => 'A', child => 'b1')
+        issue.notes = 'notes only'
+        expect(errors_for(issue, child)).to eq([])
+      end
+
+      it 'rejects an issue copy holding a legacy combination like a new disallowed value' do
+        source = kit_issue(project, parent => 'A', child => 'b1')
+        copy = Issue.new.copy_from(source)
+        expect(errors_for(copy, child)).to eq(new_disallowed_errors)
+      end
+
+      it 'silently skips an issue holding a legacy combination when the project is copied' do
+        kit_issue(project, parent => 'A', child => 'a1')
+        kit_issue(project, parent => 'A', child => 'b1')
+        User.current = dcf_admin
+        target = Project.copy_from(project)
+        target.name = 'Copy'
+        target.identifier = "dcf-copy-#{SecureRandom.hex(3)}"
+        target.copy(project, only: %w[issues])
+        copied = Issue.where(project_id: target.id).map { |i| i.custom_field_value(child) }
+        expect(copied).to eq([kit_key(child, 'a1')])
+      ensure
+        User.current = nil
+      end
+
+      it 'rejects a stored child when the parent is not available for the tracker' do
+        issue = kit_issue(project, parent => 'A', child => 'a1')
+        issue.tracker.custom_fields.delete(parent)
+        issue = Issue.find(issue.id)
+        issue.custom_field_values = { child.id.to_s => kit_value(child, 'a1') }
+        expect(errors_for(issue, child)).to eq([invalid])
+      end
+
+      context 'with a multiple child holding a legacy value' do
+        let(:kit) { build_kit(kind, multiple: true) }
+
+        it 'rejects adding an allowed value next to the legacy value' do
+          issue = kit_issue(project, parent => 'A', child => %w[b1])
+          issue.custom_field_values = { child.id.to_s => kit_value(child, %w[b1 a1]) }
+          expect(errors_for(issue, child)).to eq([invalid])
+        end
+
+        it 'accepts removing the legacy value' do
+          issue = kit_issue(project, parent => 'A', child => %w[b1 a1])
+          issue.custom_field_values = { child.id.to_s => kit_value(child, %w[a1]) }
+          expect(errors_for(issue, child)).to eq([])
+        end
+      end
+
+      context 'with a required child' do
+        before { child.update!(is_required: true) }
+
+        it 'accepts a blank child while the parent value has no links' do
+          expect(errors_for(kit_new_issue(project, parent => 'C', child => []), child)).to eq([])
+        end
+
+        it 'accepts a blank child while the parent is blank' do
+          expect(errors_for(kit_new_issue(project, parent => [], child => []), child)).to eq([])
+        end
+
+        it 'requires the child once the parent value has links' do
+          expect(errors_for(kit_new_issue(project, parent => 'A', child => []), child)).to eq([blank])
+        end
+      end
+    end
+
+    describe 'before_custom_field_save' do
+      it 'keeps a valid parent id as an Integer and clears the core default value' do
+        child.default_value = kit_key(child, 'a1')
+        child.save!
+        expect(child.reload.parent_custom_field_id).to eq(parent.id)
+        expect(child.default_value).to be_nil
+      end
+
+      it 'drops a parent id that names no field' do
+        child.parent_custom_field_id = 0
+        child.save!
+        expect(child.reload.parent_custom_field_id).to be_nil
+      end
+
+      it 'drops a parent of another custom field type' do
+        other = kind == :list ? dcf_list_field(type: ProjectCustomField) : dcf_enum_field(type: ProjectCustomField)
+        child.parent_custom_field_id = other.id
+        child.save!
+        expect(child.reload.parent_custom_field_id).to be_nil
+      end
+
+      it 'drops a parent outside the format family' do
+        other = kind == :list ? dcf_enum_field : dcf_list_field
+        child.parent_custom_field_id = other.id
+        child.save!
+        expect(child.reload.parent_custom_field_id).to be_nil
+      end
+
+      it 'keeps the core default value when no parent is set' do
+        child.parent_custom_field_id = nil
+        child.default_value = kit_key(child, 'a1')
+        child.save!
+        expect(child.reload.default_value).to eq(kit_key(child, 'a1'))
+      end
+
+      it 'stores sanitized mappings: String keys, blank entries and empty rows removed' do
+        a1 = kit_key(child, 'a1')
+        child.value_dependencies = { kit_key(parent, 'A') => [a1, '', nil], '' => [a1], 'X' => ['', nil], 7 => a1 }
+        child.default_value_dependencies = { kit_key(parent, 'A') => [a1, ''], 'B' => '', '' => a1, 'C' => a1 }
+        child.save!
+        child.reload
+        expect(child.value_dependencies).to eq(kit_key(parent, 'A') => [a1], '7' => [a1])
+        expect(child.default_value_dependencies).to eq(kit_key(parent, 'A') => [a1], 'C' => a1)
+      end
+    end
+  end
+
+  describe RedmineDependingCustomFields::DependingListFormat do
+    it_behaves_like 'a depending format today', :list, %w[invalid]
+
+    describe 'details specific to the list format' do
+      let(:kit) { build_kit(:list) }
+      let(:parent) { kit.first }
+      let(:child) { kit.last }
+      let(:project) { kit && dcf_create_project }
+
+      it 'offers the full core list in the edit form, also a stored disallowed value' do
+        issue = kit_issue(project, parent => 'A', child => 'b1')
+        value = issue.custom_field_values.detect { |v| v.custom_field_id == child.id }
+        expect(child.format.possible_custom_value_options(value)).to eq(%w[a1 a2 b1])
+      end
+
+      it 'returns every value from query_filter_values without a query' do
+        expect(child.format.query_filter_values(child, nil)).to eq([%w[a1 a1], %w[a2 a2], %w[b1 b1]])
+      end
+
+      it 'returns every value from query_filter_values for a project query' do
+        query = IssueQuery.new(name: '_', project: project)
+        expect(child.format.query_filter_values(child, query)).to eq([%w[a1 a1], %w[a2 a2], %w[b1 b1]])
+      end
+
+      it 'does not restrict query_filter_values by the project value of a project field' do
+        parent, child = build_kit(:list, type: ProjectCustomField)
+        project.custom_field_values = { parent.id.to_s => 'A' }
+        project.save!(validate: false)
+        query = IssueQuery.new(name: '_', project: Project.find(project.id))
+        expect(child.format.query_filter_values(child, query)).to eq([%w[a1 a1], %w[a2 a2], %w[b1 b1]])
+      end
+
+      it 'validates the members of a stored cycle against their mappings' do
+        x = dcf_list_field(format: 'depending_list', values: %w[x1 x2])
+        y = dcf_list_field(format: 'depending_list', values: %w[y1 y2], parent: x)
+        x.parent_custom_field_id = y.id
+        x.save!
+        dcf_set_dependencies(x, value_dependencies: { 'y1' => %w[x1] })
+        dcf_set_dependencies(y, value_dependencies: { 'x1' => %w[y1] })
+        expect(x.reload.parent_custom_field_id).to eq(y.id)
+        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y1'), y)).to eq([])
+        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y2'), y)).to eq([invalid])
+      end
+    end
+  end
+
+  describe RedmineDependingCustomFields::DependingEnumerationFormat do
+    it_behaves_like 'a depending format today', :enumeration, %w[inclusion invalid]
+
+    describe 'details specific to the enumeration format' do
+      let(:kit) { build_kit(:enumeration) }
+      let(:parent) { kit.first }
+      let(:child) { kit.last }
+      let(:project) { kit && dcf_create_project }
+
+      it 'offers a stored disallowed value twice in the edit form: hidden 3-tuple plus visible pair' do
+        issue = kit_issue(project, parent => 'A', child => 'b1')
+        value = issue.custom_field_values.detect { |v| v.custom_field_id == child.id }
+        expect(child.format.possible_custom_value_options(value))
+          .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1', hidden), pair(child, 'b1')])
+      end
+
+      it 'raises from query_filter_values without a query' do
+        expect { child.format.query_filter_values(child, nil) }.to raise_error(NoMethodError)
+      end
+
+      it 'returns every value from query_filter_values for an issue field' do
+        query = IssueQuery.new(name: '_', project: project)
+        expect(child.format.query_filter_values(child, query))
+          .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1')])
+      end
+
+      it 'restricts query_filter_values by the project value of a project field' do
+        parent, child = build_kit(:enumeration, type: ProjectCustomField)
+        project.custom_field_values = { parent.id.to_s => kit_key(parent, 'A') }
+        project.save!(validate: false)
+        query = IssueQuery.new(name: '_', project: Project.find(project.id))
+        expect(child.format.query_filter_values(child, query)).to eq([pair(child, 'a1'), pair(child, 'a2')])
+      end
+
+      it 'stores mappings to inactive enumerations as they are' do
+        b1 = child.enumerations.detect { |e| e.name == 'b1' }
+        b1.update!(active: false)
+        expect(child.reload.value_dependencies[kit_key(parent, 'B')]).to eq([b1.id.to_s])
+        expect(core_base(child).map(&:first)).to eq(%w[a1 a2])
+      end
+    end
+  end
+end

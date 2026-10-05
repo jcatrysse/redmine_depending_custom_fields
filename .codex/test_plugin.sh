@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Usage: .codex/test_plugin.sh [<5.1|6.0|6.1|7.0>] [--suite rspec|system|js|lint|all]... [-- <rspec args>]
+# rspec args starting with spec/ select files (relative to the plugin root).
 # Re-syncs the working tree into the prepared Redmine checkout and runs the
 # requested suites (default: rspec js lint). Every suite's full output is kept in
 # $DCF_WORK_DIR/logs/ and a summary with exit codes is printed at the end; that
@@ -46,7 +47,17 @@ for s in $SUITES; do
   case "$s" in
     rspec)
       needs_redmine
-      run_suite rspec env -u DCF_SYSTEM_SPECS bundle exec rspec "$SPEC_DIR" --format progress "${RSPEC_ARGS[@]}" ;;
+      # Paths after "--" (relative to the plugin, e.g. spec/models/x_spec.rb)
+      # replace the full spec directory, so a subset can be run quickly.
+      TARGETS=(); OPTS=()
+      for a in "${RSPEC_ARGS[@]}"; do
+        case "$a" in
+          spec/*) TARGETS+=("plugins/$DCF_PLUGIN_NAME/$a") ;;
+          *) OPTS+=("$a") ;;
+        esac
+      done
+      [ ${#TARGETS[@]} -gt 0 ] || TARGETS=("$SPEC_DIR")
+      run_suite rspec env -u DCF_SYSTEM_SPECS bundle exec rspec "${TARGETS[@]}" --format progress "${OPTS[@]}" ;;
     system)
       needs_redmine
       # A chromedriver on PATH that does not match the browser breaks Selenium

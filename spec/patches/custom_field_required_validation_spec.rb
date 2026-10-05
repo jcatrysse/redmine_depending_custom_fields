@@ -1,326 +1,133 @@
+# frozen_string_literal: true
+
 require_relative '../rails_helper'
 
-# These specs exercise CustomFieldPatch#validate_custom_value, which strips the
-# "can't be blank" error that CustomField#validate_custom_value adds independently
-# after calling format.validate_custom_value.  The format-level early return alone
-# is not sufficient because CustomField re-checks is_required? after the format
-# returns [].
-#
-# We build a minimal base class that mirrors the relevant behaviour of
-# CustomField#validate_custom_value so the patch can be tested without a
-# database, then prepend the patch to it.
-
+# CustomFieldPatch#validate_custom_value strips the "cannot be blank" error that
+# core CustomField#validate_custom_value adds on its own after the format
+# returned no errors, when the depending field has no options for the current
+# parent value. WP-04 rewrote these examples on real fields and real issues
+# (they used a stand-in class without a callback API); the assertions are the
+# same.
 RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
+  fixtures :users
+
   let(:blank_msg)   { I18n.t('activerecord.errors.messages.blank') }
   let(:invalid_msg) { I18n.t('activerecord.errors.messages.invalid') }
+  let(:project)     { dcf_create_project }
 
-  let(:issue)     { double('Issue') }
-  let(:parent_cf) { double('parent_cf', id: 1) }
-
-  before do
-    allow(CustomField).to receive(:find_by).with(id: 1).and_return(parent_cf)
+  # Parent values A and Z; the child is required and A maps to its value x.
+  # Returns [parent, child]; mapping: false leaves the mapping empty.
+  def build_pair(fmt, multiple: false, mapping: true)
+    if fmt == RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST
+      parent = dcf_list_field(values: %w[A Z])
+      child = dcf_list_field(format: fmt, values: %w[x], parent: parent, multiple: multiple)
+    else
+      parent = dcf_enum_field(names: %w[A Z])
+      child = dcf_enum_field(format: fmt, names: %w[x], parent: parent)
+    end
+    child.update!(is_required: true, multiple: multiple)
+    dcf_set_dependencies(child, value_dependencies: mapping ? { key(parent, 'A') => [key(child, 'x')] } : {})
+    [parent, child]
   end
 
-  # ---------------------------------------------------------------------------
-  # Minimal stand-in for CustomField that carries just enough state for the
-  # patch to work, plus a validate_custom_value that mirrors the core model:
-  #   1. call format.validate_custom_value (may return [])
-  #   2. independently add blank_msg when is_required? && value.blank?
-  # ---------------------------------------------------------------------------
-  def build_base_class
-    Class.new do
-      def self.after_save(*); end  # prevent ActiveRecord callback registration
+  def key(field, name)
+    return name if field.field_format.end_with?('list')
 
-      attr_accessor :field_format, :parent_custom_field_id, :value_dependencies
-
-      def initialize(attrs = {})
-        @field_format           = attrs[:field_format]
-        @parent_custom_field_id = attrs[:parent_custom_field_id]
-        @value_dependencies     = attrs[:value_dependencies] || {}
-        @required               = attrs.fetch(:is_required, false)
-        @format_obj             = attrs[:format]
-      end
-
-      def is_required?
-        @required
-      end
-      def format
-        @format_obj
-      end
-
-      def set_custom_field_value(_cv, v)  # required by CustomFieldValue#value=
-        v
-      end
-
-      # Mirrors the relevant part of CustomField#validate_custom_value
-      def validate_custom_value(custom_value)
-        value = custom_value.value
-        errs  = format.validate_custom_value(custom_value)
-
-        unless errs.any?
-          errs << I18n.t('activerecord.errors.messages.blank') if is_required? && value.blank?
-        end
-
-        errs
-      end
-    end.tap { |k| k.prepend(RedmineDependingCustomFields::Patches::CustomFieldPatch) }
+    field.enumerations.detect { |e| e.name == name }.id.to_s
   end
 
-  # Returns a fresh copy on every call to prevent cross-call mutation.
-  def stub_format_returning(errs)
-    dbl = double('format')
-    allow(dbl).to receive(:validate_custom_value) { |_cv| errs.dup }
-    dbl
+  # An unsaved issue whose parent field holds +parent_name+ ('' for blank).
+  def issue_with_parent(parent, parent_name)
+    tracker, status, priority = dcf_issue_infra(project)
+    tracker.custom_fields << parent unless tracker.custom_fields.include?(parent)
+    issue = Issue.new(project: project, tracker: tracker, subject: 'S', author: dcf_admin,
+                      status: status, priority: priority)
+    issue.custom_field_values = { parent.id.to_s => parent_name.empty? ? '' : key(parent, parent_name) }
+    issue
   end
 
-  def make_value(cf, val)
-    CustomFieldValue.new(custom_field: cf, customized: issue, value: val)
+  def validate(child, customized, value)
+    child.validate_custom_value(CustomFieldValue.new(custom_field: child, customized: customized, value: value))
   end
 
-  # ---------------------------------------------------------------------------
-  # Core scenario: depending field, required, parent maps to no child options
-  # ---------------------------------------------------------------------------
   [
     RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
     RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION
   ].each do |fmt|
     context "field_format: #{fmt}" do
-      let(:klass) { build_base_class }
+      let(:pair) { build_pair(fmt) }
+      let(:parent) { pair.first }
+      let(:child) { pair.last }
 
       context 'when parent value has no mapped child options' do
-        let(:cf) do
-          klass.new(
-            field_format:           fmt,
-            parent_custom_field_id: 1,
-            value_dependencies:     { 'A' => ['x'] },
-            is_required:            true,
-            format:                 stub_format_returning([])
-          )
-        end
-
-        before do
-          # Parent returns 'Z', which has no entry in the mapping.
-          allow(issue).to receive(:custom_field_value).with(parent_cf).and_return('Z')
-        end
+        let(:issue) { issue_with_parent(parent, 'Z') }
 
         it 'returns no errors for a blank child value' do
-          expect(cf.validate_custom_value(make_value(cf, ''))).to be_empty
+          expect(validate(child, issue, '')).to be_empty
         end
 
         it 'returns no errors for a nil child value' do
-          expect(cf.validate_custom_value(make_value(cf, nil))).to be_empty
+          expect(validate(child, issue, nil)).to be_empty
         end
       end
 
       context 'when parent value has a valid mapping' do
-        let(:cf) do
-          klass.new(
-            field_format:           fmt,
-            parent_custom_field_id: 1,
-            value_dependencies:     { 'A' => ['x'] },
-            is_required:            true,
-            format:                 stub_format_returning([])
-          )
-        end
-
-        before do
-          # Parent returns 'A', which maps to ['x'] — options exist.
-          allow(issue).to receive(:custom_field_value).with(parent_cf).and_return('A')
-        end
-
         it 'preserves the blank error when options are available but value is blank' do
-          expect(cf.validate_custom_value(make_value(cf, ''))).to include(blank_msg)
+          expect(validate(child, issue_with_parent(parent, 'A'), '')).to include(blank_msg)
         end
       end
 
       context 'when parent field has no value selected (blank parent)' do
-        let(:cf) do
-          klass.new(
-            field_format:           fmt,
-            parent_custom_field_id: 1,
-            value_dependencies:     { 'A' => ['x'] },
-            is_required:            true,
-            format:                 stub_format_returning([])
-          )
-        end
-
-        before do
-          allow(issue).to receive(:custom_field_value).with(parent_cf).and_return('')
-        end
-
         it 'strips the blank error when parent is blank (no options available)' do
-          expect(cf.validate_custom_value(make_value(cf, ''))).not_to include(blank_msg)
+          expect(validate(child, issue_with_parent(parent, ''), '')).not_to include(blank_msg)
         end
       end
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Non-depending formats must not be affected
-  # ---------------------------------------------------------------------------
   context 'when field_format is not a depending format' do
-    let(:klass) { build_base_class }
-    let(:cf) do
-      klass.new(
-        field_format: 'list',
-        is_required:  true,
-        format:       stub_format_returning([])
-      )
-    end
-
     it 'preserves the blank error for a plain list field' do
-      expect(cf.validate_custom_value(make_value(cf, ''))).to include(blank_msg)
+      field = dcf_list_field(values: %w[A])
+      field.update!(is_required: true)
+      expect(validate(field, issue_with_parent(dcf_list_field(values: %w[A]), 'A'), '')).to include(blank_msg)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # When format already returns errors the blank check is skipped entirely
-  # (CustomField behaviour) — patch must not double-strip anything
-  # ---------------------------------------------------------------------------
   context 'when the format itself returns errors' do
-    let(:klass) { build_base_class }
-    let(:cf) do
-      klass.new(
-        field_format:           RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
-        parent_custom_field_id: 1,
-        value_dependencies:     {},
-        is_required:            true,
-        format:                 stub_format_returning([I18n.t('activerecord.errors.messages.invalid')])
-      )
-    end
-
-    before do
-      allow(issue).to receive(:custom_field_value).with(parent_cf).and_return('Z')
-    end
-
     it 'passes through the format errors unchanged' do
-      result = cf.validate_custom_value(make_value(cf, 'bad'))
+      parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, mapping: false)
+      result = validate(child, issue_with_parent(parent, 'Z'), 'bad')
       expect(result).to eq([invalid_msg])
       expect(result).not_to include(blank_msg)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Guard: customized is nil (background jobs, import contexts)
-  # The patch cannot determine the parent value so it must not suppress the error.
-  # ---------------------------------------------------------------------------
   context 'when customized is nil' do
-    let(:klass) { build_base_class }
-    let(:cf) do
-      klass.new(
-        field_format:           RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
-        parent_custom_field_id: 1,
-        value_dependencies:     { 'A' => ['x'] },
-        is_required:            true,
-        format:                 stub_format_returning([])
-      )
-    end
-
     it 'preserves the blank error when customized is nil' do
-      cv = CustomFieldValue.new(custom_field: cf, customized: nil, value: '')
-      expect(cf.validate_custom_value(cv)).to include(blank_msg)
+      _parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
+      expect(validate(child, nil, '')).to include(blank_msg)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Guard: parent custom field has been deleted
-  # The patch falls back to preserving the error (safe default).
-  # ---------------------------------------------------------------------------
   context 'when parent custom field record no longer exists' do
-    let(:klass) { build_base_class }
-    let(:cf) do
-      klass.new(
-        field_format:           RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
-        parent_custom_field_id: 99,
-        value_dependencies:     { 'A' => ['x'] },
-        is_required:            true,
-        format:                 stub_format_returning([])
-      )
-    end
-
-    before do
-      allow(CustomField).to receive(:find_by).with(id: 99).and_return(nil)
-    end
-
     it 'preserves the blank error when the parent field cannot be found' do
-      cv = CustomFieldValue.new(custom_field: cf, customized: issue, value: '')
-      expect(cf.validate_custom_value(cv)).to include(blank_msg)
+      parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
+      issue = issue_with_parent(parent, 'Z')
+      CustomField.where(id: parent.id).delete_all
+      expect(validate(child.reload, issue, '')).to include(blank_msg)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # multiple: true field — CustomField uses a separate array branch for blank
-  # check; the patch must strip blank_msg there too.
-  # ---------------------------------------------------------------------------
   context 'when the field accepts multiple values' do
-    let(:klass) do
-      Class.new do
-        def self.after_save(*); end
-
-        attr_accessor :field_format, :parent_custom_field_id, :value_dependencies
-
-        def initialize(attrs = {})
-          @field_format           = attrs[:field_format]
-          @parent_custom_field_id = attrs[:parent_custom_field_id]
-          @value_dependencies     = attrs[:value_dependencies] || {}
-          @required               = attrs.fetch(:is_required, false)
-          @format_obj             = attrs[:format]
-        end
-
-        def is_required?
-          @required
-        end
-        def format
-          @format_obj
-        end
-        def multiple?
-          true
-        end
-
-        def set_custom_field_value(_cv, v)
-          v
-        end
-
-        # Array branch of CustomField#validate_custom_value
-        def validate_custom_value(custom_value)
-          value = custom_value.value
-          errs  = format.validate_custom_value(custom_value)
-
-          unless errs.any?
-            if value.is_a?(Array)
-              errs << I18n.t('activerecord.errors.messages.blank') if is_required? && value.detect(&:present?).nil?
-            else
-              errs << I18n.t('activerecord.errors.messages.blank') if is_required? && value.blank?
-            end
-          end
-
-          errs
-        end
-      end.tap { |k| k.prepend(RedmineDependingCustomFields::Patches::CustomFieldPatch) }
-    end
-
-    let(:cf) do
-      klass.new(
-        field_format:           RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
-        parent_custom_field_id: 1,
-        value_dependencies:     { 'A' => ['x'] },
-        is_required:            true,
-        format:                 stub_format_returning([])
-      )
-    end
-
-    before do
-      allow(issue).to receive(:custom_field_value).with(parent_cf).and_return('Z')
-    end
+    let(:pair) { build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, multiple: true) }
+    let(:issue) { issue_with_parent(pair.first, 'Z') }
 
     it 'strips the blank error for an empty array when no options are available' do
-      cv = CustomFieldValue.new(custom_field: cf, customized: issue, value: [])
-      expect(cf.validate_custom_value(cv)).to be_empty
+      expect(validate(pair.last, issue, [])).to be_empty
     end
 
     it 'strips the blank error for an all-blank array when no options are available' do
-      cv = CustomFieldValue.new(custom_field: cf, customized: issue, value: ['', nil])
-      expect(cf.validate_custom_value(cv)).to be_empty
+      expect(validate(pair.last, issue, ['', nil])).to be_empty
     end
   end
 end

@@ -42,8 +42,13 @@ echo "--- 2. Compat check (lines added since base)"
 # Constructs that parse on 2.7 but fail at runtime on Ruby 2.7 / Rails 6.1 /
 # Rack 2.2, or break repository rules (see .codex/lib/compat_check.rb). Only
 # added lines count, so existing code is fixed by the WP that owns it.
-git diff -U0 "$BASE" -- app lib config db init.rb spec assets ':!*.md' ':!spec/quality/**' \
-  | ruby "$DCF_SCRIPT_DIR/lib/compat_check.rb" || STATUS=1
+# Untracked files are checked too (as if added), so the gate also works before
+# the first git add.
+COMPAT_PATHS=(app lib config db init.rb spec assets ':!*.md' ':!spec/quality/**')
+{ git diff -U0 "$BASE" -- "${COMPAT_PATHS[@]}"
+  git ls-files --others --exclude-standard -- "${COMPAT_PATHS[@]}" \
+    | while read -r f; do git diff -U0 --no-index /dev/null "$f"; done
+} | ruby "$DCF_SCRIPT_DIR/lib/compat_check.rb" || STATUS=1
 
 echo "--- 3. Ratchet (changed files vs $BASE)"
 if [ -z "$CHANGED" ]; then
