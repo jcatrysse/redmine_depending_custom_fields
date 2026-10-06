@@ -44,13 +44,15 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-25 | Resolved | 0.1.0 (M1) | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
 | UD-26 | Resolved | 0.1.0 (M1) | WP-13 | Default type for widen_core_columns? |
 | UD-27 | Resolved | 0.1.0 (M1) | WP-13 | MySQL testing: add an optional manual (workflow_dispatch only) MariaDB workflow in addition to the :mysql-tagged specs and the documented local recipe? |
-| UD-28 | Provisional | 0.1.0 (M1) | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
+| UD-28 | Resolved | 0.1.0 (M1) | WP-11 | Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages? |
 | UD-29 | Resolved | 0.0.16 | WP-01 | Approve the committed .rubocop.yml overlay (TargetRubyVersion 2.7, TargetRailsVersion 6.1, Rails/HttpStatusNameConsistency disabled) as the ratchet configuration (deviation from raw core config in D10)? |
 | UD-30 | Resolved | 0.0.16 | WP-01, WP-17 | Approve devDependencies jquery 3.7.1 and acorn ~8.18.0 in addition to jsdom ~29.1.1 (D10 named only jsdom)? |
 | UD-31 | Resolved | 0.0.16 | WP-01 | rspec-61.yml: clone source and Ruby version? |
 | UD-32 | Resolved | 0.0.16 | WP-01, WP-07 | May Claude dispatch the manual workflows? |
 | UD-33 | Resolved | 0.0.16 | WP-01 | One-time local prerequisite: may the PostgreSQL role redmine/redmine with CREATEDB be created on developer machines (the scripts never do it themselves)? |
 | UD-34 | Resolved | 0.0.16 | WP-01, WP-07 | Keep requires_redmine 5.0 while testing only 5.1 to 7.0, documenting Ruby 2.7 or newer? |
+| UD-35 | Resolved | 0.1.0 (M1) | WP-05, WP-10, WP-16 | A stored self-parent (a field that names itself as parent): treat it as a cycle of one? |
+| UD-36 | Resolved | 0.1.0 (M1) | WP-05, WP-10 | Parent select on the admin form: never offer the field itself, even when it is the stored (self) parent? |
 
 ### UD-01
 
@@ -400,7 +402,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-28
 
-**Status: Provisional (recommendation applied, not yet confirmed by the owner).** The usage line at 90 percent is planned as recommended. The owner confirms or changes this before WP-11 starts; the alternative only removes the line, the hard validation error stays either way.
+**Status: Resolved by the owner (recommendation accepted).** The usage line is shown at 90 percent of the column limit on the core admin custom field form and the project pages (WP-11); on PostgreSQL it never appears.
 
 **Question.** Show the storage usage line at 90 percent of the column limit on the core admin custom field form (view_custom_fields_form_upper_box hook) and project pages?
 
@@ -495,6 +497,34 @@ This register lists the decisions the owner must confirm, each with a recommenda
 **Impact.** WP-01 overlay and WP-07 README.
 
 **Work packages.** WP-01, WP-07
+
+### UD-35
+
+**Status: Resolved by the owner (recommendation accepted).** A self-pointer is a cycle of one, as implemented in WP-05: the field and every field below it are unconstrained on server and client until it is fixed, and the admin form shows the circular dependency warning (WP-10), the same rule as UD-08 for longer cycles.
+
+**Question.** A stored self-parent (for example set through the API, "City depends on City", with "Street" depending on City): treat it as a cycle of one?
+
+**Recommendation.** Yes (cycle of one).
+
+**Alternatives.** Treat the self-pointer as "no parent", like a deleted parent: City shows all values, Street stays filtered by City, and no warning is shown.
+
+**Impact.** FieldIndex walks (WP-05), cycle warning (WP-10), client emission (WP-16). Only affects stored data: WP-10 refuses saving a self-parent.
+
+**Work packages.** WP-05, WP-10, WP-16
+
+### UD-36
+
+**Status: Resolved by the owner (recommendation accepted).** The parent select never offers the field itself, as today; the next admin save of a field that names itself clears the pointer (the field becomes a plain list without parent).
+
+**Question.** Parent select on the admin form: never offer the field itself, even when it is the stored (self) parent?
+
+**Recommendation.** Never offer it (today's behaviour; the next save repairs the setting).
+
+**Alternatives.** Keep the stored self-parent selected so nothing changes silently; from WP-10 on the save is then refused until another parent is chosen.
+
+**Impact.** DependencyRules.parent_candidates (WP-05) and the parent select (WP-10).
+
+**Work packages.** WP-05, WP-10
 
 ## 2. Deviations from the default decisions
 
@@ -681,7 +711,7 @@ The area designs started from ten default decisions. This table shows where the 
 Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release 0.1.0 with milestones M1, M2 and M3.
 
 - **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
-- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27 (resolved); UD-28 provisional (recommendation applied, owner confirms before WP-11).
+- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28, UD-35, UD-36 (resolved).
 - **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14 (open).
 - **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (open).
 
