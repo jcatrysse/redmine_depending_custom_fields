@@ -6,10 +6,11 @@ require_relative '../rails_helper'
 # including known defects, before the WP-05/WP-06 refactor. A later work
 # package may change an expectation here only as a listed flip; every other
 # example must stay unchanged. Planned flips:
-# - WP-08 (enumeration): "rejects a disallowed value on a new issue" and
-#   "rejects an issue copy holding a legacy combination" (both through the
-#   shared parameter %w[inclusion invalid]: two errors become one), and
-#   "offers a stored disallowed value twice".
+# - WP-08 (enumeration), done: "rejects a disallowed value on a new issue",
+#   "rejects an issue copy holding a legacy combination" and the second row
+#   of "validates the members of a stored cycle" (all through the shared
+#   parameter, %w[inclusion invalid] became %w[invalid]: two errors became
+#   one), and "offers a stored disallowed value twice" (now once).
 # - WP-09: "rejects a stored child ... assigned unchanged", "rejects an issue
 #   copy holding a legacy combination", "silently skips an issue ... when the
 #   project is copied", "rejects adding an allowed value next to the legacy
@@ -27,8 +28,9 @@ RSpec.describe 'Depending formats (characterization)' do
   let(:blank) { I18n.t('activerecord.errors.messages.blank') }
   let(:hidden) { DcfFormatCharacterization::HIDDEN }
 
-  # Errors for a disallowed value on a new record (value_was is empty): the list
-  # format gives one error, the enumeration format adds core's inclusion error.
+  # Errors for a disallowed value on a new record (value_was is empty): one
+  # error for both formats (the enumeration format added core's inclusion
+  # error before WP-08).
   shared_examples 'a depending format today' do |kind, new_disallowed|
     let(:new_disallowed_errors) { new_disallowed.map { |key| I18n.t("activerecord.errors.messages.#{key}") } }
     let(:kit) { build_kit(kind) }
@@ -317,7 +319,9 @@ RSpec.describe 'Depending formats (characterization)' do
   end
 
   describe RedmineDependingCustomFields::DependingEnumerationFormat do
-    it_behaves_like 'a depending format today', :enumeration, %w[inclusion invalid]
+    # Flipped by WP-08: was %w[inclusion invalid] (new issue, issue copy and
+    # stored cycle rows of the shared group).
+    it_behaves_like 'a depending format today', :enumeration, %w[invalid]
 
     describe 'details specific to the enumeration format' do
       let(:kit) { build_kit(:enumeration) }
@@ -325,11 +329,12 @@ RSpec.describe 'Depending formats (characterization)' do
       let(:child) { kit.last }
       let(:project) { kit && dcf_create_project }
 
-      it 'offers a stored disallowed value twice in the edit form: hidden 3-tuple plus visible pair' do
+      # Flipped by WP-08: was [a1, a2, b1 + hidden, b1] (twice: hidden 3-tuple plus visible pair).
+      it 'offers a stored disallowed value once in the edit form, as a plain pair (Flipped by WP-08)' do
         issue = kit_issue(project, parent => 'A', child => 'b1')
         value = issue.custom_field_values.detect { |v| v.custom_field_id == child.id }
         expect(child.format.possible_custom_value_options(value))
-          .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1', hidden), pair(child, 'b1')])
+          .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1')])
       end
 
       it 'raises from query_filter_values without a query' do

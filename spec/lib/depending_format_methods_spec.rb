@@ -75,16 +75,21 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
                         validate_custom_value: Redmine::FieldFormat::ListFormat,
                         validate_custom_field: Redmine::FieldFormat::ListFormat,
                         before_custom_field_save: Redmine::FieldFormat::Base },
-        core_options: Redmine::FieldFormat::ListFormat,
+        options_owner: Redmine::FieldFormat::ListFormat,
+        body: [:label, :query_filter_values],
         label: :label_depending_list
       },
+      # WP-08: the class body defines the edit form options (F2 fix), above
+      # core RecordList.
       RedmineDependingCustomFields::DependingEnumerationFormat => {
         core: Redmine::FieldFormat::EnumerationFormat,
         super_owners: { possible_values_options: Redmine::FieldFormat::EnumerationFormat,
                         validate_custom_value: Redmine::FieldFormat::RecordList,
                         validate_custom_field: Redmine::FieldFormat::Base,
-                        before_custom_field_save: Redmine::FieldFormat::Base },
-        core_options: Redmine::FieldFormat::RecordList,
+                        before_custom_field_save: Redmine::FieldFormat::Base,
+                        possible_custom_value_options: Redmine::FieldFormat::RecordList },
+        options_owner: RedmineDependingCustomFields::DependingEnumerationFormat,
+        body: [:label, :possible_custom_value_options, :query_filter_values],
         label: :label_depending_enumeration
       }
     }
@@ -108,18 +113,18 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           end
         end
 
-        it 'keeps only label and query_filter_values in the class body, both public' do
-          expect(klass.instance_methods(false).sort).to eq([:label, :query_filter_values])
+        it 'keeps only its own methods in the class body, all public' do
+          expect(klass.instance_methods(false).sort).to eq(spec[:body])
           expect(klass.private_instance_methods(false)).to eq([])
-          expect(klass.instance.public_methods).to include(:query_filter_values, :label)
+          expect(klass.instance.public_methods).to include(*spec[:body])
           expect(klass.instance.label).to eq(spec[:label])
           expect(klass.instance.method(:query_filter_values).parameters).to eq([[:req, :custom_field], [:opt, :query]])
         end
 
-        it 'leaves the edit tags, the edit form options and customized_class_names to core' do
+        it 'leaves the edit tags and customized_class_names to core, and the edit form options to core for the list' do
           expect(klass.instance_method(:edit_tag).owner).to eq(Redmine::FieldFormat::List)
           expect(klass.instance_method(:bulk_edit_tag).owner).to eq(Redmine::FieldFormat::List)
-          expect(klass.instance_method(:possible_custom_value_options).owner).to eq(spec[:core_options])
+          expect(klass.instance_method(:possible_custom_value_options).owner).to eq(spec[:options_owner])
           expect(klass.method(:customized_class_names).owner).not_to eq(klass.singleton_class)
         end
 
@@ -590,6 +595,248 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     end
   end
 
+  # WP-08 (F2): the enumeration edit form options. Core RecordList read
+  # options.map(&:last) on the hidden 3-tuples, so a stored value the parent
+  # does not allow was appended a second time. The list format keeps core
+  # ListFormat's method.
+  describe '#possible_custom_value_options' do
+    let(:kit) { build_kit(:enumeration) }
+    let(:parent) { kit.first }
+    let(:child) { kit.last }
+    let(:fmt) { child.format }
+    let(:core) { Redmine::FieldFormat::EnumerationFormat.instance }
+
+    def deactivate(field, name)
+      field.enumerations.detect { |e| e.name == name }.update!(active: false)
+    end
+
+    # [label, id] pairs only, each id once.
+    def expect_plain_pairs(options)
+      expect(options).to all(be_an(Array))
+      expect(options.map(&:size).uniq).to eq([2])
+      expect(options.flatten.grep(Hash)).to eq([])
+      expect(options.map(&:last).uniq).to eq(options.map(&:last))
+    end
+
+    it 'returns the unfiltered active list as plain pairs, whatever the parent value' do
+      values = {
+        'stored a1 under A' => value_of(kit_issue(project, parent => 'A', child => 'a1'), child),
+        'new issue under A' => value_of(kit_new_issue(project, parent => 'A'), child),
+        'stored b1 under B' => value_of(kit_issue(project, parent => 'B', child => 'b1'), child),
+        'blank parent' => value_of(kit_issue(project, parent => [], child => []), child),
+        'parent without links' => value_of(kit_issue(project, parent => 'C'), child),
+        'no object' => CustomFieldValue.new(custom_field: child, value: 'zz')
+      }
+      allow(rules).to receive(:parent_state).and_call_original
+      allow(CustomField).to receive(:find_by).and_call_original
+      values.each do |label, value|
+        options = fmt.possible_custom_value_options(value)
+        expect(options).to eq(core_base(child)), label
+        expect(options).to eq(core.possible_custom_value_options(value)), label
+        expect_plain_pairs(options)
+      end
+      expect(rules).not_to have_received(:parent_state)
+      expect(CustomField).not_to have_received(:find_by)
+    end
+
+    it 'returns the same list for a dangling parent and a stored self-parent' do
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      dangling = write_store(child, 'parent_custom_field_id' => CustomField.maximum(:id).to_i + 1_000)
+      expect(fmt.possible_custom_value_options(value_of(issue, child).tap { |v| v.custom_field = dangling }))
+        .to eq(core_base(child))
+      itself = write_store(child, 'parent_custom_field_id' => child.id,
+                                  'value_dependencies' => { kit_key(child, 'a1') => [kit_key(child, 'a1')] })
+      expect(fmt.possible_custom_value_options(value_of(Issue.find(issue.id), child).tap { |v| v.custom_field = itself }))
+        .to eq(core_base(child))
+    end
+
+    it 'offers a stored value the parent does not allow once, as a plain pair' do
+      options = fmt.possible_custom_value_options(value_of(kit_issue(project, parent => 'A', child => 'b1'), child))
+      expect(options).to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1')])
+      expect_plain_pairs(options)
+    end
+
+    it 'offers each stored value of a multiple child once' do
+      parent, child = build_kit(:enumeration, multiple: true)
+      value = value_of(kit_issue(project, parent => 'A', child => %w[b1 a1]), child)
+      expect(value.value_was).to match_array([kit_key(child, 'a1'), kit_key(child, 'b1')])
+      expect(child.format.possible_custom_value_options(value))
+        .to eq([pair(child, 'a1'), pair(child, 'a2'), pair(child, 'b1')])
+    end
+
+    it 'appends a stored inactive id once, after the active list' do
+      deactivate(child, 'a2')
+      value = value_of(kit_issue(project, parent => 'A', child => 'a2'), child)
+      expected = [pair(child, 'a1'), pair(child, 'b1'), pair(child, 'a2')]
+      expect(fmt.possible_custom_value_options(value)).to eq(expected)
+      a2 = kit_key(child, 'a2')
+      [a2, [a2], [a2, '', nil, a2], ['', a2]].each do |stored|
+        value.value_was = stored
+        expect(fmt.possible_custom_value_options(value)).to eq(expected), stored.inspect
+      end
+      [nil, '', [nil], [''], []].each do |stored|
+        value.value_was = stored
+        expect(fmt.possible_custom_value_options(value)).to eq(core_base(child)), stored.inspect
+      end
+    end
+
+    # a1 moves behind a2, so position order (a2, a1) differs from id order,
+    # update order and stored order (all a1, a2).
+    it 'appends every stored inactive id of a multiple child once, in position order' do
+      parent, child = build_kit(:enumeration, multiple: true)
+      child.enumerations.detect { |e| e.name == 'a1' }.update_columns(position: 5)
+      deactivate(child, 'a1')
+      deactivate(child, 'a2')
+      value = value_of(kit_issue(project, parent => 'A', child => %w[a1 b1 a2]), child)
+      expect(value.value_was).to eq([kit_key(child, 'a1'), kit_key(child, 'b1'), kit_key(child, 'a2')])
+      options = child.format.possible_custom_value_options(value)
+      expect(options).to eq([pair(child, 'b1'), pair(child, 'a2'), pair(child, 'a1')])
+      expect_plain_pairs(options)
+    end
+
+    it 'never offers an inactive id that is not stored, also when the mapping links it (QA-21)' do
+      deactivate(child, 'b1')
+      b1 = kit_key(child, 'b1')
+      expect(CustomField.find(child.id).value_dependencies[kit_key(parent, 'B')]).to eq([b1])
+      copy = Issue.new.copy_from(kit_issue(project, parent => 'B', child => 'b1'))
+      changed = kit_issue(project, parent => 'B', child => 'a1')
+      changed.custom_field_values = { child.id.to_s => b1 }
+      values = {
+        'posted on a new issue' => value_of(kit_new_issue(project, parent => 'B', child => 'b1'), child),
+        'linked only' => value_of(kit_issue(project, parent => 'B'), child),
+        'posted over a stored a1' => value_of(changed, child),
+        'issue copy' => value_of(copy, child),
+        'no object' => CustomFieldValue.new(custom_field: child, value: b1)
+      }
+      values.each do |label, value|
+        expect(fmt.possible_custom_value_options(value)).to eq([pair(child, 'a1'), pair(child, 'a2')]), label
+      end
+      expect(values['issue copy'].value).to eq(b1)
+    end
+
+    # Like core, a stored id is looked up across fields (not scoped to the
+    # field's own enumerations); an id with no row or a non-numeric one adds
+    # nothing.
+    it 'appends a stored id of another field like core, and nothing for an unknown or non-numeric id' do
+      other = dcf_enum_field(names: %w[z1])
+      z1 = kit_key(other, 'z1')
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      CustomValue.where(customized_type: 'Issue', customized_id: issue.id, custom_field_id: child.id)
+                 .update_all(value: z1)
+      value = value_of(Issue.find(issue.id), child)
+      expect(value.value_was).to eq(z1)
+      expect(fmt.possible_custom_value_options(value)).to eq(core_base(child) + [['z1', z1]])
+      expect(fmt.possible_custom_value_options(value)).to eq(core.possible_custom_value_options(value))
+      [(CustomFieldEnumeration.maximum(:id).to_i + 1_000).to_s, 'abc'].each do |stored|
+        value.value_was = stored
+        expect(fmt.possible_custom_value_options(value)).to eq(core_base(child)), stored
+        expect(core.possible_custom_value_options(value)).to eq(core_base(child)), stored
+      end
+    end
+
+    it 'accepts a stored id of another field assigned unchanged when no parent applies, like core' do
+      free = dcf_enum_field(format: 'depending_enumeration', names: %w[f1 f2])
+      z1 = kit_key(dcf_enum_field(names: %w[z1]), 'z1')
+      issue = kit_issue(project, free => 'f1')
+      CustomValue.where(customized_type: 'Issue', customized_id: issue.id, custom_field_id: free.id)
+                 .update_all(value: z1)
+      stored = Issue.find(issue.id)
+      stored.custom_field_values = { free.id.to_s => z1 }
+      expect(errors_for(stored, free)).to eq([])
+      fresh = kit_new_issue(project, free => [])
+      fresh.custom_field_values = { free.id.to_s => z1 }
+      expect(errors_for(fresh, free)).to eq([inclusion])
+    end
+
+    it 'runs the queries core runs, and looks stored ids up only when some are missing' do
+      deactivate(child, 'a2')
+      values = [value_of(kit_issue(project, parent => 'A', child => []), child),
+                value_of(kit_issue(project, parent => 'A', child => 'b1'), child),
+                value_of(kit_issue(project, parent => 'A', child => 'a2'), child)]
+      counts = values.map do |value|
+        fmt.possible_custom_value_options(value)
+        core.possible_custom_value_options(value)
+        mine = dcf_count_queries { fmt.possible_custom_value_options(value) }
+        expect(mine).to eq(dcf_count_queries { core.possible_custom_value_options(value) })
+        mine
+      end
+      expect(counts).to eq([1, 1, 2])
+    end
+
+    it 'keeps no state on a fresh format object' do
+      deactivate(child, 'a2')
+      fresh = RedmineDependingCustomFields::DependingEnumerationFormat.send(:new)
+      fresh.possible_custom_value_options(value_of(kit_issue(project, parent => 'A', child => 'a2'), child))
+      expect(fresh.instance_variables).to eq([])
+    end
+
+    # Core List#edit_tag renders these options; each stored value must give
+    # exactly one control and no option may be hidden by the server.
+    describe 'in the edit tags' do
+      let(:view) { ActionView::Base.empty }
+
+      def render_tag(field, issue)
+        value = value_of(issue, field).tap { |v| v.custom_field = field }
+        html = field.format.edit_tag(view, "cf_#{field.id}", "issue[custom_field_values][#{field.id}]", value)
+        Nokogiri::HTML.fragment(html)
+      end
+
+      def keys(field, *names)
+        names.map { |n| kit_key(field, n) }
+      end
+
+      it 'renders a stored disallowed value as one selected option in the select style' do
+        html = render_tag(child, kit_issue(project, parent => 'A', child => 'b1'))
+        expect(html.css('option').pluck('value')).to eq([''] + keys(child, 'a1', 'a2', 'b1'))
+        expect(html.css('option[selected]').pluck('value')).to eq(keys(child, 'b1'))
+        expect(html.css('option[hidden], option[style]')).to be_empty
+      end
+
+      it 'renders a stored inactive value once and an unstored inactive id not at all in the select style' do
+        deactivate(child, 'b1')
+        stored = render_tag(child, kit_issue(project, parent => 'B', child => 'b1'))
+        expect(stored.css('option').pluck('value')).to eq([''] + keys(child, 'a1', 'a2', 'b1'))
+        expect(stored.css('option[selected]').pluck('value')).to eq(keys(child, 'b1'))
+        unstored = render_tag(child, kit_issue(project, parent => 'B'))
+        expect(unstored.css('option').pluck('value')).to eq([''] + keys(child, 'a1', 'a2'))
+        expect(stored.css('option[hidden], option[style]')).to be_empty
+        expect(unstored.css('option[hidden], option[style]')).to be_empty
+      end
+
+      # Before WP-08 the server hid every option here (the parent allows
+      # nothing). Until WP-16 to WP-18 (M2) the browser does not filter them
+      # either: the legacy script finds no parent input. A pick is still
+      # rejected with 'is invalid' (UD-05).
+      it 'renders every active value, none hidden, when the parent is not available for the tracker' do
+        issue = kit_issue(project, child => [])
+        expect(issue.available_custom_fields).to include(child)
+        expect(issue.available_custom_fields).not_to include(parent)
+        html = render_tag(child, issue)
+        expect(html.css('option').pluck('value')).to eq([''] + keys(child, 'a1', 'a2', 'b1'))
+        expect(html.css('option[hidden], option[style]')).to be_empty
+        issue.custom_field_values = { child.id.to_s => kit_key(child, 'a1') }
+        expect(errors_for(issue, child)).to eq([invalid])
+      end
+
+      it 'renders a stored disallowed value as one checked radio in the check box style' do
+        child.update!(edit_tag_style: 'check_box')
+        field = CustomField.find(child.id)
+        html = render_tag(field, kit_issue(project, parent => 'A', child => 'b1'))
+        expect(html.css('input[type=radio]').pluck('value')).to eq([''] + keys(field, 'a1', 'a2', 'b1'))
+        expect(html.css('input[type=radio][checked]').pluck('value')).to eq(keys(field, 'b1'))
+      end
+
+      it 'renders each stored value of a multiple child as one checked check box' do
+        parent, child = build_kit(:enumeration, multiple: true)
+        child.update!(edit_tag_style: 'check_box')
+        field = CustomField.find(child.id)
+        html = render_tag(field, kit_issue(project, parent => 'A', child => %w[b1 a1]))
+        expect(html.css('input[type=checkbox]').pluck('value')).to eq(keys(field, 'a1', 'a2', 'b1'))
+        expect(html.css('input[type=checkbox][checked]').pluck('value')).to eq(keys(field, 'a1', 'b1'))
+      end
+    end
+  end
+
   describe '#validate_custom_value' do
     [:list, :enumeration].each do |kind|
       context "for a depending #{kind}" do
@@ -629,11 +876,12 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(field.instance_variable_get(:@dcf_memo).to_h.keys.map(&:first)).not_to include(:parent_record)
         end
 
+        # WP-08: core accepts the active a1 for both formats (the enumeration
+        # edit options are no longer filtered), so only the rule rejects it.
         it 'checks the whole set against today\'s raw union: a blank link counts as a link' do
           field = write_store(child, 'value_dependencies' => { kit_key(parent, 'A') => [''] })
           issue = kit_new_issue(project, parent => 'A', child => 'a1')
-          expected = kind == :list ? [invalid] : [inclusion, invalid]
-          expect(fmt.validate_custom_value(value_of(issue, field).tap { |v| v.custom_field = field })).to eq(expected)
+          expect(fmt.validate_custom_value(value_of(issue, field).tap { |v| v.custom_field = field })).to eq([invalid])
         end
 
         it 'checks a stored self-parent against the field\'s own sanitized value' do
@@ -672,6 +920,88 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(CustomField).not_to have_received(:find_by)
           expect(rules).not_to have_received(:find_parent)
         end
+
+        # WP-08 (PC-13, UN-09): validation runs inside with_locale, as the
+        # messages are translated when the value is validated.
+        it 'gives a disallowed new value and a copy of a legacy combination one message, in en and de' do
+          source = kit_issue(project, parent => 'A', child => 'b1')
+          { en: 'is invalid', de: 'ist nicht gültig' }.each do |locale, message|
+            I18n.with_locale(locale) do
+              expect(errors_for(kit_new_issue(project, parent => 'B', child => 'a1'), child)).to eq([message]), locale.to_s
+              copy = Issue.new.copy_from(source)
+              expect(errors_for(copy, child)).to eq([message]), locale.to_s
+              expect(copy.valid?).to be(false)
+            end
+          end
+        end
+
+        # WP-08: core messages first, then the dependency error unless core
+        # already gave the same message; super's Array is not changed. Core
+        # never returns 'is invalid', so super is a stand-in returning a
+        # frozen Array (the module itself is the real one).
+        it 'merges the dependency error into the core errors without repeating a message' do
+          core_errors = nil
+          stand_in = Class.new { def self.field_attributes(*); end }
+          stand_in.define_method(:validate_custom_value) { |_custom_value| core_errors.dup.freeze }
+          merging = Class.new(stand_in).tap { |k| k.include(described_class) }.new
+          disallowed = value_of(kit_new_issue(project, parent => 'B', child => 'a1'), child)
+          allowed = value_of(kit_new_issue(project, parent => 'A', child => 'a1'), child)
+          { [invalid] => [invalid], [inclusion] => [inclusion, invalid], [] => [invalid] }.each do |core_result, expected|
+            core_errors = core_result
+            expect(merging.validate_custom_value(disallowed)).to eq(expected), core_result.inspect
+            expect(merging.validate_custom_value(allowed)).to eq(core_result), core_result.inspect
+          end
+        end
+      end
+    end
+
+    # WP-08: only value_was extends the enumeration edit options, so an
+    # inactive id is accepted by core only while it is the stored value.
+    context 'for a depending enumeration with an inactive value' do
+      let(:kit) { build_kit(:enumeration) }
+      let(:parent) { kit.first }
+      let(:child) { kit.last }
+      let(:b1) { kit_key(child, 'b1') }
+
+      before { child.enumerations.detect { |e| e.name == 'b1' }.update!(active: false) }
+
+      it 'rejects a crafted inactive id that is not stored, also when the parent allows it (QA-21)' do
+        fresh = kit_new_issue(project, parent => 'B', child => 'b1')
+        expect(errors_for(fresh, child)).to eq([inclusion])
+        expect(fresh.valid?).to be(false)
+        changed = kit_issue(project, parent => 'B', child => 'a1')
+        changed.custom_field_values = { child.id.to_s => b1 }
+        expect(errors_for(changed, child)).to eq([inclusion])
+        expect(errors_for(kit_new_issue(project, parent => 'A', child => 'b1'), child)).to eq([inclusion, invalid])
+        unknown = kit_new_issue(project, parent => 'B')
+        unknown.custom_field_values = { child.id.to_s => (CustomFieldEnumeration.maximum(:id).to_i + 1_000).to_s }
+        expect(errors_for(unknown, child)).to include(inclusion)
+      end
+
+      it 'rejects a copy of a stored inactive id like core: a copy has no stored value' do
+        copy = Issue.new.copy_from(kit_issue(project, parent => 'B', child => 'b1'))
+        expect(value_of(copy, child).value).to eq(b1)
+        expect(errors_for(copy, child)).to eq([inclusion])
+      end
+
+      it 'leaves a stored inactive id assigned unchanged to the dependency rule' do
+        allowed = kit_issue(project, parent => 'B', child => 'b1')
+        allowed.custom_field_values = { child.id.to_s => b1 }
+        expect(errors_for(allowed, child)).to eq([])
+        disallowed = kit_issue(project, parent => 'A', child => 'b1')
+        disallowed.custom_field_values = { child.id.to_s => b1 }
+        expect(errors_for(disallowed, child)).to eq([invalid])
+      end
+
+      # The issue form posts every editable custom field, so a notes-only
+      # save assigns the stored inactive id unchanged and validates it.
+      it 'keeps a stored inactive id on a notes-only save that posts it unchanged' do
+        issue = kit_issue(project, parent => 'B', child => 'b1')
+        issue.init_journal(dcf_admin, 'A note')
+        issue.custom_field_values = { child.id.to_s => b1 }
+        expect(issue.save).to be(true), issue.errors.full_messages.inspect
+        expect(Issue.find(issue.id).custom_field_value(child)).to eq(b1)
+        expect(issue.journals.reload.last.notes).to eq('A note')
       end
     end
 

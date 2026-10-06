@@ -74,7 +74,8 @@ module RedmineDependingCustomFields
     # Drops blank values first (kept: the value is assigned back). With a
     # parent, every non-blank value must be allowed by the parent value, an
     # unchanged stored value included. When the parent value allows nothing,
-    # the core check is skipped and a blank value passes.
+    # the core check is skipped and a blank value passes. Otherwise the core
+    # errors come first, plus one 'is invalid' not already among them.
     def validate_custom_value(custom_value)
       cf = custom_value.custom_field
       sanitized = DependencyRules.normalize_values(custom_value.value)
@@ -84,11 +85,11 @@ module RedmineDependingCustomFields
       return super unless state
 
       allowed = DependencyRules.allowed_for(cf, state)
-      return dcf_disallowed?(custom_value, allowed) ? [dcf_invalid_message] : [] if allowed.empty?
+      dep_errors = dcf_disallowed?(custom_value, allowed) ? [dcf_invalid_message] : []
+      return dep_errors if allowed.empty?
 
       errors = super
-      errors << dcf_invalid_message if dcf_disallowed?(custom_value, allowed)
-      errors
+      errors + (dep_errors - errors)
     end
 
     # The core checks only; WP-10 adds the parent checks here.

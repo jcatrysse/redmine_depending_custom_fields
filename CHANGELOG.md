@@ -169,3 +169,4 @@
 ## Unreleased (0.1.0)
 
 * Removed: QueryCustomFieldColumnPatch (it had no effect on any supported Redmine version).
+* Fixed: Key/Value list (depending): a disallowed new value gives one error instead of two, and the edit form no longer shows the stored value twice.

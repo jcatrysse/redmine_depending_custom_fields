@@ -693,6 +693,14 @@ Revert the PR.
 
 **Related decisions and defects**: none
 
+**Delivered (decisions taken during implementation)**
+
+- DependingEnumerationFormat#possible_custom_value_options takes possible_values_options(custom_field) without the object and appends the stored value_was ids missing from it as [name, id] pairs. Like core RecordList they are looked up across fields (CustomFieldEnumeration.where(id:)), so a stored id of another field assigned unchanged stays accepted and an unknown or non-numeric id adds nothing; they are ordered by position. Only value_was is read, so a crafted inactive id that is not stored stays rejected (QA-21).
+- validate_custom_value returns the core errors first, then 'is invalid' unless core already gave it (errors + (dep_errors - errors)). The list format output is unchanged.
+- Interim state until WP-16 to WP-18 (M2): the server no longer hides disallowed enumeration options in the issue, project and time entry forms. A Key/Value list (depending) child whose parent is read-only by workflow or not available for the tracker therefore shows all active values even with JavaScript, because the legacy script has no parent input to filter by; after an AJAX form re-render the list also stays unfiltered for the legacy debounce window (about 100 ms). The server still rejects disallowed values with 'is invalid'; strictness is unchanged. Pinned by 'renders every active value, none hidden, when the parent is not available for the tracker' (spec/lib/depending_format_methods_spec.rb). WP-16 to WP-18 filter these cases in the browser through data-dcf-parent-values (fixture scenarios workflow read-only parent and parent unavailable for tracker); the server keeps rendering the full list, so that example does not flip.
+- Characterization flips, only in spec/characterization/depending_formats_spec.rb: the enumeration shared parameter %w[inclusion invalid] became %w[invalid] (the rows that read it: "rejects a disallowed value on a new issue", "rejects an issue copy holding a legacy combination like a new disallowed value" and the new-value row of "validates the members of a stored cycle against their mappings"), and "offers a stored disallowed value twice" became "offers a stored disallowed value once in the edit form, as a plain pair (Flipped by WP-08)".
+- The stale comments of spec/requests/issue_form_query_invariance_spec.rb (header and enumeration describe) are corrected: since WP-08 the enumeration edit form does not read the parent.
+
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
 ### WP-09: D1 per-value leniency and issue copies (server)

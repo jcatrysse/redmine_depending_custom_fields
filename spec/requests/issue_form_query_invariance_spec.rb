@@ -9,8 +9,9 @@ require_relative '../rails_helper'
 #
 # Each world has its own tracker and project, so an issue only carries the
 # fields of its own world, and both worlds exist while either is measured.
-# Child values are blank or allowed (a disallowed stored enumeration id makes
-# core look the missing id up for managed children only).
+# Child values are blank or allowed (since WP-08 a stored inactive, foreign
+# or unknown enumeration id makes the edit options look that id up, for any
+# depending enumeration child, managed or not).
 RSpec.describe 'Issue form query invariance', type: :request do
   fixtures :users
 
@@ -114,8 +115,9 @@ RSpec.describe 'Issue form query invariance', type: :request do
 
   # Core runs one enumerations query per enumeration field, so both worlds
   # hold 5 parents and 5 children and differ only in how many children
-  # depend on a parent (1 or 5). The enumeration edit form passes the issue to
-  # possible_values_options, so the form path is filtered here.
+  # depend on a parent (1 or 5). Since WP-08 the enumeration edit form builds
+  # its options without the issue, as the list form does, so only the update
+  # example reads the parent values.
   describe 'enumeration children, 1 managed child vs 5 managed children of distinct parents' do
     it 'renders the edit form with the same number of queries' do
       one = build_world(family: :enumeration, managed: 1, total: 5, child_value: :blank)
