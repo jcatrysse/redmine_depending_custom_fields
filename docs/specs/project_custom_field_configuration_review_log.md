@@ -394,18 +394,21 @@ Two smaller cleanups the new shape allowed:
   batch operation fails loudly on the id-set check instead of silently
   re-submitting a mangled payload.
 
-## Amendment A5 — Pre-existing duplicate names blocked every batch save
+## Amendment A5 — Duplicate enumeration names are allowed
 
 Reported on production: dragging a value, or renaming one, on an enumeration
 field failed with `error_value_duplicate` ("This value already exists") although
-the save introduced no duplicate. The field already held two **active** values
-named "Crewing & Planning" (core's enumeration editor has no uniqueness check),
-and the §E check rejected any resulting state with a duplicate active name, so
-no save on that table could ever pass, not even the one fixing the duplicate.
+the save introduced no duplicate. The field held two **active** values named
+"Crewing & Planning" (core's enumeration editor has no uniqueness check), and
+the §E check rejected any resulting state with a duplicate active name, so no
+save on that table could pass.
 
-- **Resolved:** §E step 5 now refuses only a collision the save creates, i.e.
-  one where a row in the clashing group is renamed or reactivated. Renaming onto
-  an already-duplicated name is still refused (T-ACT-27).
+- **Resolved:** the duplicate rule is dropped for the enumeration family, in
+  Add (§A), Rename (§B) and the batch save (§E), matching core. The stored value
+  is the id, so a shared label never collides in data, and on a depending field
+  the same label under different parents is a legitimate configuration. The
+  list family keeps the rule: there the string is the value. This reverses
+  F-A3.2 and F-A4.1 for enumerations.
 - The rename detection compares against the normalized stored name. Before, a
-  stored name with stray whitespace counted as renamed on every save, was
-  rewritten silently, and could itself trip the duplicate check.
+  stored name with stray whitespace counted as renamed on every save and was
+  rewritten silently.

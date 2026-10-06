@@ -33,10 +33,9 @@ module RedmineDependingCustomFields
                   affected_values_count: 0)
     end
 
+    # No duplicate check: enumerations are stored by id, and core allows two
+    # values with the same name (e.g. one label under different parents).
     def add_enum_value!(v)
-      active_names = field.enumerations.where(active: true).pluck(:name)
-      raise OperationError.new(:error_value_duplicate) if active_names.include?(v)
-
       next_pos = (field.enumerations.maximum(:position) || 0) + 1
       CustomFieldEnumeration.create!(custom_field_id: field.id, name: v, position: next_pos, active: true)
 

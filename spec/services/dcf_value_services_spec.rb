@@ -78,6 +78,12 @@ RSpec.describe 'DCF value operation services' do
         .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
     end
 
+    # Enumerations are stored by id; core allows a shared name, so do we.
+    it 'allows an enumeration with an existing name (T-ADD-3)' do
+      field = dcf_enum_field(names: %w[X])
+      expect { add(field, value: 'X') }.to change { field.enumerations.where(name: 'X').count }.from(1).to(2)
+    end
+
     it 'inserts at a position (T-ADD-4)' do
       field = dcf_list_field(values: %w[A B])
       add(field, value: 'X', position: 1)
@@ -125,6 +131,13 @@ RSpec.describe 'DCF value operation services' do
       field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
       expect { rename(field, old_value: 'A', new_value: 'B', confirm: '1') }
         .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
+    end
+
+    it 'allows renaming an enumeration onto an existing name (T-REN-4)' do
+      field = dcf_enum_field(names: %w[X Y])
+      x, _y = field.enumerations.order(:position).to_a
+      rename(field, enumeration_id: x.id, new_value: 'Y')
+      expect(x.reload.name).to eq('Y')
     end
 
     it 'requires confirmation for a cross-project (global) rename (T-REN-5)' do
@@ -371,59 +384,32 @@ RSpec.describe 'DCF value operation services' do
       expect(field.reload.default_value).to eq(keep.id.to_s)
     end
 
-    it 'refuses to reactivate a value whose name is taken by an active one (T-ACT-6)' do
+    # Duplicate names are allowed, as in core: the value is the id, and a
+    # depending field can offer the same label under different parents.
+    it 'reactivates a value whose name an active one also holds (T-ACT-6)' do
       field = dcf_enum_field(names: %w[X])
       stale = field.enumerations.first
       stale.update!(active: false)
       add(field, value: 'X')
-      expect { save_enums(field, stale.id => { active: true }) }
-        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
-      expect(stale.reload.active).to be false
+      save_enums(field, stale.id => { active: true })
+      expect(stale.reload.active).to be true
+      expect(field.enumerations.where(name: 'X', active: true).count).to eq(2)
     end
 
-    # The duplicate check looks at the RESULTING state, so a rename onto a
-    # sibling's name inside the same save is caught too.
-    it 'refuses a rename that collides within the same save (T-ACT-24)' do
+    it 'allows a rename onto a sibling name within the same save (T-ACT-24)' do
       field = dcf_enum_field(names: %w[X Y])
       x, y = field.enumerations.order(:position).to_a
-      expect { save_enums(field, x.id => { name: 'Y' }) }
-        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
-      expect(x.reload.name).to eq('X')
+      save_enums(field, x.id => { name: 'Y' })
+      expect(x.reload.name).to eq('Y')
       expect(y.reload.name).to eq('Y')
     end
 
-    it 'allows a name that duplicates an INACTIVE value (T-ACT-24)' do
-      field = dcf_enum_field(names: %w[X Y])
-      x, y = field.enumerations.order(:position).to_a
-      x.update!(active: false)
-      save_enums(field, y.id => { name: 'X' })
-      expect(y.reload.name).to eq('X')
-    end
-
-    # Core's enumeration editor allows two active values with the same name; a
-    # duplicate already in the data must not block reorders or other renames.
-    it 'saves around a duplicate that already exists in the data (T-ACT-27)' do
+    it 'reorders and renames around a duplicate already in the data (T-ACT-27)' do
       field = dcf_enum_field(names: %w[X Y X])
       x1, y, x2 = field.enumerations.order(:position).to_a
       save_enums(field, x1.id => { position: 3 }, y.id => { name: 'Y2', position: 1 }, x2.id => { position: 2 })
-      expect(field.reload.enumerations.order(:position).map(&:name)).to eq(%w[Y2 X X])
-      expect(x1.reload.name).to eq('X')
-      expect(x2.reload.name).to eq('X')
-    end
-
-    it 'still refuses to rename onto a name that is already duplicated (T-ACT-27)' do
-      field = dcf_enum_field(names: %w[X Y X])
-      _x1, y, _x2 = field.enumerations.order(:position).to_a
-      expect { save_enums(field, y.id => { name: 'X' }) }
-        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
-      expect(y.reload.name).to eq('Y')
-    end
-
-    it 'resolves an existing duplicate by deactivating one of them (T-ACT-27)' do
-      field = dcf_enum_field(names: %w[X X])
-      _x1, x2 = field.enumerations.order(:position).to_a
-      save_enums(field, x2.id => { active: false })
-      expect(x2.reload.active).to be false
+      expect(field.reload.enumerations.order(:position).map(&:id)).to eq([y.id, x2.id, x1.id])
+      expect(y.reload.name).to eq('Y2')
     end
 
     # The submitted name is stripped, so a stored name with stray whitespace

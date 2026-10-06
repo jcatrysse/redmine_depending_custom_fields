@@ -54,12 +54,10 @@ module RedmineDependingCustomFields
       nv = normalize(@params[:new_value])
       raise OperationError.new(:error_value_blank) if nv.blank?
 
-      dup = field.enumerations.where(active: true).where.not(id: enum.id).pluck(:name)
-      raise OperationError.new(:error_value_duplicate) if dup.include?(nv)
-
       old = enum.name
       # Id-stable: renaming the name does not touch CustomValue, own deps, or
-      # parent keys, so no confirmation/cascade is needed (UI Spec §4).
+      # parent keys, so no confirmation/cascade is needed (UI Spec §4). For the
+      # same reason a name shared with another value is allowed, as in core.
       enum.update!(name: nv)
 
       Outcome.new(before: { from: old }, after: { to: nv },

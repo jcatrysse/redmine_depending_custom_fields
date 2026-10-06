@@ -60,13 +60,13 @@ use request specs (`spec/requests`).
 > body must behave identically except for the dependency-rewrite step (present
 > only for the two depending formats).
 
-Add: T-ADD-1 works (each format); T-ADD-2 blank → 422; T-ADD-3 duplicate → 422;
+Add: T-ADD-1 works (each format); T-ADD-2 blank → 422; T-ADD-3 list duplicate → 422, enumeration duplicate allowed;
 T-ADD-4 insert at position.
 Rename: T-REN-1 list/standard-list rename rewrites `possible_values` **and**
 `CustomValue` rows; T-REN-2 `depending_list` rename **also** rewrites dependency
 keys/child entries, standard `list` rename leaves no dependency store (no-op);
 T-REN-3 enumeration/standard-enumeration rename changes only `name`, leaves
-`CustomValue` intact; T-REN-4 rename to duplicate → 422; T-REN-5 cross-project
+`CustomValue` intact; T-REN-4 list rename to duplicate → 422, enumeration allowed; T-REN-5 cross-project
 rename requires confirm; T-REN-6 standard `list` rename on a global field rewrites
 CustomValue across all projects (cross-project confirm enforced).
 Remove: T-RM-1 `depending_list` remove prunes dependency refs and does **not**
@@ -118,7 +118,7 @@ Enumeration batch editor (Operations Spec §E):
 - T-ACT-5 Deactivating the value that is `default_value` clears the default;
   deactivating any other value leaves it alone.
 - T-ACT-6 Reactivating a value whose name is meanwhile held by an **active**
-  value → 422 `error_value_duplicate`.
+  value is allowed (duplicate names are allowed for enumerations).
 - T-ACT-7 The save leaves the field's own `value_dependencies` and its
   children's parent keys untouched (contrast T-CAS-3/T-CAS-4).
 - T-ACT-8 Existing `CustomValue` rows survive and still resolve to the name.
@@ -144,17 +144,15 @@ Enumeration batch editor (Operations Spec §E):
 - T-ACT-22 A blank name is refused and nothing else in the same Save is applied;
   a name the model rejects (over 60 chars) rolls the whole Save back.
 - T-ACT-23 Submitted positions are applied.
-- T-ACT-24 A rename colliding with a sibling **inside the same Save** → 422;
-  a name duplicating an **inactive** value is allowed.
+- T-ACT-24 A rename onto a sibling's name **inside the same Save** is allowed.
 - T-ACT-25 Delete renders as a link (`data-method="delete"`) inside the batch
   form — no nested form — carrying `enumeration_id` + `state_hash`.
 - T-ACT-26 The enumeration table ships `input.dcf-position` and **no**
   `dcf-reorder-form` (staged drag); the list table ships the reorder form and no
   batch form (submit-on-drop).
-- T-ACT-27 A duplicate active name already in the data (core allows it) does
-  not block a reorder or an unrelated rename; renaming a third row onto that
-  name is still refused; deactivating one of the pair is allowed. A stored name
-  differing only by surrounding whitespace is not counted or written as a rename.
+- T-ACT-27 A duplicate active name already in the data does not block a
+  reorder or a rename. A stored name differing only by surrounding whitespace is
+  not counted or written as a rename.
 
 The production contract of "deactivate, don't delete", exercised through
 Redmine's real `Issue` validation (`dcf_real_issue`, not a bare `CustomValue`

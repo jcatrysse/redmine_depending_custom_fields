@@ -106,7 +106,7 @@ Params: `value` (string), `position` (int, optional).
 3. **List:** reject if `v` already in `possible_values`
    (Redmine list comparison semantics) → `error_value_duplicate`.
    Append, or insert at `position` (clamped to range).
-   **Enumeration:** reject if an active enumeration with `name == v` exists.
+   **Enumeration:** no duplicate check (see "Duplicate names" below).
    Build `CustomFieldEnumeration(name: v, position: next, active: true)`.
 4. `field.save!`.
 5. Audit `add_value` (`affected_values_count = 0`). (Add never needs a
@@ -117,8 +117,8 @@ Params: `value` (string), `position` (int, optional).
 Params: `old_value`/`enumeration_id`, `new_value`, `confirm` (bool).
 1. Preamble.
 2. `nv = normalize(new_value)`. Reject blank → `error_value_blank`.
-3. Reject if `nv` duplicates an existing value (other than the target) →
-   `error_value_duplicate`.
+3. **List:** reject if `nv` duplicates an existing value (other than the
+   target) → `error_value_duplicate`. **Enumeration:** no duplicate check.
 4. Compute impact: `usage_here`, `usage_other`, `own_dep_refs`,
    `parent_key_refs` (occurrences of the value as a **parent key** across
    `children_of(field)`), `affected_child_field_ids`.
@@ -223,18 +223,9 @@ everything applied together in one transaction and one audit event.
    whole rather than applied in part; a concurrent add/delete is already caught
    by the state hash, so this never fires on a legitimate save.
 4. `normalize` each name; any blank → `error_value_blank`.
-5. Duplicate check on the **resulting** state: no two rows that end up `active`
-   may share a name → `error_value_duplicate`. This catches both a rename onto
-   a sibling's name and a reactivation onto a name meanwhile taken. Core has no
-   such validation, but §A and §B enforce it, so this path must not be a way
-   around them. A name duplicating an **inactive** value stays allowed.
-   Only a collision the save **creates** is refused, i.e. one involving a row
-   that is renamed or reactivated. Core's own enumeration editor allows two
-   active values with the same name, so such a duplicate can already be in the
-   data; it must not block reorders or unrelated renames, nor the rename or
-   deactivation that resolves it. A name is "renamed" only when it differs from
-   the **normalized** stored name, so stray whitespace in a stored name is
-   neither a rename nor rewritten.
+5. No duplicate check (see "Duplicate names" below). A name is "renamed" only
+   when it differs from the **normalized** stored name, so stray whitespace in
+   a stored name is neither a rename nor rewritten.
 6. Order rows by submitted `position` (ties → current position, then input
    order) and assign contiguous positions `1..N`.
 7. Apply name / position / active per changed row via `enum.update!`. Model
@@ -310,8 +301,21 @@ Params: `default_value_dependencies` (hash).
 
 - `normalize` = `value.to_s.strip`. Do not alter case (Redmine list values are
   case-sensitive). Reject empty after strip.
-- Duplicate detection mirrors Redmine list semantics (exact string match for
-  lists; active-name match for enumerations).
+- Duplicate detection applies to lists only (exact string match).
+
+### Duplicate names
+
+**List family:** the string *is* the stored value, so a duplicate is the same
+value twice and is refused (§A, §B).
+
+**Enumeration family:** duplicate names are allowed, in Add (§A), Rename (§B)
+and the batch save (§E), as in core's own enumeration editor. The stored value
+is the enumeration id, so two values sharing a label never collide in data. On
+a depending field it is a real use case: the same label under different parents,
+each with its own id. Pickers only offer the values allowed for the selected
+parent, and import resolves a label within those same options, so the right id
+is picked. Where both appear together (issue filters, the dependency matrix)
+they are told apart by position only; that is core's behaviour too.
 - All counts computed via the queries in Feasibility §5, capped per the UI lazy
   rules.
 
@@ -324,9 +328,8 @@ Params: `default_value_dependencies` (hash).
 | Unsupported format | 422 | error_format_unsupported |
 | Archived project (write) | 422/403 | error_project_archived |
 | Blank value | 422 | error_value_blank |
-| Duplicate value | 422 | error_value_duplicate |
+| Duplicate value (list family) | 422 | error_value_duplicate |
 | Reorder mismatch | 422 | error_reorder_mismatch |
-| Batch save: name taken by another active value | 422 | error_value_duplicate |
 | Batch save: submitted ids do not cover the value set | 422 | error_reorder_mismatch |
 | Invalid dependency | 422 | error_invalid_dependency |
 | In-use (when blocking enabled) | 422 | error_value_in_use |

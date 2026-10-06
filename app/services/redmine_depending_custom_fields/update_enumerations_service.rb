@@ -16,6 +16,10 @@ module RedmineDependingCustomFields
   #
   # Params: `enumerations` => { "<id>" => { name:, position:, active: } }.
   #
+  # Duplicate names are allowed, as in core: values are stored by id, and a
+  # depending field can legitimately offer the same label under different
+  # parents. See Operations Spec §E.
+  #
   # Deactivating a value is non-destructive and reversible: it removes the value
   # from every picker (`possible_values_records` scopes to `enumerations.active`)
   # while existing `CustomValue` ids keep resolving to the name, and the field's
@@ -37,7 +41,6 @@ module RedmineDependingCustomFields
 
       rows = submitted_rows
       validate_names!(rows)
-      validate_no_active_duplicates!(rows)
 
       delta = apply!(rows)
       clear_dangling_default!(delta[:deactivated_ids])
@@ -82,28 +85,6 @@ module RedmineDependingCustomFields
 
     def validate_names!(rows)
       raise OperationError.new(:error_value_blank) if rows.any? { |r| r[:name].blank? }
-    end
-
-    # Checked against the RESULTING state, not the stored one: a save that
-    # renames one value onto another's name, or reactivates a value whose name is
-    # already taken, must be refused as a whole. Add (§A) and Rename (§B) enforce
-    # the same active-name uniqueness; core has no such validation.
-    #
-    # Only a collision this save creates is refused: one where a row in it was
-    # renamed or reactivated. Core's own enumeration editor allows duplicates, so
-    # a field can already hold two active values with the same name; rejecting
-    # those would block every save on the table, including the rename or
-    # deactivation that resolves the duplicate.
-    def validate_no_active_duplicates!(rows)
-      clash = rows.select { |r| r[:active] }.group_by { |r| r[:name] }.values.any? do |group|
-        group.length > 1 && group.any? { |r| touched?(r) }
-      end
-      raise OperationError.new(:error_value_duplicate) if clash
-    end
-
-    # The row ends up active under a name it did not already hold while active.
-    def touched?(row)
-      !row[:enum].active? || name_changed?(row)
     end
 
     # Compared on the normalized stored name: the submitted name is always

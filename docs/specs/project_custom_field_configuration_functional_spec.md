@@ -105,8 +105,9 @@ On the matrix screen, invalid/orphan references are flagged.
 1. User enters a value (and optional position).
 2. Normalize (strip; collapse only if existing convention does).
 3. Reject blank → error `error_value_blank`.
-4. Reject duplicate (case-sensitivity follows Redmine list semantics) →
-   `error_value_duplicate`.
+4. List family: reject duplicate (case-sensitivity follows Redmine list
+   semantics) → `error_value_duplicate`. Enumerations allow duplicate names,
+   as core does (Operations Spec, "Duplicate names").
 5. Append (or insert at position) into `possible_values` (list) or create
    `CustomFieldEnumeration` (enumeration).
 6. Save via model; audit; flash `notice_value_added`.
@@ -114,7 +115,7 @@ On the matrix screen, invalid/orphan references are flagged.
 ## 10. Rename value flow
 
 1. Select existing value; enter new value.
-2. Reject blank/duplicate.
+2. Reject blank; reject duplicate for the list family only.
 3. Compute impact (current + other project usage, own-side dependency refs,
    **parent-side refs across child fields**, affected child fields).
 4. If cross-project, in-use, or parent/child impact > 0 → require confirmation
@@ -285,8 +286,8 @@ Next request returns 403; no cached authorization.
 | Attempt to change tracker/project applicability | Same |
 | Attempt create/delete field | No such route/action; impossible |
 | Add blank value | 422 |
-| Add duplicate value | 422 |
-| Rename to duplicate | 422 |
+| Add duplicate value (list family) | 422 |
+| Rename to duplicate (list family) | 422 |
 | Reorder missing value | 422 |
 | Reorder extra value | 422 |
 | Audit write fails | Transaction rollback; error flash |
