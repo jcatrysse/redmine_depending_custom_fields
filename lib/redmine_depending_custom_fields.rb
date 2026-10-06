@@ -6,6 +6,8 @@ require_relative 'redmine_depending_custom_fields/depending_list_format'
 require_relative 'redmine_depending_custom_fields/depending_enumeration_format'
 require_relative 'redmine_depending_custom_fields/hooks/view_layouts_base_html_head_hook'
 require_relative 'redmine_depending_custom_fields/custom_field_visibility'
+require_relative 'redmine_depending_custom_fields/field_index'
+require_relative 'redmine_depending_custom_fields/dependency_rules'
 
 module RedmineDependingCustomFields
   FIELD_FORMAT_EXTENDED_USER = 'extended_user'

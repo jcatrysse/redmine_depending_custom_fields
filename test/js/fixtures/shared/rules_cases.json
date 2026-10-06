@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "description": "Shared dependency rule cases. Read by spec/lib/dependency_rules_spec.rb (DependencyRules.allowed_values, allowed_set, default_values) and by the JS rules tests (allowedFor, defaultsFor). Parent values are strings; map and default values are strings, enumeration ids (integers) or null; expected values are strings. Map and defaults keys are non-blank strings, except in the blank-parent-value-ignored rows. allowed rows: map, parent, expected. defaults rows: map, defaults, parent, expected_multiple, expected_single. The d1 section is added in WP-09.",
+  "allowed": [
+    {
+      "id": "allowed-single-parent",
+      "map": { "A": ["a1", "a2"], "B": ["b1"] },
+      "parent": ["A"],
+      "expected": ["a1", "a2"]
+    },
+    {
+      "id": "allowed-union-first-seen-order",
+      "note": "Overlap across two parents; the output follows the parent array.",
+      "map": { "A": ["x", "a1"], "B": ["b1", "x"] },
+      "parent": ["B", "A"],
+      "expected": ["b1", "x", "a1"]
+    },
+    {
+      "id": "allowed-parent-order-reversed",
+      "map": { "A": ["x", "a1"], "B": ["b1", "x"] },
+      "parent": ["A", "B"],
+      "expected": ["x", "a1", "b1"]
+    },
+    {
+      "id": "allowed-unknown-parent-value",
+      "map": { "A": ["a1"] },
+      "parent": ["Z"],
+      "expected": []
+    },
+    {
+      "id": "allowed-no-parent-values",
+      "map": { "A": ["a1"] },
+      "parent": [],
+      "expected": []
+    },
+    {
+      "id": "allowed-blank-parent-value-ignored",
+      "note": "A blank parent value selects nothing, even when the raw map carries a blank key (the only rows with blank keys).",
+      "map": { "": ["blank"], "A": ["a1"] },
+      "parent": ["", "A"],
+      "expected": ["a1"]
+    },
+    {
+      "id": "allowed-duplicate-parent-values",
+      "map": { "A": ["a1", "a2"] },
+      "parent": ["A", "A"],
+      "expected": ["a1", "a2"]
+    },
+    {
+      "id": "allowed-empty-map",
+      "map": {},
+      "parent": ["A"],
+      "expected": []
+    },
+    {
+      "id": "allowed-integer-child-ids",
+      "note": "Enumeration ids may be stored as integers; they compare as strings.",
+      "map": { "A": [21, "22", 21] },
+      "parent": ["A"],
+      "expected": ["21", "22"]
+    },
+    {
+      "id": "allowed-blank-and-null-children-dropped",
+      "map": { "A": ["", null, "a1"] },
+      "parent": ["A"],
+      "expected": ["a1"]
+    },
+    {
+      "id": "allowed-scalar-map-value",
+      "map": { "A": "a1" },
+      "parent": ["A"],
+      "expected": ["a1"]
+    },
+    {
+      "id": "allowed-duplicate-children-deduped",
+      "map": { "A": ["a1", "a1", "a2"], "B": ["a2"] },
+      "parent": ["A", "B"],
+      "expected": ["a1", "a2"]
+    },
+    {
+      "id": "allowed-tricky-strings",
+      "note": "Markup characters, quotes and Object.prototype names are plain keys.",
+      "map": {
+        "[x] <y>": ["a & b", "\"q\"", "'s'"],
+        "__proto__": ["p1"],
+        "constructor": ["c1"],
+        "hasOwnProperty": ["h1"],
+        "toString": ["t1"]
+      },
+      "parent": ["toString", "[x] <y>", "__proto__", "constructor", "hasOwnProperty"],
+      "expected": ["t1", "a & b", "\"q\"", "'s'", "p1", "c1", "h1"]
+    },
+    {
+      "id": "allowed-unicode-exact",
+      "note": "The composed spelling of the key matches exactly.",
+      "map": { "\u0141\u00f3d\u017a": ["\u00dcn\u00efc\u00f8d\u00e9 \u00f1"], "Lodz": ["plain"] },
+      "parent": ["\u0141\u00f3d\u017a"],
+      "expected": ["\u00dcn\u00efc\u00f8d\u00e9 \u00f1"]
+    },
+    {
+      "id": "allowed-unicode-no-normalization",
+      "note": "No Unicode normalization: the decomposed spelling (o followed by U+0301) does not match the composed key.",
+      "map": { "\u0141\u00f3d\u017a": ["\u00dcn\u00efc\u00f8d\u00e9 \u00f1"], "Lodz": ["plain"] },
+      "parent": ["\u0141o\u0301d\u017a"],
+      "expected": []
+    },
+    {
+      "id": "allowed-numeric-like-keys",
+      "note": "Integer-like keys keep the parent order (no JS key ordering).",
+      "map": { "2": ["two"], "12": ["twelve"] },
+      "parent": ["12", "2"],
+      "expected": ["twelve", "two"]
+    },
+    {
+      "id": "allowed-surrounding-spaces-kept",
+      "note": "Keys and values are not trimmed.",
+      "map": { " A ": [" v "], "A": ["plain"] },
+      "parent": [" A "],
+      "expected": [" v "]
+    }
+  ],
+  "defaults": [
+    {
+      "id": "defaults-single-value",
+      "map": { "A": ["a1", "a2"] },
+      "defaults": { "A": "a2" },
+      "parent": ["A"],
+      "expected_multiple": ["a2"],
+      "expected_single": "a2"
+    },
+    {
+      "id": "defaults-array-order-kept",
+      "note": "Defaults order, not map order.",
+      "map": { "A": ["a1", "a2", "a3"] },
+      "defaults": { "A": ["a3", "a1"] },
+      "parent": ["A"],
+      "expected_multiple": ["a3", "a1"],
+      "expected_single": "a3"
+    },
+    {
+      "id": "defaults-filtered-by-allowed",
+      "map": { "A": ["a1", "a2"] },
+      "defaults": { "A": ["zz", "a2"] },
+      "parent": ["A"],
+      "expected_multiple": ["a2"],
+      "expected_single": "a2"
+    },
+    {
+      "id": "defaults-none-configured",
+      "map": { "A": ["a1"] },
+      "defaults": {},
+      "parent": ["A"],
+      "expected_multiple": [],
+      "expected_single": null
+    },
+    {
+      "id": "defaults-only-unlinked",
+      "map": { "A": ["a1"] },
+      "defaults": { "A": ["b1"] },
+      "parent": ["A"],
+      "expected_multiple": [],
+      "expected_single": null
+    },
+    {
+      "id": "defaults-multi-parent-merge",
+      "note": "First seen across the parents, in parent order (dedup is covered by defaults-duplicates-deduped).",
+      "map": { "A": ["x", "a1"], "B": ["b1", "x"] },
+      "defaults": { "A": ["x", "a1"], "B": "b1" },
+      "parent": ["B", "A"],
+      "expected_multiple": ["b1", "x", "a1"],
+      "expected_single": "b1"
+    },
+    {
+      "id": "defaults-linked-under-other-parent",
+      "note": "Union semantics: a default of A linked only under B is kept when both are selected.",
+      "map": { "A": ["a1"], "B": ["b1"] },
+      "defaults": { "A": ["b1"] },
+      "parent": ["A", "B"],
+      "expected_multiple": ["b1"],
+      "expected_single": "b1"
+    },
+    {
+      "id": "defaults-integer-ids",
+      "map": { "A": [21, 22] },
+      "defaults": { "A": 22 },
+      "parent": ["A"],
+      "expected_multiple": ["22"],
+      "expected_single": "22"
+    },
+    {
+      "id": "defaults-no-parent-values",
+      "map": { "A": ["a1"] },
+      "defaults": { "A": "a1" },
+      "parent": [],
+      "expected_multiple": [],
+      "expected_single": null
+    },
+    {
+      "id": "defaults-blank-and-null-dropped",
+      "map": { "A": ["a1"] },
+      "defaults": { "A": ["", null, "a1"] },
+      "parent": ["A"],
+      "expected_multiple": ["a1"],
+      "expected_single": "a1"
+    },
+    {
+      "id": "defaults-key-without-links",
+      "map": { "A": ["a1"] },
+      "defaults": { "B": "a1" },
+      "parent": ["B"],
+      "expected_multiple": [],
+      "expected_single": null
+    },
+    {
+      "id": "defaults-duplicates-deduped",
+      "note": "A default repeated in one list, under two parents and for a repeated parent value is kept once, first seen.",
+      "map": { "A": ["x", "y"], "B": ["x"] },
+      "defaults": { "A": ["x", "x", "y"], "B": "x" },
+      "parent": ["A", "B", "A"],
+      "expected_multiple": ["x", "y"],
+      "expected_single": "x"
+    },
+    {
+      "id": "defaults-blank-parent-value-ignored",
+      "note": "A blank parent value selects nothing, even when the raw defaults carry a blank key (the only rows with blank keys).",
+      "map": { "": ["a2"], "A": ["a1", "a2"] },
+      "defaults": { "": ["a2"], "A": ["a1"] },
+      "parent": ["", "A"],
+      "expected_multiple": ["a1"],
+      "expected_single": "a1"
+    },
+    {
+      "id": "defaults-tricky-strings",
+      "map": { "[k] <&>": ["\"v\" & <w>", "__proto__"] },
+      "defaults": { "[k] <&>": ["__proto__", "\"v\" & <w>"] },
+      "parent": ["[k] <&>"],
+      "expected_multiple": ["__proto__", "\"v\" & <w>"],
+      "expected_single": "__proto__"
+    }
+  ]
+}

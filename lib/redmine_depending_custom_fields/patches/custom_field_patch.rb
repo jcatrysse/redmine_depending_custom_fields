@@ -34,6 +34,17 @@ module RedmineDependingCustomFields
         errs.reject { |e| e == blank_msg }
       end
 
+      # Memoizes the block result on this record under (name, key), nil and
+      # false included, so the block runs at most once per record and key.
+      # Record scoped: never shared between instances or kept on formats.
+      def dcf_memo(name, key)
+        memo = (@dcf_memo ||= {})
+        memo_key = [name, key]
+        return memo[memo_key] if memo.key?(memo_key)
+
+        memo[memo_key] = yield
+      end
+
       private
 
       def dispatch_after_custom_field_save

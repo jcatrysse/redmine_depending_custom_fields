@@ -95,9 +95,9 @@ module RedmineDependingCustomFields
 
     # Depending child fields that name +field+ as their parent. Applies to
     # every supported format, since standard lists are commonly used as parents.
+    # Same set as the stored pointer comparison, ordered by position and id.
     def children_of(field)
-      CustomField.where(field_format: SUPPORTED_DEPENDENCY_FORMATS)
-                 .select { |c| c.parent_custom_field_id.to_i == field.id }
+      DependencyRules.children_of(field)
     end
   end
 end
