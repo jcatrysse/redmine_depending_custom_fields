@@ -1,31 +1,28 @@
+# frozen_string_literal: true
+
 require_relative '../rails_helper'
 
+# WP-06: on real fields (the parent lookup now memoizes on the record through
+# CustomFieldPatch#dcf_memo, which a Struct cannot answer); the assertions are
+# the same as with the former stand-in.
 RSpec.describe RedmineDependingCustomFields::DependingEnumerationFormat do
   let(:format) { described_class.instance }
 
   describe '#before_custom_field_save' do
+    let(:parent) { dcf_enum_field(names: %w[P Q]) }
+    let(:parent_id) { parent.id.to_s }
+
     let(:custom_field) do
-      Struct.new(:id, :type, :field_format, :parent_custom_field_id,
-                 :value_dependencies, :default_value_dependencies, :default_value).new(
-        11,
-        'IssueCustomField',
-        RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION,
-        '5',
-        { '1' => ['2'] },
-        { '1' => '2' },
-        'X'
-      )
+      field = CustomField.find(dcf_enum_field(format: 'depending_enumeration', names: %w[two]).id)
+      field.parent_custom_field_id = parent_id
+      field.value_dependencies = { '1' => ['2'] }
+      field.default_value_dependencies = { '1' => '2' }
+      field.default_value = 'X'
+      field
     end
 
     context 'when a matching parent exists' do
-      let(:parent) { Struct.new(:id).new(5) }
-
       before do
-        allow(CustomField).to receive(:find_by).with(
-          id: 5,
-          type: custom_field.type,
-          field_format: ['enumeration', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION]
-        ).and_return(parent)
         allow(RedmineDependingCustomFields::Sanitizer).to receive(:sanitize_dependencies)
           .with(custom_field.value_dependencies).and_return(custom_field.value_dependencies)
         allow(RedmineDependingCustomFields::Sanitizer).to receive(:sanitize_default_dependencies)
@@ -48,8 +45,9 @@ RSpec.describe RedmineDependingCustomFields::DependingEnumerationFormat do
     end
 
     context 'when no matching parent exists' do
+      let(:parent_id) { (CustomField.maximum(:id).to_i + 1_000).to_s }
+
       before do
-        allow(CustomField).to receive(:find_by).and_return(nil)
         allow(RedmineDependingCustomFields::Sanitizer).to receive(:sanitize_dependencies).and_return({})
         allow(RedmineDependingCustomFields::Sanitizer).to receive(:sanitize_default_dependencies).and_return({})
       end

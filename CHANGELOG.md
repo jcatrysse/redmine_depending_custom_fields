@@ -165,3 +165,7 @@
   manual workflows for Redmine 6.1 and JavaScript.
 * Upgrade notes: Ruby 2.7 or newer is required. Redmine 5.0 stays declared but
   is not tested; 5.1, 6.0, 6.1 and 7.0 are tested.
+
+## Unreleased (0.1.0)
+
+* Removed: QueryCustomFieldColumnPatch (it had no effect on any supported Redmine version).

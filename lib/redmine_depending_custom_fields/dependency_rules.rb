@@ -113,6 +113,43 @@ module RedmineDependingCustomFields
       false
     end
 
+    # The parent read of the depending formats (WP-06, today's semantics): the
+    # stored parent id names any existing field, of any type and any family,
+    # the field itself included. When the parent is among the loaded custom
+    # field values of +customized+, its value and value_was are read there (no
+    # query). Otherwise one find_parent per record and id (memoized, nil
+    # included) tells an unavailable parent (available false, no values) from
+    # a dangling one (nil). nil also for a blank or invalid pointer and a nil
+    # object, without a query. Values are Strings, blanks kept, as 0.0.16
+    # reads them. No carries? (WP-15), no effective parent or cycle rule
+    # (WP-10).
+    def parent_state(cf, customized)
+      pid = parent_id(cf)
+      return nil if pid.nil? || customized.nil?
+
+      if customized.respond_to?(:custom_field_values)
+        cfv = customized.custom_field_values.detect { |v| v.custom_field_id == pid }
+        return ParentState.new(cfv.custom_field, true, string_values(cfv.value), string_values(cfv.value_was)) if cfv
+      end
+
+      record = cf.dcf_memo(:parent_record, pid) { find_parent(pid) }
+      return nil unless record
+      return ParentState.new(record, false, [], []) if customized.respond_to?(:custom_field_values)
+
+      # Not reached by core or plugin callers: asks the object like 0.0.16
+      # (NoMethodError for an object without custom fields).
+      ParentState.new(record, true, string_values(customized.custom_field_value(record)), [])
+    end
+
+    # The children the parent values of +state+ allow, as a Set of Strings:
+    # 0.0.16's union of the stored mapping entries, read as is (blank keys and
+    # entries count, as for mappings stored before the sanitizer). Empty for
+    # an unavailable parent.
+    def allowed_for(cf, state)
+      mapping = cf.value_dependencies || {}
+      Set.new(state.values.flat_map { |v| Array(mapping[v]) }.map(&:to_s))
+    end
+
     # id => CustomField from what is already loaded: the custom field values of
     # one record, or the available custom fields of an Array of objects (first
     # instance per id kept). No query once those are loaded.
@@ -321,6 +358,10 @@ module RedmineDependingCustomFields
       Set.new(Array(keys).map(&:to_s))
     end
 
-    private_class_method :list_values, :enumerations_of, :key_set
+    def string_values(raw)
+      Array(raw).map(&:to_s)
+    end
+
+    private_class_method :list_values, :enumerations_of, :key_set, :string_values
   end
 end

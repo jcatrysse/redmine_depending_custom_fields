@@ -1,15 +1,14 @@
+# frozen_string_literal: true
+
 require_relative '../rails_helper'
 
+# WP-06: on real fields (the parent lookup now memoizes on the record through
+# CustomFieldPatch#dcf_memo, which a stand-in cannot answer); the assertions
+# are the same as with the former instance_double.
 RSpec.describe RedmineDependingCustomFields::DependingListFormat do
   describe '#before_custom_field_save' do
     let(:format) { described_class.instance }
-    let(:parent) do
-      build_custom_field(
-        id: 42,
-        type: 'IssueCustomField',
-        field_format: 'list'
-      )
-    end
+    let(:parent) { dcf_list_field(values: %w[1 2 3]) }
 
     let(:unsanitized) do
       {
@@ -32,32 +31,22 @@ RSpec.describe RedmineDependingCustomFields::DependingListFormat do
     end
 
     let(:cf) do
-      build_custom_field(
-        parent_custom_field_id: parent.id.to_s,
-        type: parent.type,
-        field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
-        value_dependencies: unsanitized,
-        default_value_dependencies: unsanitized_defaults,
-        default_value: 'X'
-      )
-    end
-
-    before do
-      allow(CustomField).to receive(:find_by).and_return(parent)
-      allow(cf).to receive(:parent_custom_field_id=)
-      allow(cf).to receive(:value_dependencies=)
-      allow(cf).to receive(:default_value_dependencies=)
-      allow(cf).to receive(:default_value=)
+      field = CustomField.find(dcf_list_field(format: 'depending_list', values: %w[1 2 3 X]).id)
+      field.parent_custom_field_id = parent.id.to_s
+      field.value_dependencies = unsanitized
+      field.default_value_dependencies = unsanitized_defaults
+      field.default_value = 'X'
+      field
     end
 
     it 'corrects parent id, sanitizes dependencies and clears default value' do
       sanitized = RedmineDependingCustomFields::Sanitizer.sanitize_dependencies(unsanitized)
       sanitized_defaults = RedmineDependingCustomFields::Sanitizer.sanitize_default_dependencies(unsanitized_defaults)
       format.before_custom_field_save(cf)
-      expect(cf).to have_received(:parent_custom_field_id=).with(parent.id)
-      expect(cf).to have_received(:value_dependencies=).with(sanitized)
-      expect(cf).to have_received(:default_value_dependencies=).with(sanitized_defaults)
-      expect(cf).to have_received(:default_value=).with(nil)
+      expect(cf.parent_custom_field_id).to eq(parent.id)
+      expect(cf.value_dependencies).to eq(sanitized)
+      expect(cf.default_value_dependencies).to eq(sanitized_defaults)
+      expect(cf.default_value).to be_nil
     end
   end
 end

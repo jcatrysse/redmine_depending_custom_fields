@@ -1,5 +1,4 @@
 require_relative 'lib/redmine_depending_custom_fields'
-require_relative 'lib/redmine_depending_custom_fields/patches/query_custom_field_column_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_controller_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
@@ -52,12 +51,6 @@ CustomField.safe_attributes(
   'hide_when_disabled'
 )
 
-# QueryCustomFieldColumn is a top-level class defined inside Redmine's
-# app/models/query.rb; there is no query_custom_field_column.rb for Zeitwerk to
-# map, so the constant only exists once query.rb is loaded. Referencing Query
-# (which Zeitwerk maps to query.rb) forces that load before we prepend.
-Query
-QueryCustomFieldColumn.prepend RedmineDependingCustomFields::Patches::QueryCustomFieldColumnPatch
 CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
 # The issue context menu controller was namespaced in Redmine 7.0
 # (ContextMenus::IssuesController#index); Redmine 5.x/6.x used the flat

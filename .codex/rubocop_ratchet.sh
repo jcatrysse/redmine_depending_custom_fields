@@ -29,7 +29,9 @@ mkdir -p "$TMP/base"; git -C "$DCF_PLUGIN_DIR" archive "$BASE" | tar -x -C "$TMP
 cd "$DCF_PLUGIN_DIR" || exit 6
 CHANGED="$( { git diff --name-only --diff-filter=ACMR "$BASE"; git ls-files --others --exclude-standard; } \
   | grep -E '(\.rb|\.rake|(^|/)Gemfile)$' | grep -v '^node_modules/' | sort -u)"
-ALL_RB="$(git ls-files --cached --others --exclude-standard | grep -E '(\.rb|\.rake|(^|/)Gemfile)$' | sort -u)"
+# Only files that exist: a deletion that is not staged yet is still listed.
+ALL_RB="$(git ls-files --cached --others --exclude-standard | grep -E '(\.rb|\.rake|(^|/)Gemfile)$' | sort -u \
+  | while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)"
 STATUS=0
 
 echo "--- 1. Ruby 2.7 syntax (all files)"

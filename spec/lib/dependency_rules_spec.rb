@@ -53,8 +53,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       source = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/dependency_rules.rb', __dir__))
       expect(source).not_to include('FIELD_FORMAT')
       expect(source).not_to match(/@[a-z_]+ *(\|\|)?=|@@|Rails\.cache|CurrentAttributes/)
-      later = [:dependency_check, :effective_parent_id, :parent_state, :parent_errors, :parent_changed?,
-               :no_options?, :baseline_source, :child_baseline, :editable_by?, :allowed_for]
+      later = [:dependency_check, :effective_parent_id, :parent_errors, :parent_changed?,
+               :no_options?, :baseline_source, :child_baseline, :editable_by?]
       expect(later.select { |name| described_class.respond_to?(name) }).to eq([])
       expect(described_class.respond_to?(:memo)).to be(false)
       expect(described_class.instance_variables).to eq([])
@@ -345,6 +345,186 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     it 'gives {} for nil and skips objects without custom fields' do
       expect(described_class.lookup_records(nil)).to eq({})
       expect(described_class.lookup_records([Object.new, nil])).to eq({})
+    end
+  end
+
+  # WP-06 adds parent_state and allowed_for with 0.0.16's semantics; WP-10
+  # (effective parent, cycles) and WP-15 (carries?) change them.
+  describe '.parent_state' do
+    let(:project) { dcf_create_project }
+    let(:parent) { dcf_list_field(values: %w[A B C]) }
+    let(:child) { CustomField.find(dcf_list_field(format: 'depending_list', values: %w[a1 b1], parent: parent).id) }
+
+    # A persisted issue holding +values+ (field => value), reloaded. A fresh
+    # Project instance each time: a Project memoizes its custom fields.
+    def issue_on(values)
+      fresh = Project.find(project.id)
+      tracker, status, priority = dcf_issue_infra(fresh)
+      values.each_key { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+      issue = Issue.new(project: fresh, tracker: tracker, subject: 'S', author: dcf_admin,
+                        status: status, priority: priority)
+      issue.custom_field_values = values.to_h { |f, v| [f.id.to_s, v] }
+      issue.save!(validate: false)
+      Issue.find(issue.id)
+    end
+
+    def memo_names(field)
+      field.instance_variable_get(:@dcf_memo).to_h.keys.map(&:first)
+    end
+
+    it 'reads an available parent from the loaded custom field values, without a query' do
+      issue = issue_on(parent => 'A', child => 'a1')
+      issue.custom_field_values = { parent.id.to_s => 'B' }
+      state = nil
+
+      expect(dcf_count_queries { state = described_class.parent_state(child, issue) }).to eq(0)
+      expect(state.parent).to equal(issue.custom_field_values.detect { |v| v.custom_field_id == parent.id }.custom_field)
+      expect([state.available, state.values, state.baseline]).to eq([true, ['B'], ['A']])
+      expect(memo_names(child)).not_to include(:parent_record)
+    end
+
+    it 'keeps blank values, and every value of a multiple parent, as Strings' do
+      expect(described_class.parent_state(child, issue_on(parent => '')).values).to eq([''])
+      parent.update!(multiple: true)
+      state = described_class.parent_state(CustomField.find(child.id), issue_on(parent => %w[A B]))
+      expect([state.values, state.baseline]).to eq([%w[A B], %w[A B]])
+    end
+
+    it 'gives an unavailable state for an existing parent the object does not carry, looked up once' do
+      issue = issue_on(child => 'a1')
+      issue.custom_field_values
+      allow(described_class).to receive(:find_parent).and_call_original
+      state = described_class.parent_state(child, issue)
+
+      expect([state.parent, state.available, state.values, state.baseline]).to eq([parent, false, [], []])
+      expect(dcf_count_queries { described_class.parent_state(child, issue) }).to eq(0)
+      expect(described_class).to have_received(:find_parent).with(parent.id).once
+      expect(described_class.parent_state(child, project).available).to be(false)
+    end
+
+    it 'is nil for a dangling parent, memoized' do
+      field = CustomField.find(child.id)
+      field.parent_custom_field_id = CustomField.maximum(:id).to_i + 1_000
+      issue = issue_on(parent => 'A')
+      issue.custom_field_values
+
+      expect(described_class.parent_state(field, issue)).to be_nil
+      expect(dcf_count_queries { described_class.parent_state(field, issue) }).to eq(0)
+    end
+
+    it 'accepts a parent of any type, of any family and the field itself, unlike parent_of' do
+      point(child, child.id)
+      own = CustomField.find(child.id)
+      state = described_class.parent_state(own, issue_on(own => 'a1'))
+      expect([state.parent.id, state.available, state.values]).to eq([child.id, true, ['a1']])
+      expect(described_class.parent_of(own)).to be_nil
+
+      other_type = dcf_list_field(type: ProjectCustomField)
+      point(child, other_type.id)
+      field = CustomField.find(child.id)
+      state = described_class.parent_state(field, issue_on(parent => 'A'))
+      expect([state.parent, state.available]).to eq([other_type, false])
+      expect(described_class.parent_of(field)).to be_nil
+
+      enum = dcf_enum_field(names: %w[X])
+      point(child, enum.id)
+      field = CustomField.find(child.id)
+      x = enum.enumerations.first.id.to_s
+      state = described_class.parent_state(field, issue_on(enum => x))
+      expect([state.parent.id, state.available, state.values]).to eq([enum.id, true, [x]])
+      expect(described_class.parent_of(field)).to be_nil
+    end
+
+    it 'is nil without a query, a lookup or a load for no pointer, an invalid pointer, no object or another format' do
+      untouchable = Object.new
+      def untouchable.custom_field_values
+        raise 'custom field values loaded'
+      end
+      [nil, '', '  ', 0, '0', 'abc', -3].each do |raw|
+        field = CustomField.find(child.id)
+        field.parent_custom_field_id = raw
+        expect(dcf_count_queries { expect(described_class.parent_state(field, untouchable)).to be_nil }).to eq(0), raw.inspect
+        expect(memo_names(field)).not_to include(:parent_record)
+      end
+      expect(dcf_count_queries { expect(described_class.parent_state(child, nil)).to be_nil }).to eq(0)
+      plain = dcf_list_field
+      plain.parent_custom_field_id = parent.id
+      expect(described_class.parent_state(plain, untouchable)).to be_nil
+    end
+
+    it 'looks a parent up through find_parent only' do
+      stand_in = CustomField.find(parent.id)
+      issue = issue_on(child => 'a1')
+      issue.custom_field_values
+      allow(described_class).to receive(:find_parent).with(parent.id).and_return(stand_in)
+      allow(CustomField).to receive(:find_by).and_call_original
+
+      expect(described_class.parent_state(child, issue).parent).to equal(stand_in)
+      expect(CustomField).not_to have_received(:find_by)
+    end
+
+    it 'asks an object without custom field values like 0.0.16 (NoMethodError)' do
+      expect { described_class.parent_state(child, Object.new) }.to raise_error(NoMethodError)
+    end
+  end
+
+  describe '.allowed_for' do
+    rows = JSON.parse(File.read(File.expand_path('../../test/js/fixtures/shared/rules_cases.json', __dir__),
+                                encoding: 'UTF-8'))['allowed']
+
+    def field_with(map)
+      cf = unsaved('depending_list')
+      cf.value_dependencies = map
+      cf
+    end
+
+    def state(values, available: true)
+      described_class::ParentState.new(nil, available, values, [])
+    end
+
+    # 0.0.16's inline union (depending_list_format.rb before WP-06).
+    def today(map, values)
+      mapping = map || {}
+      values.flat_map { |v| Array(mapping[v]) }.map(&:to_s)
+    end
+
+    it 'equals the shared allowed cases for every mapping a save stores (sanitized)' do
+      rows.each do |row|
+        result = described_class.allowed_for(field_with(sanitizer.sanitize_dependencies(row['map'])), state(row['parent']))
+        expect(result).to eq(Set.new(row['expected'])), row['id']
+      end
+    end
+
+    it 'equals 0.0.16\'s raw union for every case, sanitized or not, as a Set' do
+      rows.each do |row|
+        cf = field_with(row['map'])
+        result = described_class.allowed_for(cf, state(row['parent']))
+        expect(result).to be_a(Set)
+        expect(result).to eq(Set.new(today(cf.value_dependencies, row['parent']))), row['id']
+      end
+    end
+
+    it 'counts a stored blank key and blank links like 0.0.16 (allowed_set does not)' do
+      cf = field_with('' => ['a1'], 'A' => [''])
+      expect(described_class.allowed_for(cf, state(['']))).to eq(Set['a1'])
+      expect(described_class.allowed_for(cf, state(['A']))).to eq(Set[''])
+      expect(described_class.allowed_set(cf.value_dependencies, [''])).to be_empty
+    end
+
+    it 'is empty for an unavailable parent and for a field without a mapping' do
+      expect(described_class.allowed_for(field_with('A' => ['a1']), state([], available: false))).to eq(Set.new)
+      expect(described_class.allowed_for(unsaved('depending_list'), state(['A']))).to eq(Set.new)
+    end
+
+    it 'reads a saved mapping as is, for a multiple parent' do
+      parent = dcf_list_field(values: %w[A B C])
+      child = dcf_list_field(format: 'depending_list', values: %w[a1 a2 b1], parent: parent)
+      child = dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1 a2], 'B' => %w[b1 a1] })
+      allow(sanitizer).to receive(:sanitize_dependencies).and_call_original
+
+      expect(described_class.allowed_for(child, state(%w[A B]))).to eq(Set.new(today(child.value_dependencies, %w[A B])))
+      expect(described_class.allowed_for(child, state(%w[B]))).to eq(Set['b1', 'a1'])
+      expect(sanitizer).not_to have_received(:sanitize_dependencies)
     end
   end
 
