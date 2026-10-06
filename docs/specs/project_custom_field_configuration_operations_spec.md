@@ -228,6 +228,13 @@ everything applied together in one transaction and one audit event.
    a sibling's name and a reactivation onto a name meanwhile taken. Core has no
    such validation, but §A and §B enforce it, so this path must not be a way
    around them. A name duplicating an **inactive** value stays allowed.
+   Only a collision the save **creates** is refused, i.e. one involving a row
+   that is renamed or reactivated. Core's own enumeration editor allows two
+   active values with the same name, so such a duplicate can already be in the
+   data; it must not block reorders or unrelated renames, nor the rename or
+   deactivation that resolves it. A name is "renamed" only when it differs from
+   the **normalized** stored name, so stray whitespace in a stored name is
+   neither a rename nor rewritten.
 6. Order rows by submitted `position` (ties → current position, then input
    order) and assign contiguous positions `1..N`.
 7. Apply name / position / active per changed row via `enum.update!`. Model

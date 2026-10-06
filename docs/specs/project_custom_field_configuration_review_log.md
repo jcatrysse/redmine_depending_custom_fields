@@ -393,3 +393,19 @@ Two smaller cleanups the new shape allowed:
   one (§E needs no panel), but the panel now skips hashes so a future confirmable
   batch operation fails loudly on the id-set check instead of silently
   re-submitting a mangled payload.
+
+## Amendment A5 — Pre-existing duplicate names blocked every batch save
+
+Reported on production: dragging a value, or renaming one, on an enumeration
+field failed with `error_value_duplicate` ("This value already exists") although
+the save introduced no duplicate. The field already held two **active** values
+named "Crewing & Planning" (core's enumeration editor has no uniqueness check),
+and the §E check rejected any resulting state with a duplicate active name, so
+no save on that table could ever pass, not even the one fixing the duplicate.
+
+- **Resolved:** §E step 5 now refuses only a collision the save creates, i.e.
+  one where a row in the clashing group is renamed or reactivated. Renaming onto
+  an already-duplicated name is still refused (T-ACT-27).
+- The rename detection compares against the normalized stored name. Before, a
+  stored name with stray whitespace counted as renamed on every save, was
+  rewritten silently, and could itself trip the duplicate check.

@@ -88,9 +88,28 @@ module RedmineDependingCustomFields
     # renames one value onto another's name, or reactivates a value whose name is
     # already taken, must be refused as a whole. Add (§A) and Rename (§B) enforce
     # the same active-name uniqueness; core has no such validation.
+    #
+    # Only a collision this save creates is refused: one where a row in it was
+    # renamed or reactivated. Core's own enumeration editor allows duplicates, so
+    # a field can already hold two active values with the same name; rejecting
+    # those would block every save on the table, including the rename or
+    # deactivation that resolves the duplicate.
     def validate_no_active_duplicates!(rows)
-      active_names = rows.select { |r| r[:active] }.map { |r| r[:name] }
-      raise OperationError.new(:error_value_duplicate) if active_names.uniq.length != active_names.length
+      clash = rows.select { |r| r[:active] }.group_by { |r| r[:name] }.values.any? do |group|
+        group.length > 1 && group.any? { |r| touched?(r) }
+      end
+      raise OperationError.new(:error_value_duplicate) if clash
+    end
+
+    # The row ends up active under a name it did not already hold while active.
+    def touched?(row)
+      !row[:enum].active? || name_changed?(row)
+    end
+
+    # Compared on the normalized stored name: the submitted name is always
+    # stripped, so a stored name with stray whitespace is not a rename.
+    def name_changed?(row)
+      row[:name] != normalize(row[:enum].name)
     end
 
     def apply!(rows)
@@ -105,7 +124,7 @@ module RedmineDependingCustomFields
         changes = {}
         position = idx + 1
 
-        if row[:name] != enum.name
+        if name_changed?(row)
           renamed << { from: enum.name, to: row[:name] }
           changes[:name] = row[:name]
         end

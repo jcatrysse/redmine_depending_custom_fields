@@ -400,6 +400,45 @@ RSpec.describe 'DCF value operation services' do
       expect(y.reload.name).to eq('X')
     end
 
+    # Core's enumeration editor allows two active values with the same name; a
+    # duplicate already in the data must not block reorders or other renames.
+    it 'saves around a duplicate that already exists in the data (T-ACT-27)' do
+      field = dcf_enum_field(names: %w[X Y X])
+      x1, y, x2 = field.enumerations.order(:position).to_a
+      save_enums(field, x1.id => { position: 3 }, y.id => { name: 'Y2', position: 1 }, x2.id => { position: 2 })
+      expect(field.reload.enumerations.order(:position).map(&:name)).to eq(%w[Y2 X X])
+      expect(x1.reload.name).to eq('X')
+      expect(x2.reload.name).to eq('X')
+    end
+
+    it 'still refuses to rename onto a name that is already duplicated (T-ACT-27)' do
+      field = dcf_enum_field(names: %w[X Y X])
+      _x1, y, _x2 = field.enumerations.order(:position).to_a
+      expect { save_enums(field, y.id => { name: 'X' }) }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
+      expect(y.reload.name).to eq('Y')
+    end
+
+    it 'resolves an existing duplicate by deactivating one of them (T-ACT-27)' do
+      field = dcf_enum_field(names: %w[X X])
+      _x1, x2 = field.enumerations.order(:position).to_a
+      save_enums(field, x2.id => { active: false })
+      expect(x2.reload.active).to be false
+    end
+
+    # The submitted name is stripped, so a stored name with stray whitespace
+    # must not count as renamed (nor be rewritten) on every save.
+    it 'does not treat a whitespace-only difference as a rename (T-ACT-27)' do
+      field = dcf_enum_field(names: %w[X Y])
+      x, y = field.enumerations.order(:position).to_a
+      x.update_column(:name, 'X ')
+      save_enums(field, x.id => { position: 2 }, y.id => { position: 1 })
+      expect(x.reload.name).to eq('X ')
+      event = RedmineDependingCustomFields::ConfigAuditEvent
+              .where(action: 'update_enumerations', status: 'success').order(:id).last
+      expect(event.changes_summary).not_to include('renamed')
+    end
+
     it 'rejects a blank name without applying the rest of the save (T-ACT-22)' do
       field = dcf_enum_field(names: %w[X Y])
       x, y = field.enumerations.order(:position).to_a

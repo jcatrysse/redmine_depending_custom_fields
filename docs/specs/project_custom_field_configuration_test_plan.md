@@ -151,6 +151,10 @@ Enumeration batch editor (Operations Spec §E):
 - T-ACT-26 The enumeration table ships `input.dcf-position` and **no**
   `dcf-reorder-form` (staged drag); the list table ships the reorder form and no
   batch form (submit-on-drop).
+- T-ACT-27 A duplicate active name already in the data (core allows it) does
+  not block a reorder or an unrelated rename; renaming a third row onto that
+  name is still refused; deactivating one of the pair is allowed. A stored name
+  differing only by surrounding whitespace is not counted or written as a rename.
 
 The production contract of "deactivate, don't delete", exercised through
 Redmine's real `Issue` validation (`dcf_real_issue`, not a bare `CustomValue`
