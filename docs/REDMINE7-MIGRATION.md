@@ -39,7 +39,11 @@ contacts prepend; dcf used `alias_method`. Plugins load alphabetically, so the
 prepends come first. `alias_method :project_settings_tabs_without_dcf,
 :project_settings_tabs` then resolves to agile's prepended method, not core's.
 Core's method is lost, and the copied method's `super` runs from ProjectsHelper
-itself, where nothing is above it: NoMethodError. The reverse order recurses.
+itself, where nothing is above it: NoMethodError. The other order (alias
+first, prepend after) happens to work, so whether the page breaks depends on
+plugin names. On a class (redmine_itil_priority's `IssueQuery` patch next to
+agile) the same mix recursed instead (SystemStackError in
+`redmine:load_default_data`); that one is fixed in itil_priority 0aa2d54.
 
 ## Fix
 

@@ -3,11 +3,11 @@ module RedmineDependingCustomFields
     # Appends the "Custom field configuration" tab to Project → Settings.
     # Prepended, not alias_method: other plugins (redmine_agile, redmine_contacts)
     # prepend on project_settings_tabs too, and an alias_method chain taken after
-    # their prepend captures their method instead of core's, so the settings page
-    # raises NoMethodError (super) or recurses. Prepending chains through super
-    # in any load order and is a no-op when applied twice. The tab is added only
-    # when the current user holds the project permission; admins always do
-    # (module-independent permission). See Integration Spec §4.
+    # their prepend captures their method instead of core's, and the settings
+    # page raised NoMethodError (super: no superclass method). Prepending chains
+    # through super in any load order and is a no-op when applied twice. The tab
+    # is added only when the current user holds the project permission; admins
+    # always do (module-independent permission). See Integration Spec §4.
     module ProjectsHelperPatch
       def project_settings_tabs
         tabs = super
