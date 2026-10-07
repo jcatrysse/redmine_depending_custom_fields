@@ -83,6 +83,14 @@ required `alias_method` (Integration §1/§4, UI §1, Product §8/§14, specs
 README, agent plan, T-INT-4) now state the new rule and why; review log
 Amendment A5.
 
+Alternative considered, not taken: registering the tab module itself with
+`ProjectsController.helper` (as redmine_mail_digest 87d79f2, redmine_custom_workflows
+and redmine_reporter_dashboards do). That also survives a plugin that still uses
+an alias chain on ProjectsHelper after us; a prepend does not. Not taken because
+Jan's decision of 2026-10-07 is `prepend` for every plugin, which removes such
+alias chains, and production step 3 below checks for them. If one ever has to
+stay, switching dcf to the controller-helper route is a two-line change.
+
 ## Tests
 
 Plugin suite, `spec/` and `test/spec/` (rspec), Redmine 7.0-stable-GEOxyz,
