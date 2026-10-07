@@ -26,6 +26,12 @@ module RedmineDependingCustomFields
 end
 
 # Make the dcf_* view helpers available where the settings tab partial is
-# rendered (the ProjectsController settings view uses ProjectsHelper).
+# rendered. Including them into ProjectsHelper alone is not enough: a plugin
+# that loads ProjectsController first (redmine_custom_workflows calls
+# ProjectsController.helper in its init) leaves ProjectsController::HelperMethods
+# without them, and the tab partial raised NoMethodError
+# (dcf_relevant_custom_fields). Registering them on the controller itself works
+# in any load order.
 ProjectsHelper.include(ProjectCustomFieldConfigurationHelper)
+ProjectsController.helper(ProjectCustomFieldConfigurationHelper)
 ProjectsHelper.prepend(RedmineDependingCustomFields::Patches::ProjectsHelperPatch)

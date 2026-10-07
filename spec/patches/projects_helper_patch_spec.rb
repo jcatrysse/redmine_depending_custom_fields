@@ -42,7 +42,17 @@ RSpec.describe RedmineDependingCustomFields::Patches::ProjectsHelperPatch do
 
     it 'keeps the dcf_* view helpers available in the settings view' do
       expect(ProjectsHelper.include?(ProjectCustomFieldConfigurationHelper)).to be true
+      expect(ProjectsController._helpers.include?(ProjectCustomFieldConfigurationHelper)).to be true
       expect(helper).to respond_to(:dcf_field_scope)
+    end
+
+    # Through ProjectsHelper alone the helpers did not reach
+    # ProjectsController::HelperMethods once redmine_custom_workflows had loaded
+    # ProjectsController first (HTTP 500, undefined dcf_relevant_custom_fields),
+    # so they are registered on the controller itself.
+    it 'registers the dcf_* view helpers on ProjectsController directly' do
+      expect(ProjectsController).to receive(:helper).with(ProjectCustomFieldConfigurationHelper).and_call_original
+      load File.expand_path('../../lib/redmine_depending_custom_fields/patches/projects_helper_patch.rb', __dir__)
     end
 
     it 'shows the tab to an admin' do
