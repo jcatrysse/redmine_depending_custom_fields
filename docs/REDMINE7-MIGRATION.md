@@ -102,6 +102,20 @@ Every screenshot was looked at. Seen on the way, not changed (older than this
 branch): `/depending_custom_fields/options` is shadowed by the JSON
 `depending_custom_fields/:id` route (the wizard JS does not use it).
 
+## Review
+
+- Own adversarial pass over the diff: the "reverse order recurses" claim was
+  wrong for a module (checked in plain Ruby 3.3: NoMethodError; alias first and
+  prepend after works) and is corrected in bd0b3c3. Ruby 3.x everywhere (CI
+  5.1/6.0/7.0 use 3.2/3.3/3.4), so a prepend onto ProjectsHelper reaches
+  helper modules that already include it; the dcf_* helper include behaves as
+  before. The spec prepends onto throwaway modules only, so it leaves
+  ProjectsHelper as it found it.
+- `./.codex/openai_review.sh fa0adaf` (gpt-5, 14 files): no findings,
+  `docs/reviews/openai-2026-10-07-bd0b3c3.md`.
+- Not run in this session: Redmine 5.1 and 6.1 (GEOxyz runs 7.0); the
+  workflows for them are there, manual only.
+
 ## Production
 
 1. Deploy dcf together with redmine_itil_priority ≥ 0aa2d54 and
