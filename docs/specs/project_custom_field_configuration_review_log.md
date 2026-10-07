@@ -393,3 +393,16 @@ Two smaller cleanups the new shape allowed:
   one (§E needs no panel), but the panel now skips hashes so a future confirmable
   batch operation fails loudly on the id-set check instead of silently
   re-submitting a mangled payload.
+
+## Amendment A5 — Settings-tab patch is prepended (2026-10-07)
+
+F1.2 resolved the settings-tab patch to `alias_method`, per the brief. On
+Redmine 7.0-stable-GEOxyz with the other GEOxyz plugins that turned out wrong:
+`redmine_agile` and `redmine_contacts` prepend on
+`ProjectsHelper#project_settings_tabs` and load first, the alias then captured
+their method instead of core's, and Project → Settings answered HTTP 500 for
+everyone allowed to open it (dcf + redmine_agile alone reproduces it). Jan's
+decision: every plugin uses `prepend` on methods other plugins also patch. The
+patch is now prepended; behaviour is unchanged. Integration §1/§4, UI §1,
+Product §8/§14, the specs README, the agent plan and T-INT-4 now say so. Details
+and numbers: `docs/REDMINE7-MIGRATION.md`.

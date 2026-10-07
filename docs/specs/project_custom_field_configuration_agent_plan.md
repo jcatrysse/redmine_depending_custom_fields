@@ -6,7 +6,10 @@ No production code exists yet; these packages produce it.
 ## Conventions for all agents
 
 - Branch: `claude/festive-mayer-tooku` (per task) or a feature branch off it.
-- Honor HARD RULES: `alias_method` for the settings-tab patch (not `prepend`);
+- Honor HARD RULES: `prepend` for the settings-tab patch, never `alias_method`
+  (reversed on 2026-10-07: redmine_agile and redmine_contacts prepend on the
+  same method, and an alias chain taken after their prepend broke Project →
+  Settings with HTTP 500; see Integration Spec §4);
   no `Rails.configuration.to_prepare` in `init.rb`; keep the existing admin API
   admin-only; no field create/delete; no type/visibility/applicability edits.
 - Reuse existing `MappingBuilder` / `Sanitizer` / matrix JS.
@@ -40,7 +43,7 @@ No production code exists yet; these packages produce it.
 
 - **Scope:** Register `manage_project_custom_field_configuration` (module-
   independent, `require: :member`); add the `ProjectsHelper#project_settings_tabs`
-  patch via `alias_method`; add the tab partial/link; register the plugin setting
+  patch via `prepend`; add the tab partial/link; register the plugin setting
   `manage_standard_custom_fields` (default true) + its settings partial; permission
   + setting I18n labels.
 - **Files:** `init.rb` (additive — permission + `settings` block),
@@ -53,7 +56,7 @@ No production code exists yet; these packages produce it.
 - **Dependencies:** Agent 1.
 - **Acceptance:** T-AUTH-1/2/3, T-INT-2/3/4.
 - **Tests:** helper/request specs for tab visibility; load check (no
-  `to_prepare`; uses `alias_method`).
+  `to_prepare`; the patch is prepended to `ProjectsHelper`).
 - **Risks:** tab partial coupling to core settings instance vars → prefer link
   into the dedicated controller.
 

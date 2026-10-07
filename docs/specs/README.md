@@ -45,8 +45,9 @@ pass automatically. The feature manages **values** of four formats — standard
 formats only; standard-format delegation is on by default and can be disabled by
 an admin via the `manage_standard_custom_fields` plugin setting. A new
 **Project → Settings tab** is added by patching
-`ProjectsHelper#project_settings_tabs` with **`alias_method`** (never `prepend`,
-never `Rails.configuration.to_prepare`). The existing admin-only
+`ProjectsHelper#project_settings_tabs` with **`prepend`** (never `alias_method`,
+which broke Project → Settings next to other plugins that prepend the same
+method; never `Rails.configuration.to_prepare`). The existing admin-only
 `DependingCustomFieldsApiController` is left **untouched and admin-only**. Every
 successful and rejected change is written to a new
 `dcf_config_audit_events` table inside the same DB transaction as the change, so

@@ -113,7 +113,7 @@ Detailed flows: see Functional Spec (Phase 3) and Operations Spec (Phase 8).
 
 - A new tab appears in `Project → Settings` for admins and permission holders.
 - Implemented by patching `ProjectsHelper#project_settings_tabs` via
-  **`alias_method`** (see Integration Spec). The tab entry itself is filtered by
+  **`prepend`** (see Integration Spec §4). The tab entry itself is filtered by
   `User.current.allowed_to?(:manage_project_custom_field_configuration, @project)`.
 - No global Administration screen is added for configuration. (An optional,
   admin-only **read-only** global audit view is allowed; it is not configuration.)
@@ -201,7 +201,10 @@ Detailed flows: see Functional Spec (Phase 3) and Operations Spec (Phase 8).
 - Use `require_relative` loading like the rest of the plugin.
 - Guard icon helpers (`sprite_icon`) with `respond_to?` (already a plugin
   convention) — 5.1 has no sprite icons.
-- Use `alias_method` for the settings-tab patch (not `prepend`).
+- Use `prepend` for the settings-tab patch, never `alias_method`: other plugins
+  (redmine_agile, redmine_contacts) prepend on the same method, and an alias
+  chain taken after their prepend broke Project → Settings with HTTP 500
+  (Jan, 2026-10-07; Integration Spec §4).
 - Do **not** add `Rails.configuration.to_prepare` to `init.rb`.
 
 ## 15. Redmine 6.1 compatibility considerations

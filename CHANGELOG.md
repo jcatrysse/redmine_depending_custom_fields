@@ -125,3 +125,22 @@
   page
 * Edit key-value (enumeration) values the way Redmine's own Administration
   screen does.
+
+## Unreleased
+
+* **Fix HTTP 500 on Project → Settings next to plugins that prepend
+  `project_settings_tabs`** (redmine_agile, redmine_contacts). The settings-tab
+  patch used an `alias_method` chain; loaded after their prepend, the alias
+  captured their method instead of core's and the page raised
+  `NoMethodError (super: no superclass method 'project_settings_tabs')` for
+  everyone allowed to open it. dcf + redmine_agile alone reproduces it on
+  Redmine 7.0-stable-GEOxyz. The patch is now prepended (rule for all GEOxyz
+  plugins since 2026-10-07: `prepend` on methods other plugins also patch).
+  Behaviour is unchanged: the tab only with
+  `:manage_project_custom_field_configuration`, admins always. The specs that
+  required `alias_method` are updated. No migration, no new setting.
+* New spec `spec/patches/projects_helper_patch_spec.rb` (tab per user kind,
+  prepend structure, composition with another plugin's prepend in both load
+  orders and applied twice) and a browser scenario
+  `test/e2e/project_settings_tab.mjs` with screenshots in `docs/e2e/`.
+* Add the GEOxyz devkit (`.codex/`). See `docs/REDMINE7-MIGRATION.md`.

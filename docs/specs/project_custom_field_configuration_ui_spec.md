@@ -9,11 +9,14 @@ reuse that style for the matrix editor only).
 
 `Project → Settings` gains a tab **Custom field configuration**
 (`label_project_custom_field_configuration`). Added by patching
-`ProjectsHelper#project_settings_tabs` with **`alias_method`** (see Integration
-Spec). The tab is included only when
+`ProjectsHelper#project_settings_tabs` with **`prepend`** (see Integration
+Spec §4). The tab is included only when
 `User.current.allowed_to?(:manage_project_custom_field_configuration, @project)`.
-**Do not** use `prepend`. **Do not** add `Rails.configuration.to_prepare` to
-`init.rb`.
+**Do not** use `alias_method`: other plugins (redmine_agile,
+redmine_contacts) prepend on the same method, and an `alias_method` chain taken
+after their prepend captures their method instead of core's, so Project →
+Settings answered HTTP 500 (Jan, 2026-10-07). **Do not** add
+`Rails.configuration.to_prepare` to `init.rb`.
 
 Visibility audience: admins (always) + permission holders. Menu hiding is UX
 only — never the security boundary (server enforces).

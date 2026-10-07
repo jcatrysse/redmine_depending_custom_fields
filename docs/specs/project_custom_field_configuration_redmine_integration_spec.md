@@ -27,8 +27,8 @@ Add, after existing registrations (no removal of existing lines):
 2. **New `require_relative`s** for the new patch + (optionally) eager files,
    following the existing `require_relative` style at the top of `init.rb`.
 
-3. **Apply the ProjectsHelper patch via `alias_method`** (see §4) — **not**
-   `prepend`.
+3. **Apply the ProjectsHelper patch via `prepend`** (see §4) — **not**
+   `alias_method`.
 
 4. **Plugin setting registration** in the `Redmine::Plugin.register` block, e.g.:
    ```
@@ -59,8 +59,9 @@ Add, after existing registrations (no removal of existing lines):
 - **No `Rails.configuration.to_prepare`** is added (existing convention; the
   plugin loads patches directly in `init.rb`).
 - Existing `prepend` patches (CustomField, QueryCustomFieldColumn,
-  ContextMenusController, IssueImport) are left as-is. The new **settings-tab**
-  patch specifically uses `alias_method` per the environment's requirement.
+  ContextMenusController, IssueImport) are left as-is. The **settings-tab** patch
+  is prepended too (§4). It first used `alias_method` per an earlier environment
+  requirement; that rule was reversed on 2026-10-07.
 
 ## 2. Project module decision
 
@@ -107,7 +108,7 @@ end
 > The project-scoped `audit` action above only ever shows `project_id =
 > @project` events.
 
-## 4. Project settings tab patch — `alias_method` strategy
+## 4. Project settings tab patch — `prepend` strategy
 
 Patch `ProjectsHelper#project_settings_tabs` to append the new tab:
 
@@ -115,27 +116,23 @@ Patch `ProjectsHelper#project_settings_tabs` to append the new tab:
 module RedmineDependingCustomFields
   module Patches
     module ProjectsHelperPatch
-      def self.included(base)
-        base.class_eval do
-          alias_method :project_settings_tabs_without_dcf, :project_settings_tabs
-          def project_settings_tabs
-            tabs = project_settings_tabs_without_dcf
-            if User.current.allowed_to?(:manage_project_custom_field_configuration, @project)
-              tabs << {
-                name:    'custom_field_configuration',
-                action:  :manage_project_custom_field_configuration, # used by render_tabs visibility
-                partial: 'project_custom_field_configuration/settings_tab', # or controller link
-                label:   :label_project_custom_field_configuration
-              }
-            end
-            tabs
-          end
+      def project_settings_tabs
+        tabs = super
+        if User.current.allowed_to?(:manage_project_custom_field_configuration, @project)
+          tabs << {
+            name:    'custom_field_configuration',
+            action:  :manage_project_custom_field_configuration, # used by render_tabs visibility
+            partial: 'project_custom_field_configuration/settings_tab',
+            label:   :label_project_custom_field_configuration
+          }
         end
+        tabs
       end
     end
   end
 end
-ProjectsHelper.include(RedmineDependingCustomFields::Patches::ProjectsHelperPatch)
+ProjectsHelper.include(ProjectCustomFieldConfigurationHelper) # dcf_* helpers for the tab partial
+ProjectsHelper.prepend(RedmineDependingCustomFields::Patches::ProjectsHelperPatch)
 ```
 
 Notes / compatibility:
@@ -164,8 +161,16 @@ Notes / compatibility:
   - This supersedes the earlier "thin shell that links/redirects" vs "render
     overview directly" ambiguity: **overview inline via helper; actions on the
     dedicated controller; detail screens as full pages.**
-- **Use `alias_method`, not `prepend`** (environment requirement; `prepend` has
-  caused issues here for this kind of patch).
+- **Use `prepend`, never `alias_method`** (Jan, 2026-10-07; this reverses the
+  earlier "alias_method, never prepend" requirement). `redmine_agile` and
+  `redmine_contacts` prepend on `project_settings_tabs` and load before this
+  plugin. An `alias_method` chain taken after a prepend resolves the alias to
+  the prepended method, not to core's; core's tabs are lost and the copied
+  method's `super` has nowhere to go, so Project → Settings raised
+  `NoMethodError (super: no superclass method 'project_settings_tabs')`, HTTP
+  500. `prepend` chains through `super` in any load order and is a no-op when
+  applied twice. The rule for all GEOxyz plugins: `prepend` on any method other
+  plugins also patch. See `docs/REDMINE7-MIGRATION.md`.
 
 ## 5. Controllers
 
@@ -270,8 +275,8 @@ label key required so Redmine's role screen shows a readable name.
   relying on autoload of plugin lib files. Ensure new `app/` classes follow
   Redmine's plugin autoload (Redmine adds plugin `app/` paths) — name files to
   match class names.
-- Verify `project_settings_tabs` signature/markup unchanged; the `alias_method`
-  approach is version-agnostic.
+- Verify `project_settings_tabs` signature/markup unchanged; the `prepend`
+  approach is version-agnostic (Ruby 2.0+, every supported Redmine).
 - Verify icon/markup helpers; branch via `respond_to?`.
 - `update_all` within a transaction behaves identically.
 - Document any divergence; **never** break 5.1.

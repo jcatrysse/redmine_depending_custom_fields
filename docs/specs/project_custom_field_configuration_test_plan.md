@@ -249,8 +249,11 @@ row) — these are the guard against a future prune being added to §E:
   intact.
 - T-INT-2 Permission appears in role screen with translated label.
 - T-INT-3 Plugin loads with no `Rails.configuration.to_prepare`.
-- T-INT-4 Settings-tab patch uses `alias_method` (grep/loadcheck) and tab
-  appears.
+- T-INT-4 Settings-tab patch is prepended to `ProjectsHelper` (core
+  `project_settings_tabs` left as core defines it) and the tab appears; it
+  chains through another plugin's prepend on the same method in either load
+  order and adds the tab once when applied twice
+  (`spec/patches/projects_helper_patch_spec.rb`).
 
 ## 10. Compatibility tests
 
