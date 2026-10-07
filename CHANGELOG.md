@@ -139,6 +139,11 @@
   Behaviour is unchanged: the tab only with
   `:manage_project_custom_field_configuration`, admins always. The specs that
   required `alias_method` are updated. No migration, no new setting.
+* **Fix HTTP 500 on Project → Settings next to redmine_custom_workflows**
+  (`undefined method 'dcf_relevant_custom_fields'` in the tab partial).
+  custom_workflows builds ProjectsController's helper module before this plugin
+  loads, and the dcf_* helpers included into ProjectsHelper did not reach it.
+  They are now also registered with `ProjectsController.helper`.
 * New spec `spec/patches/projects_helper_patch_spec.rb` (tab per user kind,
   prepend structure, composition with another plugin's prepend in both load
   orders and applied twice) and a browser scenario

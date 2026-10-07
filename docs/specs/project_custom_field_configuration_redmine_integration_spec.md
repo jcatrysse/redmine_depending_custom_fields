@@ -132,6 +132,7 @@ module RedmineDependingCustomFields
   end
 end
 ProjectsHelper.include(ProjectCustomFieldConfigurationHelper) # dcf_* helpers for the tab partial
+ProjectsController.helper(ProjectCustomFieldConfigurationHelper) # also directly: see below
 ProjectsHelper.prepend(RedmineDependingCustomFields::Patches::ProjectsHelperPatch)
 ```
 
@@ -171,6 +172,10 @@ Notes / compatibility:
   500. `prepend` chains through `super` in any load order and is a no-op when
   applied twice. The rule for all GEOxyz plugins: `prepend` on any method other
   plugins also patch. See `docs/REDMINE7-MIGRATION.md`.
+- The dcf_* helpers are registered with `ProjectsController.helper` as well as
+  included into ProjectsHelper: next to redmine_custom_workflows, which builds
+  ProjectsController's helper module before this plugin loads, the include
+  alone did not reach the view and the tab partial raised NoMethodError.
 
 ## 5. Controllers
 

@@ -32,6 +32,19 @@ So dcf plus **redmine_agile alone** is enough. mail_digest 0542bea had the same
 bug on its own (500 with the fixed dcf too, trace through
 `project_settings_tabs_with_issue_digest`); fixed upstream in 87d79f2.
 
+A second 500 showed up next to redmine_custom_workflows once the first was
+fixed (reported by the redmine_ai_triage session, reproduced here):
+
+```
+ActionView::Template::Error (undefined method `dcf_relevant_custom_fields' for #<#<Class:0x...>>)
+plugins/redmine_depending_custom_fields/app/views/project_custom_field_configuration/_settings_tab.html.erb:1
+app/views/projects/settings.html.erb:3
+```
+
+Bisected over custom_workflows, contacts_helpdesk, checklists and tags:
+custom_workflows alone triggers it. Admin and manager got 500; a user without
+the dcf permission got 200, since the partial is not rendered for them.
+
 ## Cause
 
 `ProjectsHelper#project_settings_tabs` is patched by several plugins. agile and
@@ -45,11 +58,22 @@ plugin names. On a class (redmine_itil_priority's `IssueQuery` patch next to
 agile) the same mix recursed instead (SystemStackError in
 `redmine:load_default_data`); that one is fixed in itil_priority 0aa2d54.
 
+The second one: custom_workflows calls `ProjectsController.helper` in its
+init, so `ProjectsController::HelperMethods` already includes ProjectsHelper
+before dcf loads. dcf included its helper into ProjectsHelper; in the running
+app `ProjectsHelper.ancestors` then lists it but `ProjectsController._helpers`
+does not (checked with `rails runner` in production mode). Plain Ruby 3.3
+propagates such an include in every order tried, so the exact mechanism inside
+this chain is not pinned down; the fact is measured. The old alias_method code
+had the same include; its own 500 came first and hid this one.
+
 ## Fix
 
 `lib/redmine_depending_custom_fields/patches/projects_helper_patch.rb`: the
 module defines `project_settings_tabs` calling `super` and is prepended to
-ProjectsHelper; the dcf_* helpers are still included into ProjectsHelper.
+ProjectsHelper; the dcf_* helpers are included into ProjectsHelper and, since
+961cfca, also registered with `ProjectsController.helper`, which does not depend
+on load order.
 Same behaviour (tab only with `:manage_project_custom_field_configuration`,
 admins always), works in any load order, and a second prepend is a no-op. The
 plugin's other four patches (CustomField, QueryCustomFieldColumn,
@@ -69,8 +93,13 @@ PostgreSQL 16:
 | old code (fa0adaf), dcf alone | 259 examples, 0 failures | 14, 14 failures |
 | fix, dcf alone | **268 examples, 0 failures** | 14, 14 failures |
 | fix, with itil_priority 0aa2d54, mail_digest 87d79f2, agile 8c1d6c9, contacts 634f00f | 268, 3 failures | 14, 14 failures |
+| 961cfca, dcf alone | **269 examples, 0 failures** | 14, 14 failures |
+| 961cfca, with the four above plus custom_workflows 0d78541, contacts_helpdesk fba2b08, checklists 60cb538, tags 54630cd | 269, 3 failures | 14, 14 failures |
 
-- New `spec/patches/projects_helper_patch_spec.rb`, 9 examples: on the old code
+- The helper fix: with all nine plugins, the patch and request specs fail 8
+  examples on 845ba82 (the 2 new helper examples, T-AUTH-1/2, T-UI-6, the
+  empty overview, and 2 contacts-fixture ones), 2 on 961cfca.
+- New `spec/patches/projects_helper_patch_spec.rb`, 9 examples (10 since 961cfca): on the old code
   4 fail (prepend structure; chaining through another plugin's prepend loaded
   before and after; applied twice), the 5 behaviour examples pass on both.
 - `test/spec/`: the 14 failures are the same on the old code and unrelated
@@ -86,7 +115,8 @@ PostgreSQL 16:
 ## End to end (browser)
 
 `./.codex/start_server.sh` (production mode, PostgreSQL) and
-`./.codex/e2e.sh`, with all five plugins at the heads listed above:
+`./.codex/e2e.sh`, with all nine plugins at the heads listed above (the first
+run, before 961cfca, had the five: same numbers):
 
 - smoke: 19 screenshots, 0 problems
 - core flows: 6 screenshots, 0 problems
@@ -97,6 +127,9 @@ PostgreSQL 16:
   on both.
 - `docs/e2e/before/`: the same scenario on the old code, HTTP 500 for admin,
   manager and editor.
+- `docs/e2e/before-custom-workflows/`: the scenario on 845ba82 with the nine
+  plugins, HTTP 500 for admin and manager.
+- Not tested: context_menu_actions (not reachable from this session).
 
 Every screenshot was looked at. Seen on the way, not changed (older than this
 branch): `/depending_custom_fields/options` is shadowed by the JSON
@@ -118,7 +151,8 @@ branch): `/depending_custom_fields/options` is shadowed by the JSON
 
 ## Production
 
-1. Deploy dcf together with redmine_itil_priority ≥ 0aa2d54 and
+1. Deploy dcf at 961cfca or later (845ba82 still fails next to
+   redmine_custom_workflows), together with redmine_itil_priority ≥ 0aa2d54 and
    redmine_mail_digest ≥ 87d79f2: each of the old versions breaks the page on
    its own next to agile/contacts.
 2. No migration, no setting. Restart Redmine.
