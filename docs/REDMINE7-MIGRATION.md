@@ -146,6 +146,10 @@ branch): `/depending_custom_fields/options` is shadowed by the JSON
   ProjectsHelper as it found it.
 - `./.codex/openai_review.sh fa0adaf` (gpt-5, 14 files): no findings,
   `docs/reviews/openai-2026-10-07-bd0b3c3.md`.
+- Helper fix (961cfca): `ProjectsController.helper` skips a module the
+  controller already has, so a second load is a no-op; the spec's `load` of the
+  patch file only re-applies no-ops. `./.codex/openai_review.sh 845ba82`: no
+  findings, `docs/reviews/openai-2026-10-07-9f09248.md`.
 - Not run in this session: Redmine 5.1 and 6.1 (GEOxyz runs 7.0); the
   workflows for them are there, manual only.
 
