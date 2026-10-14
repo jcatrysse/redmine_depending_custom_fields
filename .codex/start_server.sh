@@ -74,16 +74,18 @@ if [ "$adapter" = mysql2 ] && command -v mysql >/dev/null 2>&1; then
     mysql -h "$host" -P "$port" -uroot -p"$password" -e "$grant" 2>/dev/null || true
 fi
 
-if [ ! -f "$REDMINE_DIR/config/configuration.yml" ]; then
+# Mail to files for the server environment only: under "default:" Redmine applied it to the
+# test environment too, which then wrote mail to files instead of ActionMailer's deliveries.
+# A file this kit wrote that way earlier is rewritten; any other file is left alone.
+config_yml="$REDMINE_DIR/config/configuration.yml"
+kit_yml() {
+  printf '%s:\n  email_delivery:\n    delivery_method: :file\n    file_settings:\n      location: %s\n' \
+    "$1" "$REDMINE_DIR/tmp/mails"
+}
+if [ ! -f "$config_yml" ] || [ "$(cat "$config_yml")" = "$(kit_yml default)" ]; then
   mkdir -p "$REDMINE_DIR/tmp/mails"
-  cat > "$REDMINE_DIR/config/configuration.yml" <<YAML
-default:
-  email_delivery:
-    delivery_method: :file
-    file_settings:
-      location: $REDMINE_DIR/tmp/mails
-YAML
-  echo "config/configuration.yml: mail goes to tmp/mails"
+  kit_yml "$RMP_SERVER_ENV" > "$config_yml"
+  echo "config/configuration.yml: mail of the $RMP_SERVER_ENV environment goes to tmp/mails"
 fi
 
 [ -f "$REDMINE_DIR/config/initializers/secret_token.rb" ] || run bundle exec rake generate_secret_token
