@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Shared dependency rule cases. Read by spec/lib/dependency_rules_spec.rb (DependencyRules.allowed_values, allowed_set, default_values) and by the JS rules tests (allowedFor, defaultsFor). Parent values are strings; map and default values are strings, enumeration ids (integers) or null; expected values are strings. Map and defaults keys are non-blank strings, except in the blank-parent-value-ignored rows. allowed rows: map, parent, expected. defaults rows: map, defaults, parent, expected_multiple, expected_single. The d1 section is added in WP-09.",
+  "description": "Shared dependency rule cases. Read by spec/lib/dependency_rules_spec.rb (DependencyRules.allowed_values, allowed_set, default_values; d1 rows through dependency_check) and by the JS rules tests (allowedFor, defaultsFor). Parent values are strings; map and default values are strings, enumeration ids (integers) or null; expected values are strings. Map and defaults keys are non-blank strings, except in the blank-parent-value-ignored rows. allowed rows: map, parent, expected. defaults rows: map, defaults, parent, expected_multiple, expected_single. d1 rows (D1 per value, WP-09): parent_was, parent, child_was, child (arrays of strings, at most one child value when multiple is false; parent_was and child_was are the stored values, [] for a field without a stored row), map, multiple, valid, optional parent_available (default true; false: the parent is not available on the record, UD-05). While the parent is unchanged (compared as sets, blanks ignored) and available, the stored child values (child_was) are tolerated and only new values must be allowed; otherwise every child value must be allowed. valid tells whether the child is accepted.",
   "allowed": [
     {
       "id": "allowed-single-parent",
@@ -236,6 +236,240 @@
       "parent": ["[k] <&>"],
       "expected_multiple": ["__proto__", "\"v\" & <w>"],
       "expected_single": "__proto__"
+    }
+  ],
+  "d1": [
+    {
+      "id": "d1-multi-add-allowed",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1", "a1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-add-disallowed",
+      "note": "b2 is allowed neither by A nor by the stored values.",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1", "b2"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": false
+    },
+    {
+      "id": "d1-multi-remove-legacy",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1", "a1"],
+      "child": ["a1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-remove-allowed-keep-legacy",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1", "a1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-reorder",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1", "a1"],
+      "child": ["a1", "b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-duplicate-stored-value",
+      "note": "A value posted twice counts once.",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1", "b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": true
+    },
+    {
+      "id": "d1-keep-legacy-parent-changed",
+      "parent_was": ["A"],
+      "parent": ["C"],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-multi-keep-stored-parent-changed",
+      "note": "After a parent change a stored value is not tolerated, even one the old parent value allowed.",
+      "parent_was": ["A"],
+      "parent": ["B"],
+      "child_was": ["b1", "a1"],
+      "child": ["b1", "a1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": true,
+      "valid": false
+    },
+    {
+      "id": "d1-parent-changed-all-allowed",
+      "parent_was": ["A"],
+      "parent": ["B"],
+      "child_was": ["a1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-parent-changed-empty-child",
+      "parent_was": ["A"],
+      "parent": ["C"],
+      "child_was": ["b1"],
+      "child": [],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-single-legacy-unchanged",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-single-legacy-to-allowed",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["a1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-single-legacy-to-other-disallowed",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b2"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-single-new-disallowed",
+      "note": "Nothing stored: a disallowed value is new.",
+      "parent_was": ["A"],
+      "parent": ["A"],
+      "child_was": [],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-parent-unavailable-untouched",
+      "note": "UD-05: a parent that is not available on the record counts as changed.",
+      "parent_was": [],
+      "parent": [],
+      "parent_available": false,
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-parent-unavailable-empty-child",
+      "parent_was": [],
+      "parent": [],
+      "parent_available": false,
+      "child_was": ["b1"],
+      "child": [],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-parent-reordered",
+      "note": "A multiple parent compares as a set.",
+      "parent_was": ["A", "C"],
+      "parent": ["C", "A"],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-multi-parent-duplicate-stored",
+      "note": "A parent value stored twice equals the same value once.",
+      "parent_was": ["A", "A"],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-blank-parent-unchanged",
+      "note": "No stored parent value and a posted blank are the same blank parent.",
+      "parent_was": [],
+      "parent": [""],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": true
+    },
+    {
+      "id": "d1-parent-default-without-stored-row",
+      "note": "A parent without a stored row has the baseline [], also when a tracker or project change fills in its default: that default is a change.",
+      "parent_was": [],
+      "parent": ["A"],
+      "child_was": ["b1"],
+      "child": ["b1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-blank-parent-new-value",
+      "parent_was": [],
+      "parent": [""],
+      "child_was": [],
+      "child": ["a1"],
+      "map": { "A": ["a1", "a2"], "B": ["b1", "b2"], "C": ["c1"] },
+      "multiple": false,
+      "valid": false
+    },
+    {
+      "id": "d1-integer-child-ids",
+      "note": "Enumeration ids stored as integers in the map compare as strings.",
+      "parent_was": ["12"],
+      "parent": ["12"],
+      "child_was": ["99"],
+      "child": ["99", "21"],
+      "map": { "12": [21, 22] },
+      "multiple": true,
+      "valid": true
     }
   ]
 }

@@ -72,10 +72,13 @@ module RedmineDependingCustomFields
     end
 
     # Drops blank values first (kept: the value is assigned back). With a
-    # parent, every non-blank value must be allowed by the parent value, an
-    # unchanged stored value included. When the parent value allows nothing,
-    # the core check is skipped and a blank value passes. Otherwise the core
-    # errors come first, plus one 'is invalid' not already among them.
+    # parent, DependencyRules.dependency_check applies D1 per value: while
+    # the parent is unchanged the stored values (for a copy, the source's)
+    # are kept and only new values must be allowed. When the parent value
+    # allows nothing, a blank or rejected value skips the core check; values
+    # the rule keeps still get it (core inclusion stays for copies).
+    # Otherwise the core errors come first, plus one 'is invalid' not already
+    # among them.
     def validate_custom_value(custom_value)
       cf = custom_value.custom_field
       sanitized = DependencyRules.normalize_values(custom_value.value)
@@ -84,9 +87,8 @@ module RedmineDependingCustomFields
       state = DependencyRules.parent_state(cf, custom_value.customized)
       return super unless state
 
-      allowed = DependencyRules.allowed_for(cf, state)
-      dep_errors = dcf_disallowed?(custom_value, allowed) ? [dcf_invalid_message] : []
-      return dep_errors if allowed.empty?
+      allowed_empty, dep_errors = DependencyRules.dependency_check(custom_value, state)
+      return dep_errors if allowed_empty && (sanitized.empty? || dep_errors.any?)
 
       errors = super
       errors + (dep_errors - errors)
@@ -118,16 +120,6 @@ module RedmineDependingCustomFields
 
     def after_custom_field_save(_custom_field)
       Rails.cache.delete('depending_custom_fields/mapping')
-    end
-
-    private
-
-    def dcf_disallowed?(custom_value, allowed)
-      DependencyRules.normalize_values(custom_value.value).any? { |v| !allowed.include?(v) }
-    end
-
-    def dcf_invalid_message
-      ::I18n.t('activerecord.errors.messages.invalid')
     end
   end
 end

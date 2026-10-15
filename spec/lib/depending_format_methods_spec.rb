@@ -163,10 +163,12 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       end
     end
 
+    # WP-09: the dependency rule itself is DependencyRules.dependency_check.
     it 'resolves parents only through DependencyRules, with today\'s rules' do
       source = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/depending_format_methods.rb', __dir__))
       expect(source).not_to match(/CustomField\.(find_by|where)/)
-      expect(source).not_to match(/dependency_check|no_options\?|effective_parent_id|parent_of|carries\?|prune_mapping/)
+      expect(source).not_to match(/no_options\?|effective_parent_id|parent_of|carries\?|prune_mapping|editable/)
+      expect(source).to include('DependencyRules.dependency_check(custom_value, state)')
       expect(source).not_to match(/FIELD_FORMAT/)
     end
 
@@ -922,15 +924,19 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         end
 
         # WP-08 (PC-13, UN-09): validation runs inside with_locale, as the
-        # messages are translated when the value is validated.
-        it 'gives a disallowed new value and a copy of a legacy combination one message, in en and de' do
+        # messages are translated when the value is validated. WP-09 (UD-06):
+        # a copy of a legacy combination is accepted (was: one message), a
+        # copy whose parent then changes to C (allows nothing) gets the one
+        # message.
+        it 'gives a disallowed new value one message in en and de, and accepts a copy of a legacy combination' do
           source = kit_issue(project, parent => 'A', child => 'b1')
           { en: 'is invalid', de: 'ist nicht gültig' }.each do |locale, message|
             I18n.with_locale(locale) do
               expect(errors_for(kit_new_issue(project, parent => 'B', child => 'a1'), child)).to eq([message]), locale.to_s
               copy = Issue.new.copy_from(source)
+              expect(errors_for(copy, child)).to eq([]), locale.to_s
+              copy.custom_field_values = { parent.id.to_s => kit_key(parent, 'C') }
               expect(errors_for(copy, child)).to eq([message]), locale.to_s
-              expect(copy.valid?).to be(false)
             end
           end
         end
@@ -984,12 +990,17 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         expect(errors_for(copy, child)).to eq([inclusion])
       end
 
+      # WP-09 (D1): the stored id is kept while the parent is unchanged, also
+      # under a parent value that does not allow it (was: [invalid]); a
+      # parent change makes it strict.
       it 'leaves a stored inactive id assigned unchanged to the dependency rule' do
         allowed = kit_issue(project, parent => 'B', child => 'b1')
         allowed.custom_field_values = { child.id.to_s => b1 }
         expect(errors_for(allowed, child)).to eq([])
         disallowed = kit_issue(project, parent => 'A', child => 'b1')
         disallowed.custom_field_values = { child.id.to_s => b1 }
+        expect(errors_for(disallowed, child)).to eq([])
+        disallowed.custom_field_values = { parent.id.to_s => kit_key(parent, 'C') }
         expect(errors_for(disallowed, child)).to eq([invalid])
       end
 
@@ -1007,8 +1018,10 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
 
     # The issue validation path reads every parent from the issue (G6): the
     # same number of queries for 1 or 5 depending children of distinct
-    # parents. The children are not required (the required bypass in
-    # CustomFieldPatch keeps its own lookup until WP-09).
+    # parents. The children are not required (since WP-09 the required
+    # bypass in CustomFieldPatch reads the parent through
+    # DependencyRules.no_options?, plus one memoized existence lookup per
+    # field record; spec/patches/custom_field_required_validation_spec.rb).
     describe 'query invariance of issue validation' do
       # Each world has its own tracker and project (a Project instance
       # memoizes its custom fields).

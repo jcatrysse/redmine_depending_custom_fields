@@ -49,7 +49,7 @@ All probes ran against the baseline Redmine test stacks in rolled-back transacti
 - unchanged, reordered, one legacy value removed, or an allowed value added: valid;
 - a new disallowed value: invalid;
 - parent changed: strict;
-- non-editable child unchanged while the parent changed: valid (probe result; not adopted, UD-07 keeps the rejection);
+- non-editable child unchanged while the parent changed: valid on an issue, because core validates only editable values there (UD-07 keeps today's behaviour, with no plugin rule of its own; a time entry still rejects it);
 - `Issue#copy` unchanged: valid; copy with a new bad value: invalid; copy with the parent changed: strict;
 - stored cycle X<->Y: both unconstrained, `effective_parent_id` nil;
 - `parent_state` for 5 children sharing one parent: 0 queries.
@@ -75,7 +75,7 @@ Core facts used:
 | R13 | One fixture mechanism (generated markup) with fixed per-kind id ranges, a normalizer and a sequence-bump self check, checked under two seeds (compat section 2.4 "Fixture ids"). The JSON contract fixture is deleted. |
 | R14, QA-06, BC-06 | D1 is per value. |
 | QA-07 | Issue copies are judged against the source issue. |
-| QA-08 | Withdrawn by UD-07: a non-editable unchanged child is still validated when the parent changed (today's behaviour). |
+| QA-08 | Withdrawn by UD-07: today's behaviour stays, so a non-editable unchanged child is validated when the parent changed wherever core validates it (time entries; issues and projects validate only editable values, section 8 rule 3). |
 | R16, SP-08 | Parents are resolved from loaded objects. FieldIndex reads raw YAML. Query invariance style throughout. Byte budget for the context menu. |
 | R18 | FieldIndex is the single topology helper. `DependencyRules::Graph` is dropped. |
 | R5, BC-02, UX-04 | Storage is owned by limits. The server keeps a sanitize-only `normalized_store_pairs` and `storage_preview(custom_field, store)`, called as `format.storage_preview(record, record.format_store)` (gap 4). CustomFieldPatch registers no callbacks. |
@@ -135,7 +135,7 @@ Attributes go on the element core passes `options` to. That is the `<select>` (d
 | `data-dcf-hide` | `1` | managed and `hide_when_disabled` true. The client ignores it in `bulk` (D3). |
 | `data-dcf-parent-values` | JSON array of strings: the parent's current value(s) on the record; `[]` when blank or when the parent is not available on the record (for example not enabled for the tracker) | managed, `form` context, and the customized object carries `custom_field_values` |
 | `data-dcf-parent-label` | `parent.name` (plain text) | same condition as `data-dcf-parent-values`. Used by the client only for hints when the parent control is absent from the scope. |
-| `data-dcf-stored` | JSON object `{"child": [<child baseline keys>], "parent": [<parent baseline keys>]}`, all strings. It is the server D1 baseline (section 8): `child` is `DependencyRules.child_baseline(custom_value)` and `parent` is `ParentState#baseline`. For a persisted record both come from `value_was`; for an issue copy (new record with `copy?` true and a baseline source) both come from the copy source's stored values (gap 6, UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty, and also while the parent is not available on the record, because the server then tolerates nothing (UD-05). | managed, `form` context, a parent state exists, and the record is persisted or `DependencyRules.baseline_source(customized)` is non-nil. Absent for every other new record. |
+| `data-dcf-stored` | JSON object `{"child": [<child baseline keys>], "parent": [<parent baseline keys>]}`, all strings. It is the server D1 baseline (section 8): `child` is `DependencyRules.child_baseline(custom_value)` and `parent` is `ParentState#baseline`. For a persisted record both come from `value_was` where a saved row holds the field, and are `[]` without one; for an issue copy (new record with `copy?` true and a baseline source) both come from the copy source's stored values (gap 6, UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty, and also while the parent is not available on the record, because the server then tolerates nothing (UD-05). | managed, `form` context, a parent state exists, and the record is persisted or `DependencyRules.baseline_source(customized)` is non-nil. Absent for every other new record. |
 
 Option-level and sibling markup:
 
@@ -150,7 +150,7 @@ Semantics:
   - Unmanaged fields (role-invisible parent, no or invalid or cyclic parent) carry no parent attributes and are left unfiltered. The server validates them with section 8.
   - No parent-derived data (map keys, defaults, parent values, parent name or label, stored parent baseline) is emitted for a parent the user cannot see (SP-05).
 - **Stored baseline (gap 6, UD-06; compat section 2.4 "Legacy marker").** `data-dcf-stored` carries exactly the baseline server validation uses, so the client never shows as kept what the server rejects:
-  - persisted record: `value_was` of the child and of the parent;
+  - persisted record: `value_was` of the child and of the parent, `[]` for a field without a saved row (its `value_was` can hold a default core filled in on a tracker or project change, which was never stored);
   - issue copy (single copy, bulk copy, the issue part of project copy): the copy source's stored child and parent values, read through `baseline_source` (`@copied_from`, F8). A copied legacy value is then kept, enabled, marked and posted by the client, and the server accepts it while it stays unchanged (section 8, rule 2). The frontend's revision 2 "persisted records only" wording is superseded;
   - every other new record: no `data-dcf-stored`, so the client drops a disallowed value at load (frontend row F6b, split into these two cases in WP-17).
   - Consequence for the runtime (frontend area, WP-17): the runtime uses the absence of `data-dcf-stored` as its new-record flag, so a copy carrying it gets no per-parent defaults at page load (UD-12); defaults still apply on parent changes.
@@ -289,11 +289,14 @@ ALL_PARENT_FORMATS = (LIST_FAMILY + ENUM_FAMILY).freeze
 PARENT_FORMATS = { 'depending_list' => LIST_FAMILY, 'depending_enumeration' => ENUM_FAMILY }.freeze
 CANONICAL_ID = /\A[1-9]\d*\z/.freeze
 
-# values/baseline: Arrays of Strings. baseline = value_was, or the copy source's stored value (section 8, rule 2).
+# values/baseline: Arrays of Strings. baseline = the stored value (value_was with a saved row, else []), or the copy source's stored value (section 8, rule 2).
 ParentState = Struct.new(:parent, :available, :values, :baseline) do
   # An unavailable parent counts as changed (UD-05: the child must be cleared, as today).
+  # Otherwise values and baseline compare as sets of non-blank Strings (order, repeats and nil versus '' do not count).
   def changed?
-    !available || values.sort != baseline.sort
+    return true unless available
+
+    Set.new(DependencyRules.normalize_values(values)) != Set.new(DependencyRules.normalize_values(baseline))
   end
 end
 Problem = Struct.new(:type, :parent_key, :child_key, keyword_init: true)
@@ -315,11 +318,11 @@ Problem = Struct.new(:type, :parent_key, :child_key, keyword_init: true)
 | `effective_parent_id(cf, lookup = {})` | Definition in 2.1. `dcf_memo(:effective_parent, [cf.id, pid])`. Hops go through a lazy `FieldIndex.new(records: lookup)`: rows come from loaded records first (raw YAML, no deserialization), and missing ids are fetched in one batched raw query. Cycle-safe (visited set, cap 1,000). |
 | `parent_state(cf, customized)` | nil unless `customized.respond_to?(:custom_field_values)`, `carries?`, and an effective parent exists. Otherwise `ParentState(parent_cf_or_nil, available, values, baseline)`, read from the parent's CustomFieldValue on `customized` (0 queries). `available == false` with `[]` when the parent is not available on the object. |
 | `baseline_source(customized)` | For a new record with `copy?` true: `customized.instance_variable_get(:@copied_from)` (core has no reader, F8; covered by a spec on all 4 versions). Otherwise nil. |
-| `child_baseline(custom_value)` | `normalize_values(source.custom_field_value(cf))` when there is a baseline source, else `normalize_values(custom_value.value_was)` |
+| `child_baseline(custom_value)` | `normalize_values(source.custom_field_value(cf))` when there is a baseline source, `[]` for another new record, else `normalize_values(custom_value.value_was)` when a saved row holds the field and `[]` without one (the parent baseline of `ParentState` follows the same rule) |
 | `allowed_set(map, parent_values)` / `allowed_values` / `default_values(map, defaults, parent_values, multiple:)` | Pure. Set-based union; first-seen order for `allowed_values`; defaults filtered by allowed; single gives the first. Shared cases in `rules_cases.json`. |
 | `allowed_for(cf, state)` | `allowed_set(cf.value_dependencies \|\| {}, state.values)` |
-| `dependency_check(custom_value, state, user = User.current)` | Returns `[allowed_empty, errors]`; section 8 |
-| `no_options?(cf, customized)` | A parent state exists and `allowed_for` is empty. Used by the required bypass. |
+| `dependency_check(custom_value, state)` | Returns `[allowed_empty, errors]`; section 8. No current user and no query (UD-07: no `editable_by?`); the parent comes only from `state`. |
+| `no_options?(cf, customized)` | A parent state exists, `allowed_for` is empty, and the parent field still exists (one memoized `find_parent` per record and id, shared with `parent_state`), as in 0.0.16. Used by the required bypass. |
 | `hide_when_disabled?(cf)`, `mapping(cf)`, `defaults(cf)` | as before |
 | `value_keys(cf, include_inactive: true)` | List family: `possible_values` strings, deduplicated keeping the first occurrence. Enum family: ids as strings, by `[position, id]`, inactive included unless `include_inactive: false`. Uses in-memory values, so the textarea of the same request counts. |
 | `value_options(cf)` | **The single value-option source (R7)**: ordered Ruby tuples `[key, label, active]`, see 3.2. The wire shape is produced from it only by `DependencyEditorConfig.wire_values` (gap 3). |
@@ -475,7 +478,7 @@ module DependingFormatMethods
     return super unless state
 
     allowed_empty, dep_errors = DependencyRules.dependency_check(custom_value, state)
-    return dep_errors if allowed_empty            # today's early return, without the core inclusion check
+    return dep_errors if allowed_empty && (sanitized.empty? || dep_errors.any?)  # values the rule keeps still get core inclusion (rule 2)
     errors = super
     errors + (dep_errors - errors)
   end
@@ -581,7 +584,7 @@ module ClientData
     {}
   end
 
-  # data-dcf-stored (gap 6): the server D1 baseline. Persisted records: value_was. Issue copies: the copy
+  # data-dcf-stored (gap 6): the server D1 baseline. Persisted records: the stored value (value_was with a saved row, else []). Issue copies: the copy
   # source's stored values (baseline_source, UD-06). Any other new record: nil, so the attribute is absent.
   def stored_baseline(custom_value, customized, state)
     return nil unless custom_value
@@ -759,7 +762,7 @@ end
 
 ## 8. Validation algorithm (points 5 and 6, D1)
 
-`DependencyRules.dependency_check(custom_value, state, user)` (D1 and copies: 0.1.0 (M1), WP-09; effective parent and cycles: 0.1.0 (M1), WP-10):
+`DependencyRules.dependency_check(custom_value, state)` (D1 and copies: 0.1.0 (M1), WP-09; effective parent and cycles: 0.1.0 (M1), WP-10):
 
 ```ruby
 cf = custom_value.custom_field
@@ -781,7 +784,7 @@ Rules:
    - Today, copies holding a legacy combination fail, and project copy silently skips them (core-7.0 `project.rb:1227`). This revision fixes that.
    - Other new records (including Project copies of project custom fields) stay strict.
    - Core's own inclusion check is untouched. A copied value outside `possible_values`, or a copied inactive enumeration id, is still rejected by core, as for plain list and enumeration fields.
-3. **Non-editable child (QA-08, withdrawn by UD-07).** Today's behaviour stays: an unchanged child that the current user cannot edit (`editable_custom_field_values`, F9) is validated like any other child when the parent changed. Core filters its assignment (core-7.0 `app/models/issue.rb:647-648`) but still validates it, so a parent change that makes such a child invalid is rejected. The owner accepts that the parent then stays effectively uneditable for that role. WP-09 pins this with a spec.
+3. **Non-editable child (QA-08, withdrawn by UD-07).** Today's behaviour stays: the plugin adds no rule of its own for a child the current user cannot edit (`editable_custom_field_values`, F9), and the child gets the same rule as any other child wherever core validates it. Core Issue validates only `editable_custom_field_values` (core-7.0 `app/models/issue.rb:875-880`), and so does Project, so on an issue such a child is not validated and a parent change that makes it invalid saves. A time entry validates every value, so there the change is rejected with "is invalid". WP-09 pins both with a spec (spec/requests/dcf_issue_flows_spec.rb). The issue and project outcome differs from the consequence the owner accepted in UD-07 and is recorded there as a WP-09 observation pending owner confirmation.
 4. **Cycle members and fields whose chain reaches a cycle:** no effective parent, so core validation only (UD-08). The client is unfiltered too (2.1).
 5. **No parent, dangling parent, nil customized, or a non-carrying object:** core validation only, as today.
 6. **Otherwise:** today's behaviour. When nothing is allowed, a non-blank untolerated value gives "is invalid" with no core check. Otherwise core errors are returned, plus one "is invalid".
@@ -939,7 +942,7 @@ Requirements on the parity spec (quality area):
 | Multi child with legacy values: add an allowed value, remove one, reorder | rejected | accepted (per value) | 0.1.0 (M1) (WP-09) |
 | Issue copy, bulk copy or project copy with a legacy combination | rejected; project copy skips the issue | accepted when copied unchanged | 0.1.0 (M1) (WP-09) |
 | Issue copy form with a legacy combination (browser) | the legacy JS drops the value at load | kept, enabled, marked and posted (`data-dcf-stored` from the copy source, gap 6) | 0.1.0 (M2) (WP-16, WP-17) |
-| Parent changed while the child is read-only for the user and unchanged | rejected, cannot be fixed | accepted | 0.1.0 (M1) (WP-09) |
+| Parent changed while the child is read-only for the user and unchanged | issue and project: accepted (core does not validate it); time entry and other objects: rejected | unchanged (UD-07; WP-09 observation pending owner confirmation) | none |
 | Stored cycle members | validated per mapping; JS RangeError | unconstrained on server and client; admin warning | 0.1.0 (M1) server and warning (WP-10); client 0.1.0 (M2) (WP-16 to WP-18) |
 | Self or cyclic parent set | saved silently | 422 or form error when the parent changes | 0.1.0 (M1) (WP-10) |
 | Parent select | excludes self only | excludes self and descendants; keeps the current parent | 0.1.0 (M1) (WP-10) |
@@ -954,7 +957,7 @@ Requirements on the parity spec (quality area):
 - **Dangling parent:** unmanaged, core-only validation, shown in the core menu, `''` after the next admin save.
 - **Role-invisible parent:** only the every-field attributes (`data-dcf-field`, `data-dcf-context`, `data-dcf-kind` and, for multi fields, `data-dcf-multiple`). The client is unfiltered and the server validates (D1).
 - **Read-only parent:** parent-values and parent-label present, so the client filters.
-- **Parent not enabled for the tracker:** parent-values `[]`. The client keeps the stored child as legacy; the server accepts it untouched and rejects new values.
+- **Parent not enabled for the tracker:** parent-values `[]`. The parent counts as changed (UD-05, as today): the server rejects a non-blank child with "is invalid", so it has to be cleared, and the client drops the stored child (no stored value is eligible).
 - **Multi-valued parent:** union; order-insensitive comparison.
 - **Keys with `[ ] < & "`:** JSON in attributes is escaped. The client looks parents up by exact name.
 - **Enum ids:** compacted only when canonical.

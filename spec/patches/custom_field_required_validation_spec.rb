@@ -122,6 +122,32 @@ RSpec.describe 'CustomFieldPatch#validate_custom_value required-check bypass' do
     end
   end
 
+  # WP-09: the bypass asks DependencyRules.no_options? (same parent read as
+  # the format), with unchanged results.
+  context 'when the parent is not available on the issue (UD-05)' do
+    it 'strips the blank error' do
+      parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
+      issue = issue_with_parent(dcf_list_field(values: %w[A]), 'A')
+      expect(issue.custom_field_values.map(&:custom_field_id)).not_to include(parent.id)
+      expect(validate(CustomField.find(child.id), issue, '')).to be_empty
+    end
+  end
+
+  context 'with several validations of one field record' do
+    it 'looks the parent up at most once, through DependencyRules' do
+      parent, child = build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
+      field = CustomField.find(child.id)
+      issues = Array.new(3) { issue_with_parent(parent, 'Z') }
+      issues.each(&:custom_field_values)
+      allow(RedmineDependingCustomFields::DependencyRules).to receive(:find_parent).and_call_original
+      allow(CustomField).to receive(:find_by).and_call_original
+
+      expect(dcf_count_queries { issues.each { |issue| expect(validate(field, issue, '')).to be_empty } }).to eq(1)
+      expect(RedmineDependingCustomFields::DependencyRules).to have_received(:find_parent).once
+      expect(CustomField).to have_received(:find_by).once
+    end
+  end
+
   context 'when the field accepts multiple values' do
     let(:pair) { build_pair(RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, multiple: true) }
     let(:issue) { issue_with_parent(pair.first, 'Z') }

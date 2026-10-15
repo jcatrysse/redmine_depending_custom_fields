@@ -11,10 +11,12 @@ require_relative '../rails_helper'
 #   of "validates the members of a stored cycle" (all through the shared
 #   parameter, %w[inclusion invalid] became %w[invalid]: two errors became
 #   one), and "offers a stored disallowed value twice" (now once).
-# - WP-09: "rejects a stored child ... assigned unchanged", "rejects an issue
-#   copy holding a legacy combination", "silently skips an issue ... when the
-#   project is copied", "rejects adding an allowed value next to the legacy
-#   value". Not flipped by owner decision: the unavailable parent (UD-05).
+# - WP-09, done: "rejects a stored child ... assigned unchanged", "rejects an
+#   issue copy holding a legacy combination", "silently skips an issue ...
+#   when the project is copied", "rejects adding an allowed value next to the
+#   legacy value" (D1 per value and copies judged against the source: all
+#   four now accept). Not flipped by owner decision: the unavailable parent
+#   (UD-05).
 # - WP-10: "validates the members of a stored cycle against their mappings".
 # - WP-15 (carries?): "hides every option when a Project is passed for an
 #   issue field" (the core list is returned for non-carrying objects).
@@ -149,10 +151,12 @@ RSpec.describe 'Depending formats (characterization)' do
         expect(errors_for(kit_new_issue(project, parent => 'C', child => 'a1'), child)).to eq([invalid])
       end
 
-      it 'rejects a stored child that the parent does not allow when values are assigned unchanged' do
+      # Flipped by WP-09: was "rejects a stored child that the parent does not
+      # allow when values are assigned unchanged", expecting [invalid].
+      it 'accepts a stored child the parent does not allow when values are assigned unchanged (Flipped by WP-09)' do
         issue = kit_issue(project, parent => 'A', child => 'b1')
         issue.custom_field_values = { child.id.to_s => kit_value(child, 'b1') }
-        expect(errors_for(issue, child)).to eq([invalid])
+        expect(errors_for(issue, child)).to eq([])
       end
 
       it 'does not validate a stored legacy combination when no custom value is assigned' do
@@ -161,13 +165,18 @@ RSpec.describe 'Depending formats (characterization)' do
         expect(errors_for(issue, child)).to eq([])
       end
 
-      it 'rejects an issue copy holding a legacy combination like a new disallowed value' do
+      # Flipped by WP-09: was "rejects an issue copy holding a legacy
+      # combination like a new disallowed value", expecting
+      # new_disallowed_errors.
+      it 'accepts an issue copy holding a legacy combination copied unchanged (Flipped by WP-09)' do
         source = kit_issue(project, parent => 'A', child => 'b1')
         copy = Issue.new.copy_from(source)
-        expect(errors_for(copy, child)).to eq(new_disallowed_errors)
+        expect(errors_for(copy, child)).to eq([])
       end
 
-      it 'silently skips an issue holding a legacy combination when the project is copied' do
+      # Flipped by WP-09: was "silently skips an issue holding a legacy
+      # combination when the project is copied", expecting only a1.
+      it 'copies every issue, a legacy combination included, when the project is copied (Flipped by WP-09)' do
         kit_issue(project, parent => 'A', child => 'a1')
         kit_issue(project, parent => 'A', child => 'b1')
         User.current = dcf_admin
@@ -176,7 +185,7 @@ RSpec.describe 'Depending formats (characterization)' do
         target.identifier = "dcf-copy-#{SecureRandom.hex(3)}"
         target.copy(project, only: %w[issues])
         copied = Issue.where(project_id: target.id).map { |i| i.custom_field_value(child) }
-        expect(copied).to eq([kit_key(child, 'a1')])
+        expect(copied).to contain_exactly(kit_key(child, 'a1'), kit_key(child, 'b1'))
       ensure
         User.current = nil
       end
@@ -198,10 +207,12 @@ RSpec.describe 'Depending formats (characterization)' do
       context 'with a multiple child holding a legacy value' do
         let(:kit) { build_kit(kind, multiple: true) }
 
-        it 'rejects adding an allowed value next to the legacy value' do
+        # Flipped by WP-09: was "rejects adding an allowed value next to the
+        # legacy value", expecting [invalid].
+        it 'accepts adding an allowed value next to the legacy value (Flipped by WP-09)' do
           issue = kit_issue(project, parent => 'A', child => %w[b1])
           issue.custom_field_values = { child.id.to_s => kit_value(child, %w[b1 a1]) }
-          expect(errors_for(issue, child)).to eq([invalid])
+          expect(errors_for(issue, child)).to eq([])
         end
 
         it 'accepts removing the legacy value' do

@@ -26,7 +26,7 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
    - The rules module is folded into `depending_custom_fields.js`. The script list is therefore unchanged from today, and the "rules file missing, runtime inert" failure mode no longer exists.
    - Issues: R2, BC-01, R11.
 3. **D1 per value on both sides.**
-   - Legacy is defined only by the server D1 baseline. `data-dcf-stored` carries it: child and parent `value_was` for persisted records, and the copy source's stored child and parent values for issue copies (UD-06, compat section 2.4 "Legacy marker").
+   - Legacy is defined only by the server D1 baseline. `data-dcf-stored` carries it: the stored child and parent values for persisted records (`value_was` with a saved row, else `[]`), and the copy source's stored child and parent values for issue copies (UD-06, compat section 2.4 "Legacy marker").
    - Issue copies with `data-dcf-stored` keep a legacy value under the unchanged parent: it stays enabled, marked and posted, and the server, which judges copies against the source, accepts it (gap 6, row F6b-a).
    - Plain new records (no `data-dcf-stored`) drop disallowed values, as today (row F6b-b).
    - A value posted on a failed save that is not stored is never shown as legacy.
@@ -71,7 +71,7 @@ These amendments come from the consolidated plan and override older wording else
 | Release | All frontend runtime items ship in 0.1.0 (M2) (WP-15 to WP-20, UD-01). Prerequisites: the JS toolchain in 0.0.16 (WP-01), legacy characterization and `DependencyRules` in 0.1.0 (M1) (WP-04, WP-05), server D1 per value, copies and effective parent in 0.1.0 (M1) (WP-09, WP-10). JS shims deprecated in 0.1.0, removable no earlier than 0.2.0. | 0.1, 5.1, 9, 10, 13 |
 | Context vocabulary | `data-dcf-context` is `form` or `bulk`; the client reads missing or unknown values as `form`. | 3.3, 3.7, 5.3, 5.4 |
 | Emission predicate (gap 2) | Client emission relies on `DependencyRules.effective_parent_id(cf)`: valid (exists, same type and family, not self), acyclic and visible to the user (fail closed). `DependencyRules.parent_of(cf)` (WP-05) is the memoized raw lookup it builds on: it returns the parent record, or nil for blank, dangling, wrong type or family, or self. Stored cycle members and chains reaching a cycle get no parent attributes (UD-08). | 3.2, 12.1, 14 |
-| Legacy marker (gap 6) | `data-dcf-stored` = server D1 baseline: `value_was` for persisted records, copy source values for issue copies (UD-06), absent for other new records. Row F6b is split into F6b-a (copy, kept) and F6b-b (plain new record, dropped). | 3.3, 5.4, 6, 9, 12.1 |
+| Legacy marker (gap 6) | `data-dcf-stored` = server D1 baseline: the stored value for persisted records (`value_was` with a saved row, else `[]`), copy source values for issue copies (UD-06), absent for other new records. Row F6b is split into F6b-a (copy, kept) and F6b-b (plain new record, dropped). | 3.3, 5.4, 6, 9, 12.1 |
 | MutationObserver (gap 13) | Coalesced per callback, synchronous init of added roots, no timer debounce; jsdom test: one `replaceIssueFormWith` insertion causes exactly one `init` per root. Recorded in compat section 3. | 0, 0.1, 5.11, 12.1 |
 | Meta tag | `<meta name="dcf-i18n">` with a flat object of the 10 keys of `ClientConfig::I18N`. | 0, 3.6, 7 |
 | Required "(none)" in bulk | `bulk_edit_tag` adds `<option value="__none__" data-dcf-required-none="1">` for required managed children; the runtime enables it only while the parent selection allows no value (UD-10, WP-19). | 3.4, 5.5 |
@@ -765,11 +765,11 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
    - the attribute names and JSON shapes;
    - the unpruned sanitized map;
    - `data-dcf-parent-values` and `data-dcf-parent-label` in form context;
-   - `data-dcf-stored` = server D1 baseline: persisted records (`value_was`) and issue copies (copy source values, UD-06); absent for other new records (gap 6);
+   - `data-dcf-stored` = server D1 baseline: persisted records (the stored value: `value_was` with a saved row, else `[]`) and issue copies (copy source values, UD-06); absent for other new records (gap 6);
    - no parent attributes for dangling or self parents, nor for stored-cycle members and chains reaching a cycle (UD-08; consolidated rule, this revision originally emitted them on cycle members).
 2. **`DependencyRules.parent_of(cf)` is part of the WP-05 API (gap 2):** memoized on the record, it returns the parent record, or nil for blank, dangling, wrong type or family, or self, so rendering and validation agree. Client emission does not use it directly: `ClientData` uses `effective_parent_id`, which builds on `parent_of` and adds the acyclic check (WP-16).
 3. **D1 per value in `validate_custom_value`:**
-   - when `parent_state` exists and `!state.changed?` (an unavailable parent counts as changed, UD-05), values contained in the normalized `value_was` are exempt from the dependency check, and every other non-blank value must be allowed;
+   - when `parent_state` exists and `!state.changed?` (an unavailable parent counts as changed, UD-05), values contained in the normalized stored value (`value_was` with a saved row, else `[]`) are exempt from the dependency check, and every other non-blank value must be allowed;
    - when the parent changed, every value must be allowed.
    - for issue copies the baseline is the copy source's stored child and parent values (UD-06, server S7), which is exactly what `data-dcf-stored` carries;
    - This replaces whole-set `legacy_combination?` (R14). The shared parity cases in `test/js/fixtures/shared/rules_cases.json` cover add, remove and reorder for multi children.

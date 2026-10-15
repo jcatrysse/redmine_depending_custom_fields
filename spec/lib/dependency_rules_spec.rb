@@ -49,19 +49,24 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(%w[012 0 -1 1.0 12a].map { |s| described_class::CANONICAL_ID.match?(s) }).to eq([false] * 5)
     end
 
+    # WP-09 adds dependency_check, no_options?, baseline_source and
+    # child_baseline; editable_by? is withdrawn (UD-07).
     it 'uses format literals, keeps no state and defines no later work package function' do
       source = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/dependency_rules.rb', __dir__))
       expect(source).not_to include('FIELD_FORMAT')
-      expect(source).not_to match(/@[a-z_]+ *(\|\|)?=|@@|Rails\.cache|CurrentAttributes/)
-      later = [:dependency_check, :effective_parent_id, :parent_errors, :parent_changed?,
-               :no_options?, :baseline_source, :child_baseline, :editable_by?]
+      expect(source).not_to match(/@[a-z_]+ *(\|\|)?=|@@|Rails\.cache|CurrentAttributes|instance_variable_set/)
+      later = [:effective_parent_id, :parent_errors, :parent_changed?, :editable_by?]
       expect(later.select { |name| described_class.respond_to?(name) }).to eq([])
+      added = [:dependency_check, :no_options?, :baseline_source, :child_baseline]
+      expect(added.map { |name| described_class.respond_to?(name) }).to eq([true] * 4)
       expect(described_class.respond_to?(:memo)).to be(false)
       expect(described_class.instance_variables).to eq([])
     end
   end
 
   describe 'ParentState' do
+    # WP-09: values and baseline compare as sets of non-blank Strings, so a
+    # repeated value (was: changed) and a blank (nil, '' or none) count once.
     it 'is positional and counts an unavailable parent as changed (UD-05)' do
       state = described_class::ParentState
       parent = CustomField.new
@@ -71,7 +76,16 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(state.new(parent, false, %w[a], %w[a]).changed?).to be(true)
       expect(state.new(parent, true, %w[b a], %w[a b]).changed?).to be(false)
       expect(state.new(parent, true, %w[a], %w[b]).changed?).to be(true)
-      expect(state.new(parent, true, %w[a a], %w[a]).changed?).to be(true)
+      expect(state.new(parent, true, %w[a a], %w[a]).changed?).to be(false)
+      expect(state.new(parent, true, %w[a b], %w[a]).changed?).to be(true)
+    end
+
+    it 'treats nil, an empty String and no value as the same blank parent' do
+      state = described_class::ParentState
+      [[[''], []], [[], [nil]], [[''], nil], [nil, ['']], [['', 'a'], ['a', nil]]].each do |values, baseline|
+        expect(state.new(nil, true, values, baseline).changed?).to be(false), [values, baseline].inspect
+      end
+      expect(state.new(nil, true, [''], ['a']).changed?).to be(true)
     end
   end
 
@@ -528,6 +542,243 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     end
   end
 
+  # WP-09: D1 per value (UD-04), copies judged against their source (UD-06),
+  # an unavailable parent counts as changed (UD-05). No editable_by? (UD-07).
+  describe 'D1: .dependency_check, .baseline_source, .child_baseline and .no_options?' do
+    include DcfFormatCharacterization
+
+    let(:project) { dcf_create_project }
+    let(:invalid) { I18n.t('activerecord.errors.messages.invalid') }
+    let(:kit) { build_kit(:list) }
+    let(:parent) { kit.first }
+    let(:child) { kit.last }
+
+    def value_of(record, field)
+      record.custom_field_values.detect { |v| v.custom_field_id == field.id }
+    end
+
+    # A value without a record: child_was is its baseline.
+    def detached(map, child, child_was, multiple: false)
+      cf = unsaved('depending_list')
+      cf.multiple = multiple
+      cf.value_dependencies = map
+      value = CustomFieldValue.new
+      value.custom_field = cf
+      value.instance_variable_set(:@value, child)
+      value.value_was = child_was
+      value
+    end
+
+    def state(values, baseline, available: true)
+      described_class::ParentState.new(nil, available, values, baseline)
+    end
+
+    # Loads the values (as init_journal does), then moves +issue+ to a new
+    # tracker carrying the parent and the child: core rebuilds the values.
+    def move_to_new_tracker(issue)
+      tracker = dcf_tracker
+      [parent, child].each { |f| tracker.custom_fields << f }
+      project.trackers << tracker
+      issue.custom_field_values
+      issue.tracker = tracker
+      issue
+    end
+
+    it 'takes the value and the parent state only, and returns [allowed_empty, errors]' do
+      expect(described_class.method(:dependency_check).arity).to eq(2)
+      map = { 'A' => %w[a1], 'C' => [] }
+
+      expect(described_class.dependency_check(detached(map, 'a1', nil), state(%w[A], %w[A]))).to eq([false, []])
+      expect(described_class.dependency_check(detached(map, 'b1', nil), state(%w[A], %w[A]))).to eq([false, [invalid]])
+      expect(described_class.dependency_check(detached(map, '', 'b1'), state(%w[C], %w[A]))).to eq([true, []])
+      expect(described_class.dependency_check(detached(map, 'b1', 'b1'), state(%w[C], %w[C]))).to eq([true, []])
+      expect(described_class.dependency_check(detached(map, 'b1', 'b1'), state([], [], available: false)))
+        .to eq([true, [invalid]])
+    end
+
+    it 'gives one message in the locale active at validation time, however many values are bad' do
+      value = detached({ 'A' => %w[a1] }, %w[x y z], [], multiple: true)
+      { en: 'is invalid', de: 'ist nicht gültig' }.each do |locale, message|
+        I18n.with_locale(locale) do
+          expect(described_class.dependency_check(value, state(%w[A], %w[A])).last).to eq([message])
+        end
+      end
+    end
+
+    it 'reads only the value, the copy source and the state: no query for a persisted issue or a copy' do
+      issue = kit_issue(project, parent => 'A', child => 'b1')
+      issue.custom_field_values = { child.id.to_s => 'b1' }
+      copy = Issue.new.copy_from(issue)
+      [issue, copy].each do |record|
+        value = value_of(record, child)
+        record_state = described_class.parent_state(value.custom_field, record)
+        result = nil
+        allow(User).to receive(:current).and_raise('the current user is not read')
+
+        expect(dcf_count_queries { result = described_class.dependency_check(value, record_state) }).to eq(0)
+        expect(result).to eq([false, []]), record.new_record?.inspect
+      end
+    end
+
+    describe '.baseline_source' do
+      it 'is the copy source for a new copy only' do
+        source = kit_issue(project, parent => 'A', child => 'b1')
+        copy = Issue.new.copy_from(source)
+
+        expect(described_class.baseline_source(copy)).to equal(source)
+        [source, Issue.new, nil, Object.new, Project.new, Project.copy_from(project)].each do |record|
+          expect(described_class.baseline_source(record)).to be_nil, record.class.name
+        end
+      end
+
+      it 'only reads the object: no copy? call before new_record?, no instance variable written' do
+        source = kit_issue(project, parent => 'A', child => 'b1')
+        allow(source).to receive(:copy?).and_call_original
+        copy = Issue.new.copy_from(source)
+        ivars = copy.instance_variables
+
+        expect(described_class.baseline_source(source)).to be_nil
+        expect(source).not_to have_received(:copy?)
+        expect(described_class.baseline_source(copy)).to equal(source)
+        expect(copy.instance_variables).to eq(ivars)
+      end
+    end
+
+    describe '.child_baseline' do
+      it 'is the stored value of a persisted record, as Strings without blanks' do
+        multi_parent, multi_child = build_kit(:list, multiple: true)
+        issue = kit_issue(project, multi_parent => 'A', multi_child => %w[b1 a1])
+        issue.custom_field_values = { multi_child.id.to_s => %w[a2] }
+
+        expect(described_class.child_baseline(value_of(issue, multi_child))).to match_array(%w[b1 a1])
+      end
+
+      it 'is the source value for a copy, and [] when the source does not carry the field' do
+        copy = Issue.new.copy_from(kit_issue(project, parent => 'A', child => 'b1'))
+        copy.custom_field_values = { child.id.to_s => 'a1' }
+        expect(described_class.child_baseline(value_of(copy, child))).to eq(%w[b1])
+
+        other = kit_new_issue(project, parent => 'A', child => 'b1')
+        allow(other).to receive(:copy?).and_return(true)
+        other.instance_variable_set(:@copied_from, double('source', custom_field_value: nil))
+        expect(described_class.child_baseline(value_of(other, child))).to eq([])
+      end
+
+      it 'is [] for a new record that is not a copy, whatever value_was holds' do
+        issue = kit_new_issue(project, parent => 'A', child => 'b1')
+        value = value_of(issue, child)
+        value.value_was = 'b1'
+        expect(described_class.child_baseline(value)).to eq([])
+      end
+
+      it 'is value_was for a value without a record' do
+        expect(described_class.child_baseline(detached({}, 'a1', ['b1', '', nil, 'a1']))).to eq(%w[b1 a1])
+        expect(described_class.child_baseline(detached({}, 'a1', nil))).to eq([])
+      end
+
+      it 'is [] without a saved row, also when a tracker change fills in the field default as value_was' do
+        child.update_column(:default_value, 'b1')
+        issue = move_to_new_tracker(kit_issue(project, parent => 'A'))
+        value = value_of(issue, child)
+
+        expect([value.value, value.value_was]).to eq(%w[b1 b1])
+        expect(described_class.child_baseline(value)).to eq([])
+        expect(described_class.dependency_check(value, described_class.parent_state(child, issue)))
+          .to eq([false, [invalid]])
+      end
+    end
+
+    describe '.parent_state baseline' do
+      it 'is the normalized stored value of a persisted record' do
+        issue = kit_issue(project, parent => 'A', child => 'a1')
+        issue.custom_field_values = { parent.id.to_s => 'B' }
+        expect(described_class.parent_state(child, issue).baseline).to eq(%w[A])
+
+        blank = kit_issue(project, child => 'b1')
+        blank.custom_field_values = { parent.id.to_s => '' }
+        blank_state = described_class.parent_state(child, blank)
+        expect([blank_state.values, blank_state.baseline, blank_state.changed?]).to eq([[''], [], false])
+      end
+
+      # Core gives a field without a saved row its default on a tracker or
+      # project change (Issue#set_custom_field_default?) and value_was copies
+      # it; nothing is stored, so the baseline stays [] and the parent counts
+      # as changed, as for a copy whose source does not carry it.
+      it 'is [] without a saved row, also when a tracker change fills in the parent default, without a query' do
+        parent.update!(default_value: 'A')
+        issue = move_to_new_tracker(kit_issue(project, child => 'b1'))
+        moved = nil
+
+        expect(value_of(issue, parent).value_was).to eq('A')
+        expect(dcf_count_queries { moved = described_class.parent_state(child, issue) }).to eq(0)
+        expect([moved.values, moved.baseline, moved.changed?]).to eq([%w[A], [], true])
+        expect(described_class.dependency_check(value_of(issue, child), moved)).to eq([false, [invalid]])
+      end
+
+      it 'is the source value for a copy (not value_was, which holds the default)' do
+        parent.update!(default_value: 'B')
+        copy = Issue.new.copy_from(kit_issue(project, parent => 'A', child => 'b1'))
+        copy_state = described_class.parent_state(child, copy)
+
+        expect(value_of(copy, parent).value_was).to eq('B')
+        expect([copy_state.values, copy_state.baseline, copy_state.changed?]).to eq([%w[A], %w[A], false])
+        copy.custom_field_values = { parent.id.to_s => 'B' }
+        expect(described_class.parent_state(child, copy).changed?).to be(true)
+      end
+
+      it 'gives the arrays WP-16 emits: the child and parent baselines dependency_check compares' do
+        issue = kit_issue(project, parent => 'A', child => 'b1')
+        issue.custom_field_values = { child.id.to_s => 'b1' }
+        [issue, Issue.new.copy_from(Issue.find(issue.id))].each do |record|
+          value = value_of(record, child)
+          record_state = described_class.parent_state(child, record)
+
+          expect([described_class.child_baseline(value), record_state.baseline]).to eq([%w[b1], %w[A]])
+          expect(described_class.dependency_check(value, record_state)).to eq([false, []])
+          record.custom_field_values = { parent.id.to_s => 'C' }
+          expect(described_class.dependency_check(value, described_class.parent_state(child, record)))
+            .to eq([true, [invalid]])
+        end
+      end
+    end
+
+    describe '.no_options?' do
+      it 'is true when the parent value allows nothing, as dependency_check reports' do
+        { 'A' => false, 'C' => true, '' => true }.each do |parent_value, expected|
+          issue = kit_new_issue(project, parent => parent_value.empty? ? [] : parent_value, child => [])
+          record_state = described_class.parent_state(child, issue)
+
+          expect(described_class.no_options?(child, issue)).to be(expected), parent_value.inspect
+          expect(described_class.dependency_check(value_of(issue, child), record_state).first).to be(expected)
+        end
+      end
+
+      it 'is true for an unavailable parent and false without a parent state' do
+        issue = kit_issue(project, child => 'a1')
+        expect(described_class.no_options?(child, issue)).to be(true)
+        expect(described_class.no_options?(child, nil)).to be(false)
+        dangling = CustomField.find(child.id)
+        dangling.parent_custom_field_id = CustomField.maximum(:id).to_i + 1_000
+        expect(described_class.no_options?(dangling, issue)).to be(false)
+        plain = dcf_list_field
+        expect(described_class.no_options?(plain, issue)).to be(false)
+      end
+
+      it 'is false for a parent deleted after the values were loaded, looked up once per field record' do
+        issue = kit_new_issue(project, parent => 'C', child => [])
+        field = CustomField.find(child.id)
+        expect(described_class.no_options?(field, issue)).to be(true)
+        CustomField.where(id: parent.id).delete_all
+        fresh = CustomField.find(child.id)
+        allow(described_class).to receive(:find_parent).and_call_original
+
+        expect(described_class.no_options?(fresh, issue)).to be(false)
+        expect(dcf_count_queries { described_class.no_options?(fresh, issue) }).to eq(0)
+        expect(described_class).to have_received(:find_parent).once
+      end
+    end
+  end
+
   describe 'shared rules cases (test/js/fixtures/shared/rules_cases.json)' do
     cases = JSON.parse(File.read(File.expand_path('../../test/js/fixtures/shared/rules_cases.json', __dir__),
                                  encoding: 'UTF-8'))
@@ -535,7 +786,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     it 'follows the case table schema' do
       sections = {
         'allowed' => { required: %w[id map parent expected], optional: %w[note] },
-        'defaults' => { required: %w[id map defaults parent expected_multiple expected_single], optional: %w[note] }
+        'defaults' => { required: %w[id map defaults parent expected_multiple expected_single], optional: %w[note] },
+        'd1' => { required: %w[id parent_was parent child_was child map multiple valid],
+                  optional: %w[note parent_available] }
       }
       mandatory = {
         'allowed' => %w[allowed-single-parent allowed-union-first-seen-order allowed-parent-order-reversed
@@ -548,7 +801,10 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
                          defaults-none-configured defaults-only-unlinked defaults-multi-parent-merge
                          defaults-linked-under-other-parent defaults-integer-ids defaults-no-parent-values
                          defaults-blank-and-null-dropped defaults-key-without-links defaults-tricky-strings
-                         defaults-duplicates-deduped defaults-blank-parent-value-ignored]
+                         defaults-duplicates-deduped defaults-blank-parent-value-ignored],
+        'd1' => %w[d1-multi-add-allowed d1-multi-add-disallowed d1-multi-remove-legacy d1-multi-reorder
+                   d1-keep-legacy-parent-changed d1-single-legacy-to-allowed d1-single-legacy-to-other-disallowed
+                   d1-parent-unavailable-untouched]
       }
       # Only these rows carry a blank key, so dropping blank parent values is observable.
       blank_key_rows = %w[allowed-blank-parent-value-ignored defaults-blank-parent-value-ignored]
@@ -563,7 +819,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       end
       expected_list = ->(list) { list.is_a?(Array) && list.all? { |v| v.is_a?(String) && !v.strip.empty? } }
 
-      expect(cases.keys).to eq(%w[version description allowed defaults])
+      expect(cases.keys).to eq(%w[version description allowed defaults d1])
       expect(cases['version']).to eq(1)
       expect(cases['description']).to be_a(String)
       expect(cases['description']).to match(/\A[\x20-\x7e]+\z/)
@@ -596,6 +852,37 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
         expect(row['expected_single']).to eq(row['expected_multiple'].first), row['id']
         allowed = described_class.allowed_set(row['map'], row['parent'])
         expect(row['expected_multiple'].all? { |v| allowed.include?(v) }).to be(true), row['id']
+      end
+      strings = ->(list) { list.is_a?(Array) && list.all?(String) }
+      cases['d1'].each do |row|
+        label = row['id']
+        expect(%w[parent_was child_was child].all? { |key| strings.call(row[key]) }).to be(true), label
+        expect([row['multiple'], row['valid']].all? { |v| [true, false].include?(v) }).to be(true), label
+        expect(row['child_was'].size <= 1 && row['child'].size <= 1).to be(true), label unless row['multiple']
+        next unless row.key?('parent_available')
+
+        expect(row['parent_available']).to be(false), label
+        expect([row['parent'], row['parent_was']]).to eq([[], []]), label
+      end
+    end
+
+    # A stub as in the client: an unsaved field holding the map, a value
+    # without a record (so child_was is the stored baseline) and the parent
+    # state of the row.
+    cases['d1'].each do |row|
+      it row['id'] do
+        cf = unsaved('depending_list')
+        cf.multiple = row['multiple']
+        cf.value_dependencies = row['map']
+        value = CustomFieldValue.new
+        value.custom_field = cf
+        value.instance_variable_set(:@value, row['multiple'] ? row['child'] : row['child'].first)
+        value.value_was = row['multiple'] ? row['child_was'] : row['child_was'].first
+        available = row.fetch('parent_available', true)
+        state = described_class::ParentState.new(nil, available, row['parent'], row['parent_was'])
+
+        expect(described_class.dependency_check(value, state).last)
+          .to eq(row['valid'] ? [] : [I18n.t('activerecord.errors.messages.invalid')])
       end
     end
 

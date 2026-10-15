@@ -21,13 +21,17 @@ module RedmineDependingCustomFields
     PARENT_FORMATS = { 'depending_list' => LIST_FAMILY, 'depending_enumeration' => ENUM_FAMILY }.freeze
     CANONICAL_ID = /\A[1-9]\d*\z/.freeze
 
-    # values/baseline: Arrays of Strings. baseline = value_was, or the copy
-    # source's stored value (server design section 8, rule 2).
+    # values/baseline: Arrays of Strings. baseline = the stored value
+    # (stored_value), or the copy source's (server design section 8, rule 2).
     # rubocop:disable Lint/StructNewOverride -- the design names the member values
     ParentState = Struct.new(:parent, :available, :values, :baseline) do
-      # An unavailable parent counts as changed (UD-05: the child must be cleared, as today).
+      # An unavailable parent counts as changed (UD-05: the child must be
+      # cleared, as today). Otherwise values and baseline compare as sets of
+      # non-blank Strings: order, repeats and nil versus '' do not count.
       def changed?
-        !available || values.sort != baseline.sort
+        return true unless available
+
+        Set.new(DependencyRules.normalize_values(values)) != Set.new(DependencyRules.normalize_values(baseline))
       end
     end
     # rubocop:enable Lint/StructNewOverride
@@ -116,23 +120,32 @@ module RedmineDependingCustomFields
     # The parent read of the depending formats (WP-06, today's semantics): the
     # stored parent id names any existing field, of any type and any family,
     # the field itself included. When the parent is among the loaded custom
-    # field values of +customized+, its value and value_was are read there (no
-    # query). Otherwise one find_parent per record and id (memoized, nil
-    # included) tells an unavailable parent (available false, no values) from
-    # a dangling one (nil). nil also for a blank or invalid pointer and a nil
+    # field values of +customized+, its value is read there (no query).
+    # Otherwise one find_parent per record and id (memoized, nil included)
+    # tells an unavailable parent (available false, no values) from a
+    # dangling one (nil). nil also for a blank or invalid pointer and a nil
     # object, without a query. Values are Strings, blanks kept, as 0.0.16
-    # reads them. No carries? (WP-15), no effective parent or cycle rule
-    # (WP-10).
+    # reads them. The baseline (WP-09) is the stored value (stored_value), or
+    # for a copy the source's value (baseline_source), without blanks. No
+    # carries? (WP-15), no effective parent or cycle rule (WP-10).
     def parent_state(cf, customized)
       pid = parent_id(cf)
       return nil if pid.nil? || customized.nil?
 
       if customized.respond_to?(:custom_field_values)
         cfv = customized.custom_field_values.detect { |v| v.custom_field_id == pid }
-        return ParentState.new(cfv.custom_field, true, string_values(cfv.value), string_values(cfv.value_was)) if cfv
+        if cfv
+          source = baseline_source(customized)
+          baseline = if source
+                       normalize_values(source.custom_field_value(pid))
+                     else
+                       stored_value(customized, pid, cfv.value_was)
+                     end
+          return ParentState.new(cfv.custom_field, true, string_values(cfv.value), baseline)
+        end
       end
 
-      record = cf.dcf_memo(:parent_record, pid) { find_parent(pid) }
+      record = parent_record(cf, pid)
       return nil unless record
       return ParentState.new(record, false, [], []) if customized.respond_to?(:custom_field_values)
 
@@ -148,6 +161,76 @@ module RedmineDependingCustomFields
     def allowed_for(cf, state)
       mapping = cf.value_dependencies || {}
       Set.new(state.values.flat_map { |v| Array(mapping[v]) }.map(&:to_s))
+    end
+
+    # D1 per value (UD-04, server design section 8). Returns [allowed_empty,
+    # errors]. While the parent is unchanged the child baseline is tolerated
+    # and only new values must be allowed; when it changed (an unavailable
+    # parent counts as changed, UD-05) every value must be allowed. errors is
+    # [] or one 'is invalid' in the active locale. No query, no current user
+    # (UD-07: no editable_by? rule); the parent comes only from +state+.
+    def dependency_check(custom_value, state)
+      current = normalize_values(custom_value.value)
+      allowed = allowed_for(custom_value.custom_field, state)
+      return [allowed.empty?, []] if current.empty?
+
+      tolerated = state.changed? ? Set.new : Set.new(child_baseline(custom_value))
+      bad = current.reject { |v| allowed.include?(v) || tolerated.include?(v) }
+      [allowed.empty?, bad.empty? ? [] : [::I18n.t('activerecord.errors.messages.invalid')]]
+    end
+
+    # The issue a new record was copied from (UD-06): core keeps it in
+    # @copied_from without a reader (Issue#copy_from; pinned by
+    # spec/requests/dcf_issue_copy_spec.rb on every supported version). nil
+    # for persisted records, records that are no copy or have no copy? (only
+    # Issue defines it), and on any error, so validation stays strict.
+    def baseline_source(customized)
+      return nil unless customized.respond_to?(:new_record?) && customized.respond_to?(:copy?)
+      return nil unless customized.new_record? && customized.copy?
+
+      source = customized.instance_variable_get(:@copied_from)
+      source.respond_to?(:custom_field_value) ? source : nil
+    rescue StandardError
+      nil
+    end
+
+    # The stored child values D1 tolerates, as Strings without blanks: the
+    # copy source's value for a copy ([] when the source does not carry the
+    # field), [] for another new record (its value_was is only the default),
+    # else the stored value.
+    def child_baseline(custom_value)
+      customized = custom_value.customized
+      source = baseline_source(customized)
+      return normalize_values(source.custom_field_value(custom_value.custom_field)) if source
+      return [] if customized.respond_to?(:new_record?) && customized.new_record?
+
+      stored_value(customized, custom_value.custom_field_id, custom_value.value_was)
+    end
+
+    # The stored value of field +field_id+ on +customized+, as Strings without
+    # blanks: value_was when a saved row holds the field, else []. A field
+    # without a row that a tracker or project change makes available gets a
+    # built row holding its default (Issue#set_custom_field_default?), and
+    # value_was copies that default, which was never stored. Reads the
+    # custom_values that custom_field_values loaded (no query). A value
+    # without a record (no custom_values) keeps value_was.
+    def stored_value(customized, field_id, value_was)
+      if customized.respond_to?(:custom_values)
+        stored = customized.custom_values.any? { |cv| cv.custom_field_id == field_id && cv.persisted? }
+        return [] unless stored
+      end
+      normalize_values(value_was)
+    end
+
+    # True when the parent value of +customized+ allows no child value, so
+    # the required bypass (CustomFieldPatch) drops the blank error. Like
+    # 0.0.16, the parent field must still exist: one find_parent per record
+    # and id, memoized and shared with parent_state.
+    def no_options?(cf, customized)
+      state = parent_state(cf, customized)
+      return false unless state && allowed_for(cf, state).empty?
+
+      !parent_record(cf, parent_id(cf)).nil?
     end
 
     # id => CustomField from what is already loaded: the custom field values of
@@ -362,6 +445,10 @@ module RedmineDependingCustomFields
       Array(raw).map(&:to_s)
     end
 
-    private_class_method :list_values, :enumerations_of, :key_set, :string_values
+    def parent_record(cf, pid)
+      cf.dcf_memo(:parent_record, pid) { find_parent(pid) }
+    end
+
+    private_class_method :list_values, :enumerations_of, :key_set, :string_values, :parent_record, :stored_value
   end
 end
