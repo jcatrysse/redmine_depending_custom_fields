@@ -34,7 +34,7 @@ module RedmineDependingCustomFields
 
       visible = id_set(record.visible_custom_field_values(user))
       failing.each do |custom_value, state|
-        if true
+        if visible.include?(custom_value.custom_field_id)
           add_once(record, custom_value.custom_field.name, ::I18n.t('activerecord.errors.messages.invalid'))
         elsif state.changed? && visible.include?(state.parent.id)
           add_once(record, state.parent.name, ::I18n.t('activerecord.errors.messages.dcf_hidden_child_conflict'))

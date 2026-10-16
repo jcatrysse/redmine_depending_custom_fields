@@ -309,7 +309,10 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       end
     end
 
-    it 'applies no core check to a non-editable child: a removed list value saves under an unchanged parent' do
+    # A regression pin only: core's list check tolerates an unchanged value
+    # too (it subtracts value_was), so the absence of core checks is pinned
+    # by the blank required examples above.
+    it 'keeps a removed list value of a non-editable child while the parent is unchanged' do
       hide(child)
       issue = stored_issue(parent => 'A', child => 'gone', other => 'X')
       expect(issue.custom_field_value(child)).to eq('gone')
