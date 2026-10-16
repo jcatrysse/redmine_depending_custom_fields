@@ -12,13 +12,21 @@ module RedmineDependingCustomFields
   # and no value rewrite. Called by the Issue and Project patches with core's
   # user, inside core's gate.
   #
+  # WP-09c (owner, UD-07 refinements): for these children a parent field
+  # that is not available on the record (disabled for the tracker or
+  # project, or not carried) does not count as changed, because nobody
+  # changed it: their stored value is tolerated and only new values must be
+  # allowed. Editable children keep UD-05 through the formats, which read
+  # DependencyRules.parent_state unchanged.
+  #
   # Placement: a child the user can see (read-only by workflow) gets core's
   # 'is invalid' under its name. A child the user cannot see is never named:
   # one message per changed parent field, or one on base when the parent is
-  # not shown to the user either (unavailable or hidden) or its value did
-  # not change (core gave the child a stale default on a copy or a tracker
-  # or project move). No state: the user sets are computed at most once per
-  # call, and only when a depending value fails.
+  # not shown to the user either (hidden) or its value did not change (core
+  # gave the child a stale default on a new record, a copy or a tracker or
+  # project move, also under an unavailable parent). No state: the user sets
+  # are computed at most once per call, and only when a depending value
+  # fails.
   module NonEditableDependencies
     module_function
 
@@ -45,8 +53,11 @@ module RedmineDependingCustomFields
     end
 
     # [custom value, parent state] of each depending value with a parent
-    # that D1 rejects, in custom_field_values order. The format check runs
-    # in memory; only an unavailable parent costs one memoized find_parent.
+    # that D1 rejects, in custom_field_values order, an unavailable parent
+    # read as unchanged (unchanged_if_unavailable). Values of editable
+    # children are dropped by validate before any placement. The format
+    # check runs in memory; only an unavailable parent costs one memoized
+    # find_parent.
     def failing_values(record)
       record.custom_field_values.each_with_object([]) do |custom_value, out|
         next unless DependencyRules.parent_id(custom_value.custom_field)
@@ -54,9 +65,20 @@ module RedmineDependingCustomFields
         state = DependencyRules.parent_state(custom_value.custom_field, record)
         next unless state
 
+        state = unchanged_if_unavailable(state)
         _allowed_empty, errors = DependencyRules.dependency_check(custom_value, state)
         out << [custom_value, state] if errors.any?
       end
+    end
+
+    # WP-09c: an unavailable parent as an available one without values or
+    # baseline, so changed? is false, nothing is allowed and the child
+    # baseline is tolerated (none on a new record that is no copy, so a
+    # stale default is still refused, on base for a hidden child).
+    def unchanged_if_unavailable(state)
+      return state if state.available
+
+      DependencyRules::ParentState.new(state.parent, true, [], [])
     end
 
     def id_set(custom_values)
@@ -69,6 +91,6 @@ module RedmineDependingCustomFields
       record.errors.add(attribute, message) unless record.errors[attribute].include?(message)
     end
 
-    private_class_method :failing_values, :id_set, :add_once
+    private_class_method :failing_values, :unchanged_if_unavailable, :id_set, :add_once
   end
 end

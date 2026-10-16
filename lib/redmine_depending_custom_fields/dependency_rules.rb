@@ -171,7 +171,8 @@ module RedmineDependingCustomFields
     # (UD-07: no editable_by? rule); the parent comes only from +state+. The
     # formats call it for the values core validates; for the children the
     # user cannot edit on issues and projects, NonEditableDependencies
-    # (WP-09b) resolves the user and calls it.
+    # (WP-09b) resolves the user and calls it, with an unavailable parent
+    # read as unchanged (WP-09c).
     def dependency_check(custom_value, state)
       current = normalize_values(custom_value.value)
       allowed = allowed_for(custom_value.custom_field, state)

@@ -14,6 +14,12 @@ require_relative '../rails_helper'
 # and versions validate every value in core and are not patched; there core
 # names even a hidden child (known exception, UD-07 refinements).
 #
+# WP-09c (owner, UD-07 refinements): for these children a parent field that
+# is not available on the record does not count as changed (nobody changed
+# it), so their stored value is tolerated and only new values must be
+# allowed. A child the user can edit keeps UD-05 (an unavailable parent
+# counts as changed), and an available parent that changed stays strict.
+#
 # Kit: parent values A, B, C, D; A allows the secret value and a2, B allows
 # b1, C allows nothing, D allows the secret value; b2 is linked under no
 # parent value. Issues store A with the secret value unless noted.
@@ -495,11 +501,12 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
     end
   end
 
-  # UD-05: a parent that is not available counts as changed. A tracker
-  # change that drops the parent is refused while a child the user cannot
-  # edit keeps a value; the parent is not on the issue any more, so a hidden
-  # child's message goes on base.
-  describe 'a tracker change that makes the parent unavailable (UD-05)' do
+  # UD-05: for a child the user can edit, a parent that is not available
+  # counts as changed, so a non-blank child must be cleared. WP-09c (owner):
+  # for a child the user cannot edit nobody changed the parent, so an
+  # unavailable parent counts as an unchanged one: the stored value is
+  # tolerated and a tracker or project change that drops the parent saves.
+  describe 'a tracker change that makes the parent unavailable (UD-05, WP-09c)' do
     before { allow(User).to receive(:current).and_return(user) }
 
     def child_only_tracker
@@ -513,44 +520,46 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       put "/issues/#{issue.id}.json", params: { issue: { tracker_id: tracker.id } }.to_json, headers: json_headers
     end
 
-    it 'refuses it for a hidden child with the base message, in en and de' do
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 refusal with the base
+    # message.
+    it 'saves it for a hidden child and keeps the stored value (Flipped by WP-09c)' do
       hide(child)
-      base_texts.each do |language, text|
-        user.update_column(:language, language)
-        issue = stored_issue
-        put_tracker(issue, child_only_tracker)
-        expect(response).to have_http_status(422), response.body
-        expect(JSON.parse(response.body)['errors']).to eq([text]), language
-        expect(leaks?(response.body, child)).to be(false), response.body
-        expect(Issue.find(issue.id).tracker_id).to eq(issue.tracker_id)
-      end
+      issue = stored_issue
+      tracker = child_only_tracker
+      put_tracker(issue, tracker)
+      expect(response).to have_http_status(204), response.body
+      expect(Issue.find(issue.id).tracker_id).to eq(tracker.id)
+      expect(stored(issue, child)).to eq(secret)
     end
 
     # The child stays visible (no hide): read-only by workflow under the new
-    # tracker's default status, which the move gives the issue. An unavailable
-    # parent does not change the placement of a child the user can see.
-    it 'refuses it for a read-only child the user can see with is invalid under the child name, in en and de' do
-      invalid_texts.each do |language, text|
-        user.update_column(:language, language)
-        issue = stored_issue
-        tracker = child_only_tracker
-        read_only(issue, child, tracker_id: tracker.id, status_id: tracker.default_status_id)
-        moved = Issue.find(issue.id)
-        moved.init_journal(user)
-        moved.send(:safe_attributes=, { 'tracker_id' => tracker.id.to_s }, user)
-        expect([moved.tracker_id, moved.status_id]).to eq([tracker.id, tracker.default_status_id])
-        expect(moved.visible_custom_field_values(user).map(&:custom_field_id)).to include(child.id)
-        expect(moved.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
-        put_tracker(issue, tracker)
-        expect(response).to have_http_status(422), response.body
-        expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{text}"]), language
-        expect(Issue.find(issue.id).tracker_id).to eq(issue.tracker_id)
-      end
+    # tracker's default status, which the move gives the issue.
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 refusal with is invalid
+    # under the child name.
+    it 'saves it for a read-only child the user can see and keeps the stored value (Flipped by WP-09c)' do
+      issue = stored_issue
+      tracker = child_only_tracker
+      read_only(issue, child, tracker_id: tracker.id, status_id: tracker.default_status_id)
+      moved = Issue.find(issue.id)
+      moved.init_journal(user)
+      moved.send(:safe_attributes=, { 'tracker_id' => tracker.id.to_s }, user)
+      expect([moved.tracker_id, moved.status_id]).to eq([tracker.id, tracker.default_status_id])
+      expect(moved.visible_custom_field_values(user).map(&:custom_field_id)).to include(child.id)
+      expect(moved.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
+      put_tracker(issue, tracker)
+      expect(response).to have_http_status(204), response.body
+      expect(Issue.find(issue.id).tracker_id).to eq(tracker.id)
+      expect(stored(issue, child)).to eq(secret)
     end
 
     # A project move where the parent field is not enabled works like a
     # tracker change (core reassign_custom_field_values).
-    it 'refuses a REST move to a project where the parent field is not enabled, with the base message' do
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 refusal with the base
+    # message.
+    it 'saves a REST move to a project where the parent field is not enabled (Flipped by WP-09c)' do
       hide(child)
       parent.update!(is_for_all: false, project_ids: [project.id])
       issue = stored_issue
@@ -559,13 +568,32 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       dcf_issue_infra(target)
       expect(Issue.find(issue.id).allowed_target_projects(user)).to include(target)
       put "/issues/#{issue.id}.json", params: { issue: { project_id: target.id } }.to_json, headers: json_headers
-      expect(response).to have_http_status(422), response.body
-      expect(JSON.parse(response.body)['errors']).to eq([base_message])
-      expect(leaks?(response.body, child)).to be(false), response.body
-      expect(Issue.find(issue.id).project_id).to eq(project.id)
-      expect([stored(issue, parent), stored(issue, child)]).to eq(['A', secret])
+      expect(response).to have_http_status(204), response.body
+      expect(Issue.find(issue.id).project_id).to eq(target.id)
+      expect(stored(issue, child)).to eq(secret)
     end
 
+    # UD-05 for a child the user can edit (core validates it through the
+    # format): the unavailable parent counts as changed, in en and de.
+    it 'still refuses it for a child the user can edit, with is invalid under the child name (UD-05)' do
+      invalid_texts.each do |language, text|
+        user.update_column(:language, language)
+        issue = stored_issue
+        tracker = child_only_tracker
+        moved = Issue.find(issue.id)
+        moved.init_journal(user)
+        moved.send(:safe_attributes=, { 'tracker_id' => tracker.id.to_s }, user)
+        expect(moved.tracker_id).to eq(tracker.id)
+        expect(moved.editable_custom_field_values(user).map(&:custom_field_id)).to include(child.id)
+        put_tracker(issue, tracker)
+        expect(response).to have_http_status(422), response.body
+        expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{text}"]), language
+        expect(Issue.find(issue.id).tracker_id).to eq(issue.tracker_id)
+      end
+    end
+
+    # An administrator sees the role-hidden child and may edit it, so core
+    # validates it (UD-05).
     it 'refuses it for an administrator with is invalid under the child name' do
       hide(child)
       allow(User).to receive(:current).and_return(dcf_admin)
@@ -582,70 +610,137 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       put "/issues/#{issue.id}.json", params: { issue: { notes: 'Note' } }.to_json, headers: json_headers
       expect(response).to have_http_status(204), response.body
     end
+
+    # A tracker change that makes the hidden child available too gives it
+    # its default (core set_custom_field_default?): no stored row, so nothing
+    # is tolerated, and the unavailable parent allows nothing. Nobody changed
+    # the parent, so the message goes on base.
+    it 'still refuses a move that gives a hidden child a stale default under an unavailable parent' do
+      hide(child)
+      child.update_column(:default_value, 'b1')
+      issue = stored_issue(parent => 'A')
+      expect(issue.available_custom_fields).not_to include(child)
+      put_tracker(issue, child_only_tracker)
+      expect(response).to have_http_status(422), response.body
+      expect(JSON.parse(response.body)['errors']).to eq([base_message])
+      expect(leaks?(response.body, child)).to be(false), response.body
+      expect(Issue.find(issue.id).tracker_id).to eq(issue.tracker_id)
+    end
   end
 
-  # UD-05 steady state: once the parent field is not available on the issue
-  # (here disabled for its tracker) it counts as changed on every save that
-  # assigns custom values (core sets custom_field_values_changed? on every
-  # assignment), so such a save is refused while a hidden child holds a
-  # value, even when nobody touches the parent. Only updates that assign no
-  # custom values (a REST body without custom_fields, see above) still save.
-  describe 'an issue whose parent field is disabled for its tracker (UD-05 steady state)' do
+  # WP-09c (owner): while the parent field is not available on the issue
+  # (here disabled for its tracker), it does not count as changed for a
+  # child the user cannot edit, so saves that assign custom values without
+  # touching the parent keep the child's stored value and succeed. Before
+  # WP-09c (UD-05 steady state) each of them was refused. A child the user
+  # can edit keeps UD-05, and a parent that is available again and changes
+  # is judged strictly (WP-09b).
+  describe 'an issue whose parent field is disabled for its tracker (WP-09c)' do
     before { allow(User).to receive(:current).and_return(user) }
 
-    def blocked_issue
-      hide(child)
+    def blocked_issue(hidden: true)
+      hide(child) if hidden
       issue = stored_issue(parent => 'A', child => secret, other => 'X')
       issue.tracker.custom_fields.delete(parent)
       Issue.find(issue.id)
     end
 
-    it 'refuses a form edit that changes only another field, with the base message' do
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 steady-state refusal
+    # with the base message.
+    it 'saves a form edit that changes only another field (Flipped by WP-09c)' do
       issue = blocked_issue
       put_form(issue, { other => 'Y' })
-      expect(response).to have_http_status(200)
-      expect(error_box).to include(base_message)
-      expect(leaks?(body_without_mapping, child)).to be(false)
-      expect([stored(issue, other), stored(issue, child)]).to eq(['X', secret])
+      expect(response).to have_http_status(302)
+      expect([stored(issue, other), stored(issue, child)]).to eq(['Y', secret])
     end
 
-    it 'refuses a form edit with only a note (the form posts the editable custom values unchanged)' do
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 steady-state refusal
+    # with the base message.
+    it 'saves a form edit with only a note (the form posts the editable custom values unchanged) ' \
+       '(Flipped by WP-09c)' do
       issue = blocked_issue
       put_form(issue, { other => 'X' }, notes: 'Only a note')
-      expect(response).to have_http_status(200)
-      expect(error_box).to include(base_message)
-      expect(leaks?(body_without_mapping, child)).to be(false)
-      expect(Issue.find(issue.id).journals).to be_empty
+      expect(response).to have_http_status(302)
+      expect(Issue.find(issue.id).journals.map(&:notes)).to eq(['Only a note'])
+      expect(stored(issue, child)).to eq(secret)
     end
 
-    it 'refuses a bulk edit with only a note (the bulk form posts blank custom values)' do
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 steady-state refusal
+    # with the base message.
+    it 'saves a bulk edit with only a note (the bulk form posts blank custom values) (Flipped by WP-09c)' do
       issue = blocked_issue
       bulk([issue], { other => '' }, notes: 'Only a note')
-      expect(response).to have_http_status(200)
-      expect(response.body).to include(CGI.escapeHTML("#{base_message}: ##{issue.id}"))
-      expect(leaks?(body_without_mapping, child)).to be(false)
-      expect(Issue.find(issue.id).journals).to be_empty
+      expect(response).to have_http_status(302)
+      expect(Issue.find(issue.id).journals.map(&:notes)).to eq(['Only a note'])
+      expect([stored(issue, other), stored(issue, child)]).to eq(['X', secret])
     end
 
     # The wizard saves without a journal, so core and the check use
-    # User.current; its JSON body must not leak the child either.
-    it 'refuses a wizard save that changes only another field, with the base message and no leak' do
+    # User.current.
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 steady-state refusal
+    # with the base message.
+    it 'saves a wizard save that changes only another field (Flipped by WP-09c)' do
       issue = blocked_issue
       post '/depending_custom_fields/save',
            params: { issue_ids: issue.id.to_s, issue: { custom_field_values: { other.id.to_s => 'Y' } } }
-      expect(response).to have_http_status(422), response.body
-      expect(JSON.parse(response.body)['errors']).to eq([base_message])
+      expect(response).to have_http_status(200), response.body
       expect(leaks?(response.body, child)).to be(false), response.body
-      expect([stored(issue, other), stored(issue, child)]).to eq(['X', secret])
+      expect([stored(issue, other), stored(issue, child)]).to eq(['Y', secret])
     end
 
-    it 'refuses a notes-only mail reply (MailHandler always assigns custom values); the notes are lost' do
+    # MailHandler always assigns custom values.
+    # Flipped by WP-09c (owner: unavailable parent does not count as changed
+    # for non-editable children). It pinned the UD-05 steady-state refusal
+    # (the notes were lost).
+    it 'adds a notes-only mail reply (Flipped by WP-09c)' do
       issue = blocked_issue
       EmailAddress.create!(user: user, address: mail_address, is_default: true)
-      expect(MailHandler.receive(reply(issue, 'Only a note by mail'))).to be(false)
-      expect(Issue.find(issue.id).journals).to be_empty
+      expect(MailHandler.receive(reply(issue, 'Only a note by mail'))).to be_a(Journal)
+      expect(Issue.find(issue.id).journals.map(&:notes)).to eq(['Only a note by mail'])
+      expect(stored(issue, child)).to eq(secret)
     ensure
       User.current = nil
+    end
+
+    # The same for a read-only child the user can see, on the model: no
+    # error at all (before WP-09c: is invalid under the child name).
+    it 'saves a change of another field while a read-only child holds a value (WP-09c)' do
+      issue = blocked_issue(hidden: false)
+      read_only(issue, child)
+      changed = change(issue, { other => 'Y' })
+      expect(changed.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
+      expect(changed.custom_field_values.map(&:custom_field_id)).not_to include(parent.id)
+      expect(changed.save).to be(true), changed.errors.full_messages.inspect
+      expect([stored(issue, other), stored(issue, child)]).to eq(['Y', secret])
+    end
+
+    # UD-05 for a child the user can edit: the form edit is refused with is
+    # invalid under the child name, so the child must be cleared.
+    it 'still refuses a form edit that changes only another field for a child the user can edit (UD-05)' do
+      issue = blocked_issue(hidden: false)
+      expect(issue.editable_custom_field_values(user).map(&:custom_field_id)).to include(child.id)
+      put_form(issue, { other => 'Y' })
+      expect(response).to have_http_status(200)
+      expect(error_box).to include("#{child.name} #{invalid}")
+      expect([stored(issue, other), stored(issue, child)]).to eq(['X', secret])
+      cleared = change(issue, { other => 'Y', child => '' })
+      expect(cleared.save).to be(true), cleared.errors.full_messages.inspect
+    end
+
+    # WP-09b: once the parent field is available again (its stored row
+    # kept) and its value changes, the hidden child is judged strictly.
+    it 'still refuses a change of the parent once it is available again (WP-09b)' do
+      issue = blocked_issue
+      issue.tracker.custom_fields << parent
+      put_form(Issue.find(issue.id), { parent => 'B' })
+      expect(response).to have_http_status(200)
+      expect(error_box).to include("#{parent.name} #{hidden_message}")
+      expect(leaks?(body_without_mapping, child)).to be(false)
+      expect([stored(issue, parent), stored(issue, child)]).to eq(['A', secret])
     end
   end
 
@@ -871,6 +966,29 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       expect(copy.errors.full_messages).to eq([base_message])
     end
 
+    # WP-09c: a parent that is not available on the copy (disabled for the
+    # tracker) does not count as changed for the hidden child, so the copy is
+    # judged against the source like any copy (UD-06): the source value is
+    # tolerated, a stale default the source never held is refused, with the
+    # base message (the parent is not on the record).
+    it 'judges a hidden child against the source under an unavailable parent, with the base message (WP-09c)' do
+      hide(child)
+      child.update_column(:default_value, 'b1')
+      kept = stored_issue(parent => 'A', child => 'b1')
+      stale = stored_issue
+      kept.tracker.custom_fields.delete(parent)
+      allowed, refused = [kept, stale].map { |source| Issue.new.copy_from(Issue.find(source.id)) }
+      expect(allowed.custom_field_values.map(&:custom_field_id)).not_to include(parent.id)
+      expect(allowed.save).to be(true), allowed.errors.full_messages.inspect
+      expect(stored(allowed, child)).to eq('b1')
+      expect(refused.save).to be(false)
+      # Core reset the hidden child to its default (b1), which the source
+      # (secret) never held.
+      expect(refused.custom_field_value(child)).to eq('b1')
+      expect([refused.errors[parent.name], refused.errors[child.name]]).to eq([[], []])
+      expect(refused.errors.full_messages).to eq([base_message])
+    end
+
     describe 'through the controllers (the author is User.current)' do
       def post_issue(attributes, copy_from: nil)
         path = "/projects/#{project.identifier}/issues.json"
@@ -916,6 +1034,23 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
         post_issue(base.merge(custom_fields: [{ id: parent.id, value: 'B' }]))
         expect(response).to have_http_status(201), response.body
         expect(stored(Issue.find(JSON.parse(response.body)['issue']['id']), child)).to eq('b1')
+      end
+
+      # WP-09c: the unavailable parent (not on the tracker) does not count as
+      # changed, but a new issue has no baseline, so the stale default is
+      # still refused; nobody changed the parent, so the message goes on base.
+      it 'answers 422 with the base message to a REST create whose parent is not available (WP-09c)' do
+        tracker = dcf_tracker
+        tracker.custom_fields << child
+        project.trackers << tracker
+        _tracker, _status, priority = dcf_issue_infra(project)
+        count = Issue.count
+        post_issue({ tracker_id: tracker.id, priority_id: priority.id,
+                     custom_fields: [{ id: child.id, value: secret }] })
+        expect(response).to have_http_status(422), response.body
+        expect(Issue.count).to eq(count)
+        expect(JSON.parse(response.body)['errors']).to eq([base_message])
+        expect(leaks?(response.body, child)).to be(false), response.body
       end
 
       # Project#copy_issues copies with the copier as author; core resets the
