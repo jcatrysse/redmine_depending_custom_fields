@@ -12,8 +12,12 @@ RSpec.describe 'Format singleton state' do
   fixtures :users
 
   lib_dir = File.expand_path('../../lib/redmine_depending_custom_fields', __dir__)
+  # WP-09b: the non-editable check is module_function too, and its Issue and
+  # Project patches keep nothing on the records.
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
-               dependency_rules.rb extended_user_format.rb].map { |name| File.join(lib_dir, name) }
+               dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
+               patches/issue_validation_patch.rb patches/project_validation_patch.rb]
+            .map { |name| File.join(lib_dir, name) }
 
   # Names of the instance, class and global variables the source assigns
   # (=, op-assign, multiple assignment, rescue =>, inside blocks), plus the
@@ -129,6 +133,7 @@ RSpec.describe 'Format singleton state' do
       expect(RedmineDependingCustomFields::DependingEnumerationFormat.instance.instance_variables - core_ivars).to eq([])
       expect(RedmineDependingCustomFields::DependingFormatMethods.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::DependencyRules.instance_variables).to eq([])
+      expect(RedmineDependingCustomFields::NonEditableDependencies.instance_variables).to eq([])
     end
 
     [:list, :enumeration].each do |kind|

@@ -8,8 +8,9 @@ require_relative '../rails_helper'
 # update, a mail reply and the context menu wizard themselves. While the
 # parent is unchanged a stored value is kept and only newly added values must
 # be allowed; a changed parent makes every value strict; a parent that is not
-# available on the issue counts as changed (UD-05). UD-07 keeps today's
-# result for a child the user cannot edit.
+# available on the issue counts as changed (UD-05). UD-07 (confirmed, the
+# rules lead): a child the user cannot edit gets the same rule on every
+# object; on issues WP-09b adds the check core skips.
 #
 # Every issue stores the legacy combination parent A with child b1 (multiple:
 # b1 and a1); A allows a1 and a2, B allows b1, C allows nothing, D allows a1
@@ -413,13 +414,15 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
     end
   end
 
-  # UD-07 (kept as today, no editable_by? rule): a child the user cannot edit
-  # gets the same rule as any other child whenever core validates it. Core
-  # Issue validates only editable_custom_field_values of the journal user, so
-  # on an issue such a child is never checked and the parent change saves (as
-  # on e9db18b); a time entry validates every value, so there the change is
-  # rejected. Stored: parent A with the allowed a1; the parent becomes B,
-  # which does not allow a1.
+  # UD-07 (confirmed: the rules lead on every object, no editable_by? rule):
+  # a child the user cannot edit gets the same D1 rule as any other child.
+  # Core Issue validates only editable_custom_field_values of the journal
+  # user, so WP-09b adds the check for the other children: a child the user
+  # can see (read-only by workflow) gets 'is invalid' under its name, a child
+  # the user cannot see is never named and the error goes on the parent. A
+  # time entry validates every value in core (no plugin check there).
+  # Stored: parent A with the allowed a1; the parent becomes B, which does
+  # not allow a1.
   describe 'a child the user cannot edit while the parent changes (UD-07)' do
     let(:other_role) { dcf_create_role(permissions: [:view_issues, :edit_issues]) }
     let(:messages) { { en: 'is invalid', de: 'ist nicht gültig' } }
@@ -447,29 +450,48 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
         end
       end
 
-      it 'saves the change when the child is read-only by workflow (core does not validate it), in en and de' do
-        messages.each_key do |locale|
+      # Flipped by WP-09b (UD-07 confirmed). It pinned the WP-09 observation
+      # before the owner confirmed UD-07: core skipped the read-only child and
+      # the parent change saved.
+      it 'rejects the change when the child is read-only by workflow, with is invalid under the child name, ' \
+         'in en and de (Flipped by WP-09b)' do
+        messages.each do |locale, message|
           I18n.with_locale(locale) do
             issue = stored_issue
             WorkflowPermission.find_or_create_by!(tracker_id: issue.tracker_id, old_status_id: issue.status_id,
                                                   role_id: role.id, field_name: child.id.to_s, rule: 'readonly')
             issue = change_parent(issue, parent)
             expect(issue.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
-            expect(issue.save).to be(true), issue.errors.full_messages.inspect
+            expect(issue.save).to be(false), locale.to_s
+            expect(issue.errors[child.name]).to eq([message]), locale.to_s
+            expect(issue.errors[parent.name]).to eq([]), locale.to_s
             expect([Issue.find(issue.id).custom_field_value(parent), Issue.find(issue.id).custom_field_value(child)])
-              .to eq(%w[B a1])
+              .to eq(%w[A a1])
           end
         end
       end
 
-      it 'saves the change when the child is not visible for the user role (core does not validate it), in en and de' do
-        child.update!(visible: false, role_ids: [other_role.id])
-        messages.each_key do |locale|
+      # Flipped by WP-09b (UD-07 confirmed). It pinned the WP-09 observation
+      # before the owner confirmed UD-07: core skipped the hidden child and the
+      # parent change saved.
+      it 'rejects the change on the parent field without naming a child the user cannot see, ' \
+         'in en and de (Flipped by WP-09b)' do
+        child.update!(name: "Hidden#{SecureRandom.hex(4)}", visible: false, role_ids: [other_role.id])
+        hidden = { en: 'cannot be changed because a dependent field you cannot see has a value that does not ' \
+                       'match the new value',
+                   de: 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen ' \
+                       'Wert hat, der nicht zum neuen Wert passt' }
+        hidden.each do |locale, message|
           I18n.with_locale(locale) do
             issue = change_parent(stored_issue, parent)
             expect(issue.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
-            expect(issue.save).to be(true), issue.errors.full_messages.inspect
-            expect(Issue.find(issue.id).custom_field_value(child)).to eq('a1')
+            expect(issue.save).to be(false), locale.to_s
+            expect(issue.errors[parent.name]).to eq([message]), locale.to_s
+            expect(issue.errors[parent.name]).to eq([I18n.t('activerecord.errors.messages.dcf_hidden_child_conflict')])
+            expect(issue.errors[child.name]).to eq([]), locale.to_s
+            expect(issue.errors.full_messages.grep(/#{Regexp.escape(child.name)}/)).to eq([]), locale.to_s
+            expect([Issue.find(issue.id).custom_field_value(parent), Issue.find(issue.id).custom_field_value(child)])
+              .to eq(%w[A a1])
           end
         end
       end
@@ -497,6 +519,8 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
             entry.custom_field_values = { parent.id.to_s => 'B' }
             expect(entry.valid?).to be(false)
             expect(entry.errors[child.name]).to eq([message]), locale.to_s
+            # Core validates every time entry value; WP-09b adds nothing here.
+            expect(entry.errors[parent.name]).to eq([]), locale.to_s
           end
         end
       end

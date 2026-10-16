@@ -75,3 +75,10 @@ nl:
   error_forbidden: "U bent niet gemachtigd om deze actie uit te voeren."
   error_save_failed: "De wijziging kon niet worden opgeslagen."
   error_dcf_audit_table_missing: "De audittabel voor de configuratie ontbreekt. Voer de plugin-migraties uit voordat u deze functie gebruikt."
+  error_dcf_hidden_child_conflict: "Deze wijziging kan niet worden opgeslagen, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die de wijziging niet toestaat."
+
+  # Modelfouten, getoond na de veldnaam
+  activerecord:
+    errors:
+      messages:
+        dcf_hidden_child_conflict: "kan niet worden gewijzigd, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die niet bij de nieuwe waarde past"

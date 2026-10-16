@@ -1,7 +1,7 @@
 # Large lists: i18n key registry
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: i18n (cross-area). Work packages: WP-02 (locale parity spec, parity allowlist, `label_default_value` fix, 0.0.16), WP-10, WP-11, WP-12 (0.1.0 (M1)), WP-18 (0.1.0 (M2)), WP-22, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 (0.1.0 (M3)). Decisions: none.
+> Points: 1 to 9. Owner area: i18n (cross-area). Work packages: WP-02 (locale parity spec, parity allowlist, `label_default_value` fix, 0.0.16), WP-09b, WP-10, WP-11, WP-12 (0.1.0 (M1)), WP-18 (0.1.0 (M2)), WP-22, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 (0.1.0 (M3)). Decisions: none.
 
 ## Contents
 
@@ -59,7 +59,7 @@ This document is the single source of truth for every locale key that the large_
 
 **YAML layout.**
 - Values are double-quoted, as in the existing files. A value that starts with `%{` or contains `: ` must be quoted anyway.
-- Nested keys live under ONE `activerecord:` / `errors:` / `messages:` block per locale file. WP-10 creates the block with `dcf_circular_dependency`; WP-11 and WP-22 add their keys inside that same block. A second `activerecord:` mapping in the same file is a duplicate mapping key and fails the WP-02 Psych tree walk.
+- Nested keys live under ONE `activerecord:` / `errors:` / `messages:` block per locale file. WP-09b creates the block with `dcf_hidden_child_conflict` (it landed first); WP-10, WP-11 and WP-22 add their keys inside that same block. A second `activerecord:` mapping in the same file is a duplicate mapping key and fails the WP-02 Psych tree walk.
 - Flat keys are appended once; a key that already exists is reused, never written a second time (the duplicate-key check fails otherwise).
 
 **Constant maps.** Keys that reach JavaScript do so only through `RedmineDependingCustomFields::ClientConfig::I18N` (meta tag `dcf-i18n`, WP-18) and `DependencyEditorConfig::I18N` (`data-dcf-editor-i18n`, WP-24 to WP-26). The name `I18N_KEYS` is not used anywhere. The WP-02 parity spec resolves every value of both maps, each when it is defined, in all four locales with `raise: true`; WP-18 and WP-24 each add an example proving their map is checked.
@@ -70,7 +70,8 @@ This document is the single source of truth for every locale key that the large_
 
 | Owner WP | Release | Area | New keys | Keys | Note |
 |---|---|---|---|---|---|
-| WP-10 | 0.1.0 (M1) | server | 3 | `field_parent_custom_field`, `warning_dcf_parent_cycle`, `activerecord.errors.messages.dcf_circular_dependency` | creates the nested `activerecord.errors.messages` block |
+| WP-09b | 0.1.0 (M1) | server | 2 | `activerecord.errors.messages.dcf_hidden_child_conflict`, `error_dcf_hidden_child_conflict` | creates the nested `activerecord.errors.messages` block |
+| WP-10 | 0.1.0 (M1) | server | 3 | `field_parent_custom_field`, `warning_dcf_parent_cycle`, `activerecord.errors.messages.dcf_circular_dependency` | adds `dcf_circular_dependency` inside the block WP-09b created |
 | WP-11 | 0.1.0 (M1) | limits | 4 | `field_value_dependencies`, `activerecord.errors.messages.dcf_storage_too_large`, `text_dcf_storage_usage`, `text_dcf_storage_admin_help` |  |
 | WP-12 | 0.1.0 (M1) | limits | 3 | `error_dcf_values_too_large`, `error_dcf_mapping_too_large`, `error_dcf_value_too_long` |  |
 | WP-18 | 0.1.0 (M2) | frontend (rendered by the server head hook) | 9 | `text_dcf_hint_select_parent`, `text_dcf_hint_no_options`, `text_dcf_hint_no_options_generic`, `text_dcf_hint_legacy`, `text_dcf_hint_legacy_locked`, `text_dcf_hint_legacy_generic`, `text_dcf_hint_bulk_default`, `text_dcf_hint_bulk_cleared`, `text_dcf_live_message` | creates `ClientConfig::I18N` (10 entries incl. existing `error_save_failed`) |
@@ -84,7 +85,7 @@ This document is the single source of truth for every locale key that the large_
 | WP-30 | 0.1.0 (M3) | project | 1 | `text_dcf_page_scope_save` |  |
 | WP-31 | 0.1.0 (M3) | project | 3 | `error_dcf_value_length`, `label_dcf_project_storage_ceiling`, `text_dcf_project_storage_ceiling_info` |  |
 
-Totals: 10 new keys in 0.1.0 (M1), 9 in 0.1.0 (M2), 104 in 0.1.0 (M3) (123 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
+Totals: 12 new keys in 0.1.0 (M1), 9 in 0.1.0 (M2), 104 in 0.1.0 (M3) (125 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
 
 ## 4. Registry table
 
@@ -94,6 +95,8 @@ One row per key. Keys under `activerecord.errors.messages.` are nested in YAML a
 
 | key | owner WP | release | used by | en | de | fr | nl |
 |---|---|---|---|---|---|---|---|
+| `activerecord.errors.messages.dcf_hidden_child_conflict` | WP-09b | 0.1.0 (M1) | model error after the parent field name when a role-invisible dependent field blocks a parent change (issues, projects; server design section 8 rule 3); names neither the child nor its value | cannot be changed because a dependent field you cannot see has a value that does not match the new value | kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, der nicht zum neuen Wert passt | ne peut pas être modifié(e), car un champ dépendant que vous ne pouvez pas voir a une valeur qui ne correspond pas à la nouvelle valeur | kan niet worden gewijzigd, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die niet bij de nieuwe waarde past |
+| `error_dcf_hidden_child_conflict` | WP-09b | 0.1.0 (M1) | model error on base for the same case when the parent field is not shown to the user either (role-invisible, or not available after a tracker or project change), so no field is named, or when the parent value did not change (core gave the hidden child a stale default on a copy, a move or a programmatic project copy), so 'cannot be changed' would be wrong | This change cannot be saved because a dependent field you cannot see has a value that the change does not allow. | Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, den die Änderung nicht zulässt. | Cette modification ne peut pas être enregistrée, car un champ dépendant que vous ne pouvez pas voir a une valeur que la modification n'autorise pas. | Deze wijziging kan niet worden opgeslagen, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die de wijziging niet toestaat. |
 | `field_parent_custom_field` | WP-10 | 0.1.0 (M1) | attribute label of errors on `:parent_custom_field_id` (Redmine strips `_id`); same text as the existing form label `field_parent_custom_field_id` | Depends on | Abhängig von | Dépend de | Afhankelijk van |
 | `warning_dcf_parent_cycle` | WP-10 | 0.1.0 (M1) | admin form cycle warning under the parent select; `%{fields}` is the comma-joined field names | This field is part of a circular dependency between these fields: %{fields}. Change the field it depends on to break the cycle. | Dieses Feld ist Teil einer zirkulären Abhängigkeit zwischen diesen Feldern: %{fields}. Ändern Sie das Feld, von dem es abhängt, um den Zyklus aufzulösen. | Ce champ fait partie d'une dépendance circulaire entre ces champs : %{fields}. Modifiez le champ dont il dépend pour rompre le cycle. | Dit veld maakt deel uit van een circulaire afhankelijkheid tussen deze velden: %{fields}. Wijzig het veld waarvan het afhankelijk is om de cyclus te doorbreken. |
 | `activerecord.errors.messages.dcf_circular_dependency` | WP-10 | 0.1.0 (M1) | model error after the label `field_parent_custom_field` (admin form, plugin API 422, project services, extended API) | refers to this field or to one of its dependent fields, which would create a circular dependency | verweist auf dieses Feld oder auf eines seiner abhängigen Felder, wodurch eine zirkuläre Abhängigkeit entstünde | désigne ce champ ou l'un de ses champs dépendants, ce qui créerait une dépendance circulaire | verwijst naar dit veld of naar een van zijn afhankelijke velden, wat een circulaire afhankelijkheid zou veroorzaken |
@@ -247,7 +250,7 @@ One row per key. Keys under `activerecord.errors.messages.` are nested in YAML a
 - **`field_value_dependencies`.** Owner WP-11. WP-22 (payload errors), WP-24 and WP-25 (legend, estimate label) reuse it; the server and editor areas do not define it.
 - **`DependencyEditorConfig::I18N`.** WP-24 creates the map with entries for its own keys only (at least `storageEstimate`). WP-25 and WP-26 extend it in the same commit as their locale entries, with the JS keys named in the "used by" column and in `large_lists_editor_design.md` section 9, plus the reused core keys of section 8.3 (WP-25: `collapse_all`, `clear`, `default_value`, `unsaved`, `no_default`; WP-26: `export`, `preview`, `separator`, `comma`, `semicolon`, `yes`, `no`, `status`).
 - **`ClientConfig::I18N`.** WP-18 creates it with exactly 10 entries: the nine WP-18 keys and the existing `error_save_failed` (`saveFailed`).
-- **Nested block.** The single `activerecord.errors.messages` block per file is created by WP-10 (0.1.0 (M1)) and extended by WP-11 (0.1.0 (M1)) and WP-22 (0.1.0 (M3)).
+- **Nested block.** The single `activerecord.errors.messages` block per file is created by WP-09b (0.1.0 (M1), `dcf_hidden_child_conflict`) and extended by WP-10 and WP-11 (0.1.0 (M1)) and WP-22 (0.1.0 (M3)).
 
 ## 6. Parity allowlist
 
@@ -267,7 +270,7 @@ Values that are intentionally identical to `en` in a given locale. The WP-02 par
 | nl | `text_dcf_live_message` | %{field}: %{message} | placeholders and a colon only | WP-18 (pre-listed by WP-02) |
 | nl | `label_dcf_tab_char` | Tab | same word in Dutch | WP-26 (pre-listed by WP-02) |
 
-No other key of section 4 is identical to `en` in any locale (checked over all 123 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
+No other key of section 4 is identical to `en` in any locale (checked over all 125 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
 
 ## 7. Keys that must NOT be added
 
@@ -357,3 +360,4 @@ Where the area designs disagreed, or a revision 2 text was wrong, this registry 
 | `text_dcf_sort_confirm` (all four) | "All values of this field (%{count}) will be sorted ..." instead of "This sorts all %{count} values ...", same reason | UX-16, rule "Plurals" |
 | fr `text_dcf_hint_bulk_default` | "Valeur par défaut appliquée pour la valeur choisie dans %{parent}." (natural word order) | native phrasing |
 | nl `warning_dcf_parent_cycle` | "om de cyclus te doorbreken" instead of "om de kring te doorbreken" | native phrasing |
+| `activerecord.errors.messages.dcf_hidden_child_conflict`, `error_dcf_hidden_child_conflict` | no field name, value, label, count or placeholder: the child is hidden from the user (UD-07); one message per parent field, so the number of hidden children does not show either. fr "modifié(e)" follows core fr "renseigné(e)"; the terms match `label_affected_child_fields` | WP-09b, UD-07 |

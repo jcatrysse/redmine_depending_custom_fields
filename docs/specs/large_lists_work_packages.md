@@ -1,6 +1,6 @@
 # Large lists: work packages
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-34.
+> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-37.
 
 ## Purpose
 
@@ -208,13 +208,15 @@ CHANGELOG:
 - Added: A database storage usage line on the custom field form and project pages at 90 percent of the column limit.
 - Changed: Stored values that no longer fit the parent are accepted on save until the parent changes; other values of a multi-value field can still be added or removed. In 0.1.0 (M1) this applies to the REST API, email, bulk edit, the wizard and copies; the issue form keeps such values from 0.1.0 (M2) on.
 - Changed: Issue copies (single copy, bulk copy, project copy) keep such values when copied unchanged; project copy no longer skips those issues.
+- Changed: On issues and projects, a parent field change is now refused while a dependent field that you cannot edit (read-only by workflow or hidden for your role) holds a value the new parent value does not allow (HTTP 422 in the REST API). A dependent field you can see reports is invalid; for one you cannot see, the error is shown on the parent field without naming it (or as a general error when you cannot see the parent field either or its value did not change). Time entries and other objects already refused such changes.
 - Changed: The 'Depends on' select no longer offers the field's own dependent fields.
 - Changed: Audit before/after values above 16 KB are stored shrunk with payload_truncated, payload_bytes and payload_sha256 of the full value.
 - Fixed: Key/Value list (depending): a disallowed new value gives one error instead of two, and the edit form no longer shows the stored value twice.
 - Fixed: On MySQL/MariaDB, a value list or dependency mapping that is too large gives a clear validation error (HTTP 422 in the APIs, audited error in project settings) instead of an internal error or silent truncation.
 - Fixed: A large mapping save on widened MySQL columns no longer rolls back because its audit row overflowed.
 - Fixed: Error messages in project settings no longer interpret HTML in field names.
-- API: The response shape is unchanged. New HTTP 422 reasons: circular parent and MySQL oversize.
+- API: The response shape is unchanged. New HTTP 422 reasons: circular parent and MySQL oversize; on core issue and project updates, a parent change blocked by a dependent field you cannot edit (WP-09b).
+- Upgrade notes: On issues and projects a parent change is now refused while a dependent field you cannot edit holds a value the new parent value does not allow; this also applies to bulk edit, the context-menu wizard, email and REST updates, and to tracker or project changes that make the parent field unavailable. While the parent field is not available on an issue (for example disabled for its tracker), every edit of that issue that sends custom field values is refused while such a dependent field holds a value: the issue form and bulk edit whenever they show a custom field you can edit, the wizard, and email replies, including notes-only replies (their notes are lost); REST updates without custom fields still save. A new issue, a new project or a copy gets the default value of a dependent field you cannot edit, and so does an issue moved to a tracker or project where that field was not available; the save is refused when the parent value does not allow that default, and a project copy skips such an issue. Until 0.1.0 (M2) the issue form clears an editable dependent field whose stored value its parent does not allow, so the save is refused when a field you cannot edit depends on it. Ask someone who may edit that field to change or clear it first, or an administrator to fix a default value the parent value does not allow.
 - Upgrade notes: On MySQL servers running without strict mode, saves that used to be truncated silently are now refused. Core List and Key/Value list fields are checked too. The plugin never alters core tables; widening is an explicit rake task and running Redmine processes keep the old limit until restarted. Run report_sizes once after upgrading: fields reported CORRUPT or SUSPECT were truncated earlier and need their values restored from a backup.
 
 #### Milestone M2: issue-form runtime without inline script (WP-15 to WP-20)
@@ -711,7 +713,7 @@ Revert the PR.
 
 **Scope**
 
-DependencyRules.dependency_check implements D1 per value (UD-04): while the parent is unchanged (order-insensitive; a parent not available on the object counts as changed, so the child must be cleared as today, UD-05) every value in the baseline is tolerated and only newly added values must be allowed; when the parent changed, all values are validated. Baseline = the stored value (value_was when a saved row holds the field; [] without one, also when a tracker or project change fills in the field default), or for new records with copy? true the source issue's stored values via @copied_from (core has no reader; pinned by a spec on all 4 versions; falls back to strict, never crashes) (UD-06). An unchanged child the current user cannot edit gets no rule of its own (UD-07): it is validated wherever core validates it (time entries), not on issues or projects (WP-09 observation under UD-07, pending owner confirmation); no editable_by? helper. validate_custom_value uses it; the required bypass in CustomFieldPatch#validate_custom_value moves to DependencyRules.no_options? with unchanged semantics. Rows added to test/js/fixtures/shared/rules_cases.json (multi add allowed, add disallowed, remove legacy, reorder, keep legacy and change parent, single legacy to allowed, single legacy to other disallowed, parent unavailable untouched: invalid). Legacy JS (still active until WP-18) drops a disallowed stored value on load, so form saves are unchanged until 0.1.0 (M2); REST, mail, bulk '(no change)', wizard and copies benefit now.
+DependencyRules.dependency_check implements D1 per value (UD-04): while the parent is unchanged (order-insensitive; a parent not available on the object counts as changed, so the child must be cleared as today, UD-05) every value in the baseline is tolerated and only newly added values must be allowed; when the parent changed, all values are validated. Baseline = the stored value (value_was when a saved row holds the field; [] without one, also when a tracker or project change fills in the field default), or for new records with copy? true the source issue's stored values via @copied_from (core has no reader; pinned by a spec on all 4 versions; falls back to strict, never crashes) (UD-06). A child the current user cannot edit gets the same rule (UD-07, confirmed after the WP-09 observation: the rules lead on every object): core validates it on time entries and the other customizables; on issues and projects, which validate only editable_custom_field_values, the WP-09b follow-up adds the check (see Delivered). No editable_by? helper. validate_custom_value uses it; the required bypass in CustomFieldPatch#validate_custom_value moves to DependencyRules.no_options? with unchanged semantics. Rows added to test/js/fixtures/shared/rules_cases.json (multi add allowed, add disallowed, remove legacy, reorder, keep legacy and change parent, single legacy to allowed, single legacy to other disallowed, parent unavailable untouched: invalid). Legacy JS (still active until WP-18) drops a disallowed stored value on load, so form saves of editable children are unchanged until 0.1.0 (M2) (when a field the user cannot edit depends on the cleared field, WP-09b refuses the save; see Delivered); REST, mail, bulk '(no change)', wizard and copies benefit now.
 
 **Files**
 
@@ -725,13 +727,14 @@ DependencyRules.dependency_check implements D1 per value (UD-04): while the pare
 - spec/requests/dcf_issue_copy_spec.rb (new)
 - spec/characterization/depending_formats_spec.rb (listed flips)
 - `CHANGELOG.md`
+- WP-09b: `lib/redmine_depending_custom_fields/non_editable_dependencies.rb` (new), `lib/redmine_depending_custom_fields/patches/issue_validation_patch.rb` (new), `lib/redmine_depending_custom_fields/patches/project_validation_patch.rb` (new), `init.rb`, `config/locales/{de,en,fr,nl}.yml`, `docs/specs/large_lists_i18n_registry.md`, spec/requests/dcf_non_editable_children_spec.rb (new), spec/requests/dcf_issue_flows_spec.rb (two flips), spec/quality/format_singleton_state_spec.rb (scans the new files)
 
 **Tests**
 
 - D1 matrix through safe_attributes for list single, list multi and enum (incl. stored inactive enum id): unchanged, reorder, remove one, add allowed, add disallowed, each with parent unchanged, changed, unavailable (unavailable is strict: a non-blank child gives 'is invalid', as today, UD-05)
 - REST notes-only update keeps a legacy combination; REST add of a new disallowed value gives 422
-- Issue#copy, bulk copy and Project#copy_issues of a legacy combination succeed; project copy drops no issue; copy with a changed child or parent is strict
-- Non-editable child (workflow read-only, role-invisible) unchanged while the parent changes to a value that does not allow it: kept as today (UD-07, pins the kept behaviour). Core validates a child only where it validates the value: Issue and Project validate only editable_custom_field_values, so on an issue the child is not checked and the parent change saves; on a time entry, which validates every value, the change is rejected with 'is invalid' in en and de (WP-09 observation under UD-07, pending owner confirmation)
+- Issue#copy, bulk copy and Project#copy_issues of a legacy combination succeed; project copy drops no issue (WP-09b exception: an issue whose non-editable child core resets to a stale default the parent value does not allow is skipped, pinned); copy with a changed child or parent is strict
+- Non-editable child unchanged while the parent changes to a value that does not allow it (UD-07 confirmed, WP-09b): rejected on issue, project and time entry. On issues and projects: visible read-only child: 'is invalid' under its name (also when a tracker change makes the parent unavailable); role-invisible child: dedicated message on the changed parent, child not named, or the base message (`error_dcf_hidden_child_conflict`) when the parent is not shown to the user either (role-invisible, or not available after a tracker change or a REST project move) or its value did not change; every failing value is placed (a read-only child, a hidden sibling and a hidden child of a second parent in one validation give three entries); en and de; list and enumeration children, single and multiple. On a time entry (and a version) core validates every value and names the child, also a role-invisible one (known exception, recorded under UD-07). UD-05 steady state (parent disabled for the tracker, hidden child holding a value): form, bulk, wizard and notes-only mail edits refused, REST notes without custom fields saved. New issues, new projects, copies and moves: a stale non-editable default the parent value does not allow gives 422 (REST issue create and copy, REST project create, REST tracker change that makes the child available) and is skipped by a project copy; a copy that keeps the parent and the tracker move get the base message
 - Shared rules_cases.json rows evaluated by spec/lib/dependency_rules_spec.rb
 - Bulk update of an unrelated attribute on issues holding legacy combinations succeeds (D1, QA-14, gap 12).
 
@@ -743,13 +746,23 @@ DependencyRules.dependency_check implements D1 per value (UD-04): while the pare
 
 **Compatibility notes**
 
-Only fewer rejected saves; never accepts a newly added invalid value. Stored invalid combinations can persist by design (data hygiene report tracked as SD-12).
+Fewer rejected saves for editable children; never accepts a newly added invalid value. Stored invalid combinations can persist by design while the parent is unchanged (data hygiene report tracked as SD-12). Stricter (WP-09b, UD-07): on issues and projects a parent change is now refused while a dependent field the user cannot edit holds a value the new parent value does not allow (PC-69).
 
 **Rollback**
 
 Revert the PR to restore strict whole-set validation; no data migration. Records saved meanwhile keep their already-existing legacy values.
 
-**Related decisions and defects**: SD-12, UD-04, UD-05 (kept as today), UD-06, UD-07 (kept as today)
+**Related decisions and defects**: SD-12, UD-04, UD-05 (kept as today), UD-06, UD-07 (confirmed: the rules lead, WP-09b)
+
+**Delivered (decisions taken during implementation)**
+
+- WP-09b (follow-up, UD-07 confirmed on 2026-10-15): `Patches::IssueValidationPatch` and `Patches::ProjectValidationPatch` (prepended in init.rb on Issue and Project only) call core's `validate_custom_field_values` first, then `NonEditableDependencies.validate`, which applies `DependencyRules.parent_state` and `dependency_check` (the same D1 rule: tolerated while the parent is unchanged, copies judged against the source, an unavailable parent counts as changed) to the depending children NOT in `editable_custom_field_values(user)`. Core's user and gate: issue `new_record? ? author : current_journal.try(:user)` (nil falls back to User.current), project `User.current`; only on `new_record? || custom_field_values_changed?`. No core required, inclusion or regexp check and no value rewrite on those children. Time entries and other customizables are not patched (core validates every value).
+- Placement: a child in `visible_custom_field_values(user)` (read-only by workflow) gets core's 'is invalid' under its name. A role-invisible child is never named: `activerecord.errors.messages.dcf_hidden_child_conflict` on the parent field when its value changed, once per parent. When the parent is not shown to the user either (role-invisible, or not available after a tracker or project change), naming it would show a hidden field, so a second key, `error_dcf_hidden_child_conflict`, goes on base, once; the same key goes on base when the parent value did not change (core gave the hidden child a stale default on a copy, a move or a programmatic project copy), where 'cannot be changed ... the new value' would be wrong (refinements recorded under UD-07, owner acknowledgement pending). Both keys are in all four locales and in the i18n registry (owner WP-09b; WP-09b creates the nested `activerecord.errors.messages` block).
+- Cost: no query unless a depending child fails the check; then the editable and visible sets once per validation. New issues: core resets non-editable values to the field default before validation (Issue only), so issue copies, imports and new issues never keep a non-editable source value; a stale non-blank default is judged strictly (a copy: against the source), so REST create and copy answer 422 and Project#copy_issues skips that issue (logged; Project#copy returns false). A tracker or project move that makes a non-editable child available gives it the default too, judged without tolerance (no stored row). A new project gets the default of every field the user cannot see (Project#safe_attributes= drops the posted value), so REST POST /projects.json answers 422 for a stale default; the UI project copy is admin-only, where core validates every field. Project.copy_from keeps the project values the user cannot edit; such a programmatic copy is judged strictly (base message: its cloned rows make the parent read as unchanged). Pinned in spec/requests/dcf_non_editable_children_spec.rb.
+- Accepted consequences (server design section 8 rule 3; recorded under UD-07, owner acknowledgement pending): while the parent field is not available on an issue (UD-05: counts as changed), every edit that assigns custom values is refused for a user who cannot edit a dependent field holding a value: the issue form and bulk edit whenever they show an editable custom field (also for a note), the wizard, and email replies including notes-only replies (their notes are lost); REST updates without custom fields still save. Until 0.1.0 (M2) the legacy script clears an editable dependent field whose stored value its parent does not allow and posts '', so a form save is refused when a field the user cannot edit depends on it (open input to WP-17 and WP-18).
+- Leak checks: JSON bodies (issue REST, tracker and project moves, wizard including the UD-05 steady state, project REST update and create, REST create and copy) never contain the child name or value; HTML bodies (issue form, bulk edit, project settings) are checked outside the pre-existing `window.DependingCustomFieldData` head script, which carries every mapping until WP-18 removes it (FM-20b).
+- Flipped by WP-09b, only in spec/requests/dcf_issue_flows_spec.rb: "saves the change when the child is read-only by workflow (core does not validate it), in en and de" became "rejects the change when the child is read-only by workflow, with is invalid under the child name, in en and de (Flipped by WP-09b)"; "saves the change when the child is not visible for the user role (core does not validate it), in en and de" became "rejects the change on the parent field without naming a child the user cannot see, in en and de (Flipped by WP-09b)". The time entry example is kept and also asserts no parent error. spec/characterization is unchanged.
+- Review round 2 (WP-09b): a hidden child under a parent whose value did not change now gets the base message instead of the parent-field message (no 'new value' exists: a copy that keeps the parent, a tracker or project move with a stale default, a programmatic `Project.copy_from`); the WP-09b example "judges a programmatic copy strictly" was adjusted accordingly. New pins: three distinct placements in one validation, a visible read-only child under a parent made unavailable by a tracker change, the wizard in the UD-05 steady state, a REST project move, a REST project create with a stale hidden default, a copy that keeps the parent (model and REST) and a tracker move with a stale default.
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -987,7 +1000,7 @@ Revert the PR. Columns already widened stay widened; revert them with REVERT=1 C
 
 **Scope**
 
-Milestone checkpoint inside the single release 0.1.0 (UD-01 resolved): no version bump and no tag. Full evidence run on one SHA, and the CHANGELOG 'Unreleased (0.1.0)' section gets the M1 lines (Added, Changed, Fixed, API, Upgrade notes per PC-04 and PC-06..PC-21, without the withdrawn PC-07 and PC-09), README API section (new 422 reasons, unchanged shape), README validation section (legacy values accepted until the parent changes, copies, cycles; an unavailable parent and non-editable children behave as before). Full evidence including the manual MariaDB run.
+Milestone checkpoint inside the single release 0.1.0 (UD-01 resolved): no version bump and no tag. Full evidence run on one SHA, and the CHANGELOG 'Unreleased (0.1.0)' section gets the M1 lines (Added, Changed, Fixed, API, Upgrade notes per PC-04, PC-06..PC-21 and PC-69, without the withdrawn PC-07 and PC-09), README API section (new 422 reasons, unchanged shape), README validation section (legacy values accepted until the parent changes, copies, cycles; an unavailable parent behaves as before; on issues and projects a parent change is refused while a dependent field the user cannot edit holds a value the new parent value does not allow, WP-09b). Full evidence including the manual MariaDB run.
 
 **Files**
 
@@ -1002,11 +1015,11 @@ Milestone checkpoint inside the single release 0.1.0 (UD-01 resolved): no versio
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 and on MariaDB 10.11 (5.1, 7.0)
-- CHANGELOG 'Unreleased (0.1.0)' covers PC-04 and PC-06..PC-21; init.rb version unchanged
+- CHANGELOG 'Unreleased (0.1.0)' covers PC-04, PC-06..PC-21 and PC-69; init.rb version unchanged
 
 **Compatibility notes**
 
-Minor release: API returns new 422 reasons; validation is more lenient for stored values; MySQL saves refuse oversize instead of 500/truncation.
+Minor release: API returns new 422 reasons; validation is more lenient for stored values, and stricter for parent changes with a non-editable dependent value on issues and projects (WP-09b); MySQL saves refuse oversize instead of 500/truncation.
 
 **Rollback**
 
@@ -1131,7 +1144,9 @@ Additive markup only; HTML grows by per-field JSON bounded by the stored YAML (a
 
 Revert the PR; markup returns to the previous shape. No data effect.
 
-**Related decisions and defects**: UD-06, UD-08
+**Open input from WP-09b (UD-07)**: a child the user cannot edit is never rendered as an input (core iterates `editable_custom_field_values` on the issue form and `visible_custom_field_values` on the project form), so it carries no data-dcf-* and the runtime cannot predict the WP-09b refusal of a parent change. A warning needs a separate carrier in the form scope (proposal: one hidden element per visible read-only child, rendered from view_issues_form_details_bottom or view_projects_form, holding the parent id, the stored parent baseline and per non-tolerated child value the parent keys that allow it). For a role-invisible child the page must never contain its id, name, value or mapping; even a minimal carrier would reveal per parent value whether the hidden value is allowed, so it needs the owner decision UD-37 (open, 0.1.0 (M2)) before WP-16 starts. Until then the server message is the only feedback.
+
+**Related decisions and defects**: UD-06, UD-08, UD-37
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -1192,7 +1207,9 @@ No user-visible change: the new file is not loaded yet. The legacy asset path ch
 
 Revert the PR; the legacy file returns to its original name.
 
-**Related decisions and defects**: UD-04, UD-05, UD-09, UD-10, UD-12, UD-30
+**Open input from WP-09b (UD-07)**: the runtime never disables parent options and never blocks submit for a child the user cannot edit; any hint for a predicted WP-09b refusal follows the carrier decision UD-37 (recorded under WP-16) and would need new runtime keys owned by WP-18. The runtime must keep an editable dependent field's stored value that its parent does not allow until the user changes that parent (UD-04, F6): the legacy script clears it and posts '', which makes WP-09b refuse the form save when a field the user cannot edit depends on it (0.1.0 (M1) only).
+
+**Related decisions and defects**: UD-04, UD-05, UD-09, UD-10, UD-12, UD-30, UD-37
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -1267,7 +1284,9 @@ Breaking for integrations reading the removed globals or relying on disabled chi
 
 Revert the PR: the legacy script, inline global and cache return. On persistent cache stores run Rails.cache.delete('depending_custom_fields/mapping') once after the revert so the reinstated cache is not stale.
 
-**Related decisions and defects**: UD-11, UD-13, UD-14
+**Open input from WP-09b (UD-07)**: removing the legacy script ends the 0.1.0 (M1) case in which it clears an editable dependent field whose stored value its parent does not allow, so that WP-09b refuses the form save when a field the user cannot edit depends on it; a system spec of WP-18 should show such a form saving a note. New hint keys for a predicted refusal depend on UD-37.
+
+**Related decisions and defects**: UD-11, UD-13, UD-14, UD-37
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -2004,7 +2023,7 @@ Version 0.1.0 in init.rb and the release tag (UD-01 resolved: one release for al
 **Acceptance**
 
 - One SHA green on 5.1, 6.0, 6.1, 7.0 with system specs on 5.1 and 7.0
-- Every upgrade-notes register entry has its CHANGELOG line, and the 0.1.0 section contains all lines of M1, M2 and M3 (PC-04, PC-06..PC-68)
+- Every upgrade-notes register entry has its CHANGELOG line, and the 0.1.0 section contains all lines of M1, M2 and M3 (PC-04, PC-06..PC-69)
 
 **Compatibility notes**
 

@@ -2,6 +2,8 @@ require_relative 'lib/redmine_depending_custom_fields'
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_controller_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/issue_validation_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/project_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/projects_helper_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 
@@ -65,3 +67,10 @@ context_menu_controller =
   end
 context_menu_controller.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
 IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch
+# WP-09b (UD-07): Issue and Project are the only customizables that override
+# validate_custom_field_values to skip values the user cannot edit (Redmine
+# 5.1 to 7.0, same constants everywhere). The patches add the dependency
+# check for those values; the other customizables already validate every
+# value and are not patched. A repeated prepend is a no-op.
+Issue.prepend RedmineDependingCustomFields::Patches::IssueValidationPatch
+Project.prepend RedmineDependingCustomFields::Patches::ProjectValidationPatch

@@ -75,3 +75,10 @@ en:
   error_forbidden: "You are not allowed to perform this action."
   error_save_failed: "The change could not be saved."
   error_dcf_audit_table_missing: "The configuration audit table is missing. Run the plugin migrations before using this feature."
+  error_dcf_hidden_child_conflict: "This change cannot be saved because a dependent field you cannot see has a value that the change does not allow."
+
+  # Model errors, shown after the field name
+  activerecord:
+    errors:
+      messages:
+        dcf_hidden_child_conflict: "cannot be changed because a dependent field you cannot see has a value that does not match the new value"

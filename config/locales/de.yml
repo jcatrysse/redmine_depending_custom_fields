@@ -75,3 +75,10 @@ de:
   error_forbidden: "Sie sind nicht berechtigt, diese Aktion auszuführen."
   error_save_failed: "Die Änderung konnte nicht gespeichert werden."
   error_dcf_audit_table_missing: "Die Audit-Tabelle für die Konfiguration fehlt. Führen Sie die Plugin-Migrationen aus, bevor Sie diese Funktion verwenden."
+  error_dcf_hidden_child_conflict: "Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, den die Änderung nicht zulässt."
+
+  # Modellfehler, nach dem Feldnamen angezeigt
+  activerecord:
+    errors:
+      messages:
+        dcf_hidden_child_conflict: "kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, der nicht zum neuen Wert passt"

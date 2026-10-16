@@ -168,7 +168,10 @@ module RedmineDependingCustomFields
     # and only new values must be allowed; when it changed (an unavailable
     # parent counts as changed, UD-05) every value must be allowed. errors is
     # [] or one 'is invalid' in the active locale. No query, no current user
-    # (UD-07: no editable_by? rule); the parent comes only from +state+.
+    # (UD-07: no editable_by? rule); the parent comes only from +state+. The
+    # formats call it for the values core validates; for the children the
+    # user cannot edit on issues and projects, NonEditableDependencies
+    # (WP-09b) resolves the user and calls it.
     def dependency_check(custom_value, state)
       current = normalize_values(custom_value.value)
       allowed = allowed_for(custom_value.custom_field, state)

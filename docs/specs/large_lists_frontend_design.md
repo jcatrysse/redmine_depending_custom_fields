@@ -1,6 +1,6 @@
 # Frontend runtime design, revision 2: points 1 (client), 2, 3, 4, 5 (client)
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 (client side), 2, 3, 4, 5 (client side). Owner area: frontend (issue-form runtime, context-menu wizard script, plugin CSS, runtime locale keys, client contract C1 jointly with the server area). Work packages: WP-16, WP-17, WP-18, WP-19, WP-20 (primary, release 0.1.0 (M2)); WP-15 (named wizard save route and form action, 0.1.0 (M2)); WP-01 (JS toolchain), WP-03 (legacy bulk hotfix that pre-ships row B1m) all 0.0.16, and WP-04 (legacy jsdom characterization, 0.1.0 (M1)); WP-05 (`DependencyRules.parent_of`, `effective_parent_id`, shared rules case table, 0.1.0 (M1)), WP-09 and WP-10 (server D1 per value, copies, effective parent, 0.1.0 (M1)) for the server requirements of section 14. Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-08, UD-09, UD-10, UD-11, UD-12, UD-13, UD-30, UD-32.
+> Points: 1 (client side), 2, 3, 4, 5 (client side). Owner area: frontend (issue-form runtime, context-menu wizard script, plugin CSS, runtime locale keys, client contract C1 jointly with the server area). Work packages: WP-16, WP-17, WP-18, WP-19, WP-20 (primary, release 0.1.0 (M2)); WP-15 (named wizard save route and form action, 0.1.0 (M2)); WP-01 (JS toolchain), WP-03 (legacy bulk hotfix that pre-ships row B1m) all 0.0.16, and WP-04 (legacy jsdom characterization, 0.1.0 (M1)); WP-05 (`DependencyRules.parent_of`, `effective_parent_id`, shared rules case table, 0.1.0 (M1)), WP-09 and WP-10 (server D1 per value, copies, effective parent, 0.1.0 (M1)) for the server requirements of section 14. Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-08, UD-09, UD-10, UD-11, UD-12, UD-13, UD-30, UD-32, UD-37.
 
 Scope:
 - Replace `assets/javascripts/depending_custom_fields.js` with one UMD file. The file holds the pure rules and the DOM runtime, and is driven by per-field data attributes.
@@ -174,6 +174,8 @@ Rails JSON-encodes Hash and Array data values and HTML-escapes them. The caller'
 | `data-dcf-stored` | JSON `{"child":[<baseline child keys>],"parent":[<baseline parent keys>]}` from the server D1 baseline: `DependencyRules.child_baseline(custom_value)` (child) and `ParentState#baseline` (parent) for persisted records, the copy source's stored child and parent values for issue copies (UD-06). `parent` is `[]` when blank or unavailable; `child` is `[]` when empty, and also while the parent is not available on the record, because the server then tolerates nothing (UD-05). | form context, active child, and `customized.persisted?` or an issue copy (`copy?` with a source, server S7). Absent for every other new record. | yes: D1 legacy eligibility and the "no baseline" flag for defaults at load |
 
 The client compares every key and value as `String(x)`. Unknown keys and values without an option are ignored.
+
+A dependent field the user cannot edit (read-only by workflow, or role-invisible) is never rendered as a control (core iterates `editable_custom_field_values` on the issue form and `visible_custom_field_values` on the project form), so it emits no `data-dcf-*` attribute at all. The server judges it when the parent changes (WP-09b, UD-07); a separate carrier for such children is open decision UD-37 (section 11, section 14 item 9).
 
 Why the map is not pruned:
 - server validation reads exactly `Sanitizer.sanitize_dependencies`;
@@ -664,6 +666,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - Hint labels with markup characters: `textContent` only.
 - The parent label cannot be resolved: generic texts.
 - The meta tag is missing or invalid: English fallbacks.
+- A child the user cannot edit (read-only by workflow, or role-invisible) is never rendered as an input: core iterates `editable_custom_field_values` (issue form) or `visible_custom_field_values` (project form), so it has no data-dcf-* and no `data-dcf-stored`. The server refuses a parent change that would leave it with a disallowed value (WP-09b, UD-07); the browser cannot predict that refusal. A carrier for visible read-only children and the privacy rule for role-invisible ones are open inputs to WP-16 (see the WP-16 note in large_lists_work_packages.md) and open owner decision UD-37 (0.1.0 (M2)).
 
 ## 12. Test plan
 
@@ -781,6 +784,7 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
 6. **Wizard:** named route action (WP-15); `render_custom_field` with value `nil` (UD-11); implicit labels; request spec that Save without a choice changes nothing (WP-18).
 7. **Head hook and `ClientConfig`** as in 3.6 (WP-18): `<meta name="dcf-i18n">` written with `tag.meta(name: META_NAME, content: payload.to_json)`. The hook spec renders the meta in all four locales and asserts that every `ClientConfig::I18N` value resolves without "translation missing".
 8. **Drop** `spec/fixtures/dcf_client_contract.json` in favour of 12.1 (WP-16).
+9. **Children the user cannot edit (WP-09b, UD-07; pending UD-37):** they have no control and no `data-dcf-*` (3.3), and the server refuses a parent change that would leave them with a disallowed value. If UD-37 allows it, the carrier for visible read-only children comes from `view_issues_form_details_bottom` (issue form) or `view_projects_form` (project form) in the form scope: the parent id, the stored parent baseline and, per non-tolerated stored value, the parent keys that allow it. A role-invisible child never appears in the page (no id, name, value or mapping) unless UD-37 decides otherwise.
 
 ## 15. Positions on cross issues owned by other areas (recorded for the consolidated plan; no frontend runtime change)
 

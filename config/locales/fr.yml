@@ -75,3 +75,10 @@ fr:
   error_forbidden: "Vous n'êtes pas autorisé à effectuer cette action."
   error_save_failed: "La modification n'a pas pu être enregistrée."
   error_dcf_audit_table_missing: "La table d'audit de la configuration est manquante. Exécutez les migrations du plugin avant d'utiliser cette fonctionnalité."
+  error_dcf_hidden_child_conflict: "Cette modification ne peut pas être enregistrée, car un champ dépendant que vous ne pouvez pas voir a une valeur que la modification n'autorise pas."
+
+  # Erreurs de modèle, affichées après le nom du champ
+  activerecord:
+    errors:
+      messages:
+        dcf_hidden_child_conflict: "ne peut pas être modifié(e), car un champ dépendant que vous ne pouvez pas voir a une valeur qui ne correspond pas à la nouvelle valeur"

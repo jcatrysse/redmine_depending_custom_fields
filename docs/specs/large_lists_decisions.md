@@ -1,6 +1,6 @@
 # Large lists: decision register
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-34.
+> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-37.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ## Contents
 
-1. Owner decisions UD-01 to UD-34
+1. Owner decisions UD-01 to UD-37
 2. Deviations from the default decisions D1 to D10
 3. Area design decisions
 4. Which decisions block which release
@@ -23,7 +23,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-04 | Resolved | 0.1.0 (M1) | WP-09, WP-17 | D1 per value: while the parent is unchanged, tolerate every value already stored and validate only newly added values (deviation from the whole-set wording of D1)? |
 | UD-05 | Resolved | 0.1.0 (M1) | WP-09, WP-17 | Accept an untouched stored child when its parent field is not available on the record (for example not enabled for the tracker)? |
 | UD-06 | Resolved | 0.1.0 (M1) | WP-09, WP-16 | Judge issue copies (single, bulk, project copy) against the source issue so unchanged legacy combinations are copied? |
-| UD-07 | Resolved | 0.1.0 (M1) | WP-09 | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
+| UD-07 | Resolved | 0.1.0 (M1) | WP-09, WP-09b | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
 | UD-08 | Resolved | 0.1.0 (M1) | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
 | UD-09 | Open | 0.1.0 (M2) | WP-17, WP-20 | Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links? |
 | UD-10 | Open | 0.1.0 (M2) | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
@@ -53,6 +53,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-34 | Resolved | 0.0.16 | WP-01, WP-07 | Keep requires_redmine 5.0 while testing only 5.1 to 7.0, documenting Ruby 2.7 or newer? |
 | UD-35 | Resolved | 0.1.0 (M1) | WP-05, WP-10, WP-16 | A stored self-parent (a field that names itself as parent): treat it as a cycle of one? |
 | UD-36 | Resolved | 0.1.0 (M1) | WP-05, WP-10 | Parent select on the admin form: never offer the field itself, even when it is the stored (self) parent? |
+| UD-37 | Open | 0.1.0 (M2) | WP-16, WP-17, WP-18 | May a minimal carrier for a role-invisible child reveal, per parent value, whether the hidden value is allowed, or is the server message the only feedback? |
 
 ### UD-01
 
@@ -140,9 +141,17 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ### UD-07
 
-**Status: Resolved by the owner (deviates from the recommendation).** Keep today's behaviour: an unchanged dependent field that the current user cannot edit is still validated when its parent changes, and an invalid value rejects the save. Accepted consequence: for that role the parent stays effectively uneditable while the child holds a value the new parent does not allow. Design rule S8, QA-08 and `DependencyRules.editable_by?` are withdrawn; WP-09 pins the rejection with a spec instead. No CHANGELOG line (PC-09 withdrawn).
+**Status: Resolved by the owner (deviates from the recommendation).** Keep today's behaviour: an unchanged dependent field that the current user cannot edit is still validated when its parent changes, and an invalid value rejects the save. Accepted consequence: for that role the parent stays effectively uneditable while the child holds a value the new parent does not allow. Design rule S8, QA-08 and `DependencyRules.editable_by?` are withdrawn (PC-09 stays withdrawn). WP-09b adds the plugin rule for issues and projects and its specs; the stricter issue and project behaviour gets its own CHANGELOG Changed line and an upgrade note (PC-69, UN-48).
 
 **WP-09 observation and owner confirmation (rules lead).** WP-09 found that core Issue and Project validate only `editable_custom_field_values` (core-7.0 `app/models/issue.rb:875-880` and `app/models/project.rb:1026-1031`; the same on 5.1, 6.0 and 6.1), so on an issue or a project a child the current user cannot edit was never validated and a parent change by that user saved; time entries and the other customizables validate every value and rejected it. The owner confirmed the intent of this decision for every object: the rules lead. A plugin rule (WP-09b) therefore also validates the depending children the user cannot edit on issues and projects, with the same D1 rule as editable children (tolerated while the parent is unchanged, strict once it changed): a parent change is rejected while such a child holds a value the new parent value does not allow. Error placement: a child the user can see (read-only by workflow) gets the standard 'is invalid' under its own name; a child the user cannot see (role-invisible) is never named, the error goes on the parent field with a dedicated message. No editable_by? relaxation exists.
+
+**WP-09b refinements and consequences (owner acknowledgement pending).** The implementation follows the rule above without relaxing it; these points go beyond the confirmed wording and are listed for the owner:
+- Base placement, a second key: when the parent field is not shown to the user either (not visible for the user's roles, or not available on the issue after a tracker or project change or because it is disabled there), naming it would show a hidden field or a field that is not on the form, so the message goes on base with `error_dcf_hidden_child_conflict` (in addition to `activerecord.errors.messages.dcf_hidden_child_conflict` on a shown parent). The base message is also used when the parent value did not change: core gave the hidden child a stale default (a copy that keeps the parent, a tracker or project move that makes the child available, a programmatic `Project.copy_from`), so nobody changed the parent and the parent-field message ('cannot be changed ... the new value') would be wrong.
+- UD-05 steady state: while the parent field is not available on an issue, it counts as changed on every save that assigns custom values. For a user who cannot edit a dependent field holding a value, every such edit is refused, even when nobody touches the parent: the issue form and bulk edit whenever they show a custom field the user can edit (also for a note or a status change), the wizard, and email replies, including notes-only replies (MailHandler always assigns custom values; the notes are lost, core sends no bounce). REST updates without custom field values still save.
+- New issues, new projects, copies and moves: core resets a value the author cannot edit to the field default on a new issue or a copy, a new project gets the default of every field the user cannot see (the new project form and REST POST `/projects.json`; the UI project copy is admin-only, where core validates every field), and a tracker or project move gives a non-editable child that was not available its default. A stale default the parent value does not allow refuses the new issue, the new project, the copy or the move, and project copy skips such an issue (logged; `Project#copy` returns false, the UI redirects without a notice). Stale defaults exist only in legacy rows or direct database writes: since 9d3df09 `before_custom_field_save` clears `default_value` whenever the parent resolves.
+- 0.1.0 (M1) only: the legacy issue-form script clears an editable dependent field whose stored value its parent does not allow; when a field the user cannot edit depends on it, the form save is refused. The 0.1.0 (M2) runtime keeps such values (WP-17).
+- Other objects (time entries, versions, users, groups, documents, enumerations): core validates every value and puts the D1 'is invalid' under the child's own name, also for a role-invisible child, so there the child is named. WP-09b leaves this unchanged (out of its scope: the task patched only the objects whose core validation skips non-editable values). Pinned by the time entry example of `spec/requests/dcf_issue_flows_spec.rb` and the version example of `spec/requests/dcf_non_editable_children_spec.rb`.
+- Feedback before submit for children without a form control is open decision UD-37.
 
 **Question.** Never reject an unchanged dependent field that the current user cannot edit when its parent changes?
 
@@ -150,9 +159,9 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 **Alternatives.** Keep rejecting; the parent then stays effectively uneditable for that role.
 
-**Impact.** WP-09.
+**Impact.** WP-09, WP-09b: the plugin rule for issues and projects, the base placement with a second key, the UD-05 steady state, stale defaults on new issues, new projects, copies and moves, the 0.1.0 (M1) legacy-script case and the named hidden child on the other objects (refinements and consequences above, owner acknowledgement pending); UD-37 for the client side (WP-16 to WP-18).
 
-**Work packages.** WP-09
+**Work packages.** WP-09, WP-09b
 
 ### UD-08
 
@@ -528,6 +537,18 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 **Work packages.** WP-05, WP-10
 
+### UD-37
+
+**Question.** A dependent field the user cannot edit (read-only by workflow, or role-invisible) has no form control, so the issue-form runtime cannot predict the WP-09b refusal of a parent change (UD-07). May a minimal carrier for a role-invisible child reveal, per parent value, whether the hidden value is allowed, or is the server message the only feedback?
+
+**Recommendation.** The server message is the only feedback for a role-invisible child: the page never contains its id, name, value or mapping, and no per-parent-value flag either, because even one flag per parent value reveals something about a hidden value. A visible read-only child may get a carrier (the parent id, the stored parent baseline and, per non-tolerated stored value, the parent keys that allow it), rendered from view_issues_form_details_bottom or view_projects_form.
+
+**Alternatives.** A minimal carrier for role-invisible children too (one allowed or not allowed flag per parent value, no name or value), so the runtime can warn before submit, at the cost of revealing per parent value whether the hidden value fits; or no carrier at all, also for visible read-only children.
+
+**Impact.** WP-16 (carrier markup and the privacy rule), WP-17 (runtime warning, never disabling parent options or blocking submit), WP-18 (any new hint keys). Raised by WP-09b (UD-07).
+
+**Work packages.** WP-16, WP-17, WP-18
+
 ## 2. Deviations from the default decisions
 
 The area designs started from ten default decisions. This table shows where the final plan follows them, refines them or deviates from them, and why.
@@ -558,7 +579,7 @@ The area designs started from ten default decisions. This table shows where the 
 | S5 | Effective parent = exists, same type, family format, not self, and the ancestor chain is acyclic. It is used by validation, ClientData and SelectionGraph alike. Fields without one (dangling, invalid, cycle members, chains reaching a cycle) are unconstrained everywhere. | Client and server must agree. A stored cycle otherwise leaves both members blank with no options. Stored cycles are now refused at save, so only legacy data and races are affected, and the admin warning shows them. | Keep validating cycle members per mapping (client and server disagree; unusable UI). |
 | S6 | D1 is per value: while the parent is unchanged, values already in the baseline are tolerated and only new values must be allowed. Parent changed means strict. A parent not available on the object counts as changed (UD-05: today's behaviour kept). | It matches core's own idiom (values - value_was - possible_values) and the frontend legacy behaviour (R14, QA-06, BC-06). Verified on 5.1 and 7.0: add, remove and reorder are accepted, a new bad value is rejected. | Whole-set comparison (revision 1; blocks multi edits). The client drops legacy values on any child edit (silent data loss). |
 | S7 | For new records that are issue copies (copy? true), the baseline is the source issue's stored child and parent values, read through @copied_from. | Copies of legacy combinations are rejected today, and project copy silently skips them (QA-07). Verified: copy unchanged is valid, a changed child or parent is strict. Core has no reader, so the ivar access is pinned by a spec on all 4 versions. | A new-record flag to the client, keeping the server strict (keeps the project-copy data loss). |
-| S8 | Withdrawn by UD-07 (owner kept today's behaviour). Originally: the dependency rule never rejects an unchanged child that the current user cannot edit (editable_custom_field_values), even when the parent changed. | Such errors cannot be fixed by that user (QA-08). Core Issue and Project validate only editable_custom_field_values; other customizables validate every value (WP-09 observation under UD-07). | Keep rejecting with a clearer message (parent remains effectively uneditable for that role). |
+| S8 | Withdrawn by UD-07 (owner kept today's behaviour); WP-09b adds the plugin rule for issues and projects; no editable_by?. Originally: the dependency rule never rejects an unchanged child that the current user cannot edit (editable_custom_field_values), even when the parent changed. | Such errors cannot be fixed by that user (QA-08). Core Issue and Project validate only editable_custom_field_values; other customizables validate every value (WP-09 observation under UD-07). | Keep rejecting with a clearer message (parent remains effectively uneditable for that role). |
 | S9 | FieldIndex is the single topology helper. It reads parent ids from raw YAML with an anchored regex (deserialization fallback), is built from loaded read-only records (0 queries) or from a raw select_all, and loads missing ids lazily in one batched query. DependencyRules::Graph and the competing limits proposal are dropped. | R18 and SP-08. A regex extraction costs 0.041 ms against a 16.6 ms YAML parse per S1 row. raw before_type_cast leaves the attribute undeserialized (probe_rev). | Parse each field's format_store per hop (YAML cost). find_by per hop (query per hop). |
 | S10 | Parents are resolved from customized.custom_field_values or from the selection's available fields first. carries? short-circuits objects that cannot hold the field's type (a Project in context menus). Query assertions use invariance only. | R16: 0 queries when parents are loaded (verified, 5 children, 0 queries). The context menu no longer parses hidden children's stores. The Project-object shortcut is invisible because core destructures 2 elements. | find_by per child (O(fields) queries). Absolute query counts (version-sensitive). |
 | S11 | The storage guard is owned by the limits area (validate :dcf_validate_storage_limits in Patches::CustomFieldValidationPatch, dcf_storage_too_large). The server provides a sanitize-only normalized_store_pairs shared by before_save and storage_preview(custom_field, store) (called as format.storage_preview(record, record.format_store)), including parent normalization. D6 pruning stays exclusively in the admin JSON transport. | R5 and UX-04: one owner, one key. BC-02: before_save must not rewrite stored mappings on API, extended-API or cascade saves. Preview bytes equal stored bytes. | Server-owned StorageLimits (revision 1, conflicting API). Pruning in before_save (silent data changes). |
@@ -714,7 +735,7 @@ Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release
 
 - **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
 - **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28, UD-35, UD-36 (resolved). UD-07 was confirmed after the WP-09 observation: the rules lead on every object (plugin rule WP-09b for issues and projects).
-- **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14 (open).
+- **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14, UD-37 (open).
 - **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (open).
 
 The open decisions only need an answer before the milestone that implements them starts.
