@@ -1,6 +1,6 @@
 # Large lists: work packages
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-37.
+> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-38.
 
 ## Purpose
 
@@ -607,7 +607,7 @@ No behaviour change. Removing QueryCustomFieldColumnPatch is invisible (it never
 
 Revert the PR; both format classes return to their duplicated bodies.
 
-**Related decisions and defects**: none
+**Related decisions and defects**: UD-38
 
 **Delivered (decisions taken during implementation)**
 
@@ -899,7 +899,22 @@ MySQL/MariaDB only. Saves that returned 500 now return a validation error; on no
 
 Revert the PR; MySQL returns to 500 or truncation. No data change.
 
-**Related decisions and defects**: UD-25, UD-28
+**Related decisions and defects**: UD-25, UD-28, UD-38
+
+**Delivered (decisions taken during implementation)**
+
+- `StorageLimits` as in limits design 4.2 (stateless `module_function`, called on the module so `column_limit` and `mysql?` stay the spec seams). `violations` checks per column, in `COLUMNS` order: `guarded?`, then `column_limit` (nil skips the column), then `writes_column?` (`check_column?` or a normalized format_store, see "What a save writes" below), then `preview_bytes`, and above the limit `writes_back?`, so PostgreSQL and SQLite never dump a value or resolve a parent for it. The limit is `column_limit` alone until WP-31. Errors carry `size`/`limit` delimited in the locale active during validation and the Integers `bytes`/`max_bytes` plus `column` in `errors.details`; `violation_in` rebuilds the first one (possible_values first). Core delimiters differ by version: on 5.1 en and nl have none and fr uses U+00A0, so the specs build expected numbers with `number_to_delimited` (the nl `65.536` of limits design 4.7 holds from 6.0 on).
+- `usage` checks `mysql?` first and returns `[]` without a query when the database is not MySQL, the record is new, its format is not guarded or no column limit is known; otherwise one `pick` of `LENGTH(possible_values)` and `LENGTH(format_store)`. A row is shown when `bytes * 100 >= limit * 90`; the percent is floored, so a shown value is never below 90; values above 100 percent (only after a limit drop) are shown as measured. It reads the stored bytes, so after a refused save the line shows the persisted usage.
+- What a save writes (review fix; refines the `check_column?` rule of limits design 4.5 so that its outcome, V5 and the section 14 row "Unrelated edit of a field whose stored columns exceed the limit: allowed" hold; `check_column?` itself is unchanged). `writes_back?` skips, above the limit only, a persisted column whose raw stored value equals the dump of its preview byte for byte (one `select_value` of that column, so only on MySQL and only above the limit). The admin form posts the parent id as a String, which dirties format_store (Rails 6.1 `format_store_will_change!`, Rails 7 and later an in-place change) without changing what before_save writes, so without it an unrelated admin-form edit of a depending field with a parent was refused once the stored bytes exceeded the limit (only after a limit drop, or with a 65,535 schema cache that predates widening); a row written by Rails stores exactly the Rails dump, so that save passes. A row whose stored YAML is not the Rails dump is dirty on every save (Rails compares the raw stored value with the new dump); when that dump exceeds the limit every save is refused with `dcf_storage_too_large` and nothing is written (PC-15, second review), for example a list that MariaDB stored without its final YAML newline (one byte over TEXT) or a raw-SQL row in another YAML style. `writes_column?` also measures a persisted format_store that the before_save of a depending format rewrites although the column is not dirty (`storage_preview` differs from the store, compared as Hashes, nothing dumped), for example a row without `default_value_dependencies` (last saved before 9d3df09 or written by raw SQL), to which before_save adds an empty mapping of about 83 bytes; without it such a name-only save could still overflow the column. A rename of a depending field therefore runs `storage_preview` once and dumps nothing; without a known limit it runs neither (`column_limit` is checked first).
+- `base_bytes` measures the in-memory format_store without the two mapping keys (design text). A parent id posted as a String is dumped quoted (2 bytes more than the stored Integer), and an id that does not resolve is counted as posted while the stored value is nil; WP-24 decides whether its fixture needs the `storage_preview` variant.
+- Registration: `CustomFieldValidationPatch` is required next to the other patches and prepended on the line after `CustomFieldPatch` (init.rb:59); its only callback is `validate :dcf_validate_storage_limits`, a Symbol, so a second prepend keeps one callback (ActiveSupport moves it to the end of the chain, still after `validate_custom_field`; the spec puts the chains back). Rails merges identical errors (autosave `errors.uniq!`), so the spec also checks that the measurement runs once. `CustomFieldPatch` is unchanged. Storage errors therefore follow every core and format error, the WP-10 circular error included.
+- Usage hint: `CustomFieldStorageHook` is required from init.rb next to `ContextMenuHook` (a listener that is only autoloadable never registers). It renders `custom_fields/_dcf_storage_usage` through `context[:hook_caller].render` with explicit locals (not `render_on`, which passes the whole context and has no rescue) and returns '' for a missing field or on any StandardError. `dcf_storage_usage_hint(field)` does the same with `admin: false` (no README line, no instance-variable memo); it sits after the scope banner on the values page and after the heading on the dependency page. The partial names `RedmineDependingCustomFields::StorageLimits` in full (a bare `StorageLimits` raises NameError in a view and the rescue would hide it). No CSS rule: assets are not in the file list.
+- Locales: the four registry texts unchanged (flat `field_value_dependencies`, `text_dcf_storage_usage`, `text_dcf_storage_admin_help`; `dcf_storage_too_large` inside the existing `activerecord.errors.messages` block).
+- Specs: `spec/lib/storage_limits_spec.rb` (API, seams, preview bytes equal stored bytes for the four formats, boundary per format and column, changed columns only, a write-back with a String parent id, a normalized row without a mapping key, a raw possible_values without its final newline refused on every save above the limit, no preview of a persisted field without a limit, the field id of a persisted violation, other formats untouched, order after the circular error, registration and a second prepend with the callback chains restored, texts in four locales, usage with its query-free early returns, the same queries shown or not and a percent above 100, base_bytes), `spec/lib/storage_limits_scale_spec.rb` (:large, S1 and the 65,535/65,536 boundary), `spec/lib/storage_normalizer_no_prune_spec.rb` (BC-02, a name-only API PUT saving while both stored columns are above a stubbed limit, a rename cascade refused over a stubbed limit with everything rolled back), `spec/requests/custom_fields_storage_limit_spec.rb` (admin form, legacy nested params, the full edit form of a depending field above the limit saving a rename and refusing a changed mapping, .js 422, reorder, usage line on the three pages with one added query each (differential), en and de, no `translation missing` in either spelling), new examples in `spec/requests/depending_custom_fields_api_spec.rb` and `spec/mysql/storage_limits_mysql_spec.rb` (:mysql). Request specs stub `StorageLimits.mysql?`, never `Redmine::Database.mysql?` (core switches to MySQL-only SQL on it).
+- Until WP-12 a storage violation on a project page is the generic audited `error_save_failed` (one `save_failed` row, unchanged `BaseService`); the specs assert only that an `OperationError` is raised and nothing is written.
+- MariaDB 10.11 (manual run, strict session mode): a value one byte over TEXT whose cut-off part is white space is stored truncated without an error (a 65,536-byte possible_values lost its final YAML newline and was stored as 65,535 bytes); a larger overflow raises `ActiveRecord::ValueTooLong`. The validation is the only guard for that case (pinned for MariaDB in the :mysql spec, which skips the example on other MySQL servers: not observed here).
+- **Acceptance item 2 is NOT met** ("Manual MariaDB recipe on 5.1 and 7.0: suite green including :mysql specs"). MariaDB 10.11.14, full plugin suite including the :mysql specs after the second review fixes (1,309 examples: the 1,303 of PostgreSQL plus the 6 :mysql examples, run options without the :mysql exclusion): 7.0 `1309 examples, 1 failure` (seed 45519) (`<MariaDB work dir>/logs/7.0-rspec-20261019-150205.log`), 5.1 `1309 examples, 4 failures` (seed 43232) (`<MariaDB work dir>/logs/5.1-rspec-20261019-150740.log`); `--tag mysql` alone: `6 examples, 0 failures` on both (`5.1-rspec-subset-20261019-151500.log`, `7.0-rspec-subset-20261019-151527.log`). The 7.0 failure and one 5.1 failure are `spec/lib/depending_format_methods_spec.rb:395`, pre-existing at 92b2a13 (baseline logs `7.0-rspec-20261019-112739.log`, 1 failure, and `5.1-rspec-20261019-113149.log`, 2 failures; that example alone at 92b2a13 raises `ActiveRecord::ValueTooLong` on both copies, `7.0-rspec-subset-20261019-132802.log` and `5.1-rspec-subset-20261019-132817.log`). `spec/lib/depending_format_methods_spec.rb:395` (WP-06, :large) saves the S1 list (5,570 values, 81,239 bytes of YAML) for real, which no TEXT column holds: `ActiveRecord::ValueTooLong` at 92b2a13, `RecordInvalid` (`dcf_storage_too_large`) now. Owner decision UD-38 (resolved): that example skips itself where the measured column limit cannot hold S1; WP-13 applies it, so the item stays open until WP-13. On 5.1 only, the "validates and saves an update with the same number of queries" examples of `spec/requests/issue_form_query_invariance_spec.rb` differ by one query in either direction from run to run; they are the other three 5.1 failures above. At 92b2a13 that file alone with `--seed 43232` failed three times with one different example each time (`5.1-rspec-subset-20261019-151237.log`, `-151301.log`, `-151326.log`; earlier with `--seed 1`: two failures, two failures, then green); WP-11 adds no query to an issue update.
+- CHANGELOG: the PC-14 Added and Fixed lines, the PC-17 Added line, "circular parent and MySQL oversize" in the PC-21 API line, and the first two sentences of the PC-15 Upgrade-notes line; WP-13 appends the widening and report_sizes sentences and adds the rake-task Added line.
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -978,6 +993,7 @@ lib/tasks/redmine_depending_custom_fields.rake with thin wrappers (no DB access 
 - spec/tasks/redmine_depending_custom_fields_rake_spec.rb (new)
 - spec/mysql/core_column_widener_mysql_spec.rb (new, tag :mysql)
 - `spec/quality/ci_workflows_spec.rb`
+- `spec/lib/depending_format_methods_spec.rb` (only the :395 example: the UD-38 column-limit skip)
 - `CHANGELOG.md`
 
 **Tests**
@@ -1001,7 +1017,9 @@ Opt-in tools; nothing alters core tables automatically. Widened columns are harm
 
 Revert the PR. Columns already widened stay widened; revert them with REVERT=1 CONFIRM=1 before reverting if wanted.
 
-**Related decisions and defects**: UD-26, UD-27
+**Open input from WP-11**: `text_dcf_storage_admin_help` (admin custom field form, under the storage usage line) points to the README section "MySQL / MariaDB and large lists"; that section must exist before the M1 checkpoint (WP-14), and so before the 0.1.0 tag (WP-32). WP-13 also completes the canonical MySQL Upgrade-notes line of 0.1.0 (M1) (WP-11 wrote "On MySQL servers running without strict mode, ... Core List and Key/Value list fields are checked too."; the widening and report_sizes sentences are WP-13's) and adds the rake-task Added line between the two WP-11 Added lines. The WP-11 MariaDB evidence came from a manual run in copies of the 5.1 and 7.0 checkouts (private MariaDB 10.11 on 127.0.0.1:3307, `tx_isolation` because MariaDB 10.11 has no `transaction_isolation`, `mariadb-install-db --skip-test-db`, `bundle install --local`, PostgreSQL `db/schema.rb` removed); `.codex/test_setup.sh --db mysql` and the optional workflow can follow it. `spec/lib/depending_format_methods_spec.rb:395` (S1 saved for real, 81,239 bytes) cannot pass on TEXT columns; per owner decision UD-38 (resolved) WP-13 adds a column-limit guard so that example skips itself, with the reason, where the column cannot hold S1, and WP-11 acceptance item 2 waits for it. A row whose stored YAML is not the Rails dump and whose dump exceeds the limit (for example a list MariaDB stored one byte over TEXT without its final newline) refuses every save since WP-11, a rename included; the README section names widening as the way out. On Redmine 5.1 the issue-update query-count examples of `spec/requests/issue_form_query_invariance_spec.rb` are unstable on MariaDB (one query more or less between runs of the same seed, already at HEAD 92b2a13); not yet investigated.
+
+**Related decisions and defects**: UD-26, UD-27, UD-38
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
@@ -1027,7 +1045,7 @@ Milestone checkpoint inside the single release 0.1.0 (UD-01 resolved): no versio
 
 **Acceptance**
 
-- One SHA green on 5.1, 6.0, 6.1, 7.0 and on MariaDB 10.11 (5.1, 7.0)
+- One SHA green on 5.1, 6.0, 6.1, 7.0 and on MariaDB 10.11 (5.1, 7.0); the MariaDB item needs UD-38 applied (WP-13)
 - CHANGELOG 'Unreleased (0.1.0)' covers PC-04, PC-06..PC-21 and PC-69; init.rb version unchanged
 
 **Compatibility notes**
@@ -1038,7 +1056,7 @@ Minor release: API returns new 422 reasons; validation is more lenient for store
 
 Do not tag; revert the version bump.
 
-**Related decisions and defects**: UD-01
+**Related decisions and defects**: UD-01, UD-38
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 

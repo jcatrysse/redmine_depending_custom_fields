@@ -79,9 +79,15 @@ fr:
   error_dcf_audit_table_missing: "La table d'audit de la configuration est manquante. Exécutez les migrations du plugin avant d'utiliser cette fonctionnalité."
   error_dcf_hidden_child_conflict: "Cette modification ne peut pas être enregistrée, car un champ dépendant que vous ne pouvez pas voir a une valeur que la modification n'autorise pas."
 
+  # Limites de stockage de la base de données (MySQL/MariaDB)
+  field_value_dependencies: "Mappage des dépendances"
+  text_dcf_storage_usage: "%{label} : %{size} octets utilisés sur %{limit} dans la base de données (%{percent} %)."
+  text_dcf_storage_admin_help: "Pour les très grandes listes, utilisez le format Liste clé/valeur (dépendante) ou agrandissez les colonnes de la base de données (voir le README du plugin, section « MySQL / MariaDB and large lists »)."
+
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:
     errors:
       messages:
         dcf_hidden_child_conflict: "ne peut pas être modifié(e), car un champ dépendant que vous ne pouvez pas voir a une valeur qui ne correspond pas à la nouvelle valeur"
         dcf_circular_dependency: "désigne ce champ ou l'un de ses champs dépendants, ce qui créerait une dépendance circulaire"
+        dcf_storage_too_large: "est trop volumineux pour être enregistré (%{size} octets, la base de données autorise au plus %{limit} octets)"

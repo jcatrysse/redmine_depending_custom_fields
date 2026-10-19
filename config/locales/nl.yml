@@ -79,9 +79,15 @@ nl:
   error_dcf_audit_table_missing: "De audittabel voor de configuratie ontbreekt. Voer de plugin-migraties uit voordat u deze functie gebruikt."
   error_dcf_hidden_child_conflict: "Deze wijziging kan niet worden opgeslagen, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die de wijziging niet toestaat."
 
+  # Opslaglimieten van de database (MySQL/MariaDB)
+  field_value_dependencies: "Afhankelijkheidskoppeling"
+  text_dcf_storage_usage: "%{label}: %{size} van %{limit} bytes gebruikt in de database (%{percent}%)."
+  text_dcf_storage_admin_help: "Gebruik voor zeer grote lijsten het formaat Sleutel/Waarde-lijst (afhankelijk) of vergroot de databasekolommen (zie de README van de plugin, sectie \"MySQL / MariaDB and large lists\")."
+
   # Modelfouten, getoond na de veldnaam
   activerecord:
     errors:
       messages:
         dcf_hidden_child_conflict: "kan niet worden gewijzigd, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die niet bij de nieuwe waarde past"
         dcf_circular_dependency: "verwijst naar dit veld of naar een van zijn afhankelijke velden, wat een circulaire afhankelijkheid zou veroorzaken"
+        dcf_storage_too_large: "is te groot om op te slaan (%{size} bytes, de database staat maximaal %{limit} bytes toe)"

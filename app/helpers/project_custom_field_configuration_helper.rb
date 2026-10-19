@@ -97,6 +97,18 @@ module ProjectCustomFieldConfigurationHelper
     end
   end
 
+  # Storage usage line of the values and dependency pages at 90 percent of a
+  # column limit, MySQL only (UD-28); no README line here. A hint never
+  # breaks the page.
+  def dcf_storage_usage_hint(field)
+    usage = RedmineDependingCustomFields::StorageLimits.usage(field)
+    return '' if usage.empty?
+
+    render(partial: 'custom_fields/dcf_storage_usage', locals: { usage: usage, admin: false })
+  rescue StandardError
+    ''
+  end
+
   def dcf_audit_status_class(status)
     case status
     when 'success' then 'dcf-status-success'

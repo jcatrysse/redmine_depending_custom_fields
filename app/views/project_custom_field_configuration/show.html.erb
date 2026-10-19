@@ -25,6 +25,7 @@
     <%= scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning) %>
   </div>
 <% end %>
+<%= dcf_storage_usage_hint(@field) %>
 
 <% if @impact %>
   <%= render partial: 'confirm_panel',

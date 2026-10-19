@@ -4,6 +4,7 @@
 </div>
 
 <h2><%= h(@field.name) %> <em class="info">(<%= l(:label_custom_field_dependencies) %>)</em></h2>
+<%= dcf_storage_usage_hint(@field) %>
 
 <% if @parent %>
   <p class="info"><%= l(:field_parent_custom_field_id) %>: <strong><%= h(@parent.name) %></strong></p>

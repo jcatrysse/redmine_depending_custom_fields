@@ -1,0 +1,10 @@
+<% usage.each do |u| %>
+  <p class="dcf-storage-usage"><em class="info"><%= l(:text_dcf_storage_usage,
+       label: CustomField.human_attribute_name(u.attribute),
+       size: RedmineDependingCustomFields::StorageLimits.delimited(u.bytes),
+       limit: RedmineDependingCustomFields::StorageLimits.delimited(u.limit),
+       percent: u.percent) %></em></p>
+<% end %>
+<% if admin && usage.any? %>
+  <p class="dcf-storage-usage"><em class="info"><%= l(:text_dcf_storage_admin_help) %></em></p>
+<% end %>

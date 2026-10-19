@@ -1,11 +1,13 @@
 require_relative 'lib/redmine_depending_custom_fields'
 require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/custom_field_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_controller_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/project_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/projects_helper_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
+require_relative 'lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook'
 
 Redmine::Plugin.register :redmine_depending_custom_fields do
   name 'Redmine Depending Custom Fields'
@@ -54,6 +56,7 @@ CustomField.safe_attributes(
 )
 
 CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldPatch
+CustomField.prepend RedmineDependingCustomFields::Patches::CustomFieldValidationPatch
 # The issue context menu controller was namespaced in Redmine 7.0
 # (ContextMenus::IssuesController#index); Redmine 5.x/6.x used the flat
 # ContextMenusController#issues. Prepend onto whichever the running version

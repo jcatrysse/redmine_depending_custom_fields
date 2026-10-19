@@ -79,9 +79,15 @@ en:
   error_dcf_audit_table_missing: "The configuration audit table is missing. Run the plugin migrations before using this feature."
   error_dcf_hidden_child_conflict: "This change cannot be saved because a dependent field you cannot see has a value that the change does not allow."
 
+  # Database storage limits (MySQL/MariaDB)
+  field_value_dependencies: "Dependency mapping"
+  text_dcf_storage_usage: "%{label}: %{size} of %{limit} bytes used in the database (%{percent}%)."
+  text_dcf_storage_admin_help: "For very large lists use the Key/Value list (depending) format, or widen the database columns (see the plugin README, section \"MySQL / MariaDB and large lists\")."
+
   # Model errors, shown after the field name
   activerecord:
     errors:
       messages:
         dcf_hidden_child_conflict: "cannot be changed because a dependent field you cannot see has a value that does not match the new value"
         dcf_circular_dependency: "refers to this field or to one of its dependent fields, which would create a circular dependency"
+        dcf_storage_too_large: "is too large to store (%{size} bytes, the database allows at most %{limit} bytes)"

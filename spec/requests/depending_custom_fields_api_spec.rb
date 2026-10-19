@@ -421,4 +421,121 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect(CustomField.find(world.x.id).parent_custom_field_id).to eq(world.y.id)
     end
   end
+
+  # WP-11 (UN-32, PC-14, PC-21): a value list or mapping over the column limit
+  # is a new 422 reason with the full model message, in the response shape of
+  # every validation error; nothing is written.
+  describe "storage limit (WP-11)" do
+    let(:limits) { RedmineDependingCustomFields::StorageLimits }
+
+    def raw_column(field, column)
+      CustomField.connection.select_value(CustomField.where(id: field.id).select(column).to_sql)
+    end
+
+    def stub_limits(by_column)
+      allow(limits).to receive(:column_limit).and_return(nil)
+      by_column.each { |column, limit| allow(limits).to receive(:column_limit).with(column).and_return(limit) }
+    end
+
+    def capture_bytes
+      captured = {}
+      allow(limits).to receive(:preview_bytes).and_wrap_original do |original, record, column|
+        captured[column] = original.call(record, column)
+      end
+      captured
+    end
+
+    def storage_message(attribute, bytes, limit)
+      message = I18n.t("activerecord.errors.messages.dcf_storage_too_large",
+                       size: limits.delimited(bytes), limit: limits.delimited(limit))
+      "#{IssueCustomField.human_attribute_name(attribute)} #{message}"
+    end
+
+    it "answers 422 on create with the full message and creates nothing" do
+      values = %w[A B C]
+      bytes = limits.serialized_bytesize(CustomField, "possible_values", values)
+      stub_limits("possible_values" => bytes - 1)
+
+      expect do
+        post "/depending_custom_fields.json", params: { custom_field: {
+          name: "big list", type: "IssueCustomField", field_format: "list", possible_values: values
+        } }
+      end.not_to change { CustomField.count }
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body)).to eq("errors" => [storage_message(:possible_values, bytes, bytes - 1)])
+    end
+
+    it "rolls back a create with enumerations (no field, no enumerations)" do
+      parent = dcf_enum_field(names: %w[P])
+      stub_limits("format_store" => 1)
+      captured = capture_bytes
+
+      expect do
+        post "/depending_custom_fields.json", params: { custom_field: {
+          name: "big enum", type: "IssueCustomField",
+          field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION,
+          parent_custom_field_id: parent.id.to_s,
+          value_dependencies: { parent.enumerations.first.id.to_s => %w[1] },
+          enumerations: [{ name: "e1", position: 1, active: true }, { name: "e2", position: 2, active: true }]
+        } }
+      end.not_to change { [CustomField.count, CustomFieldEnumeration.count] }
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body))
+        .to eq("errors" => [storage_message(:value_dependencies, captured.fetch("format_store"), 1)])
+    end
+
+    it "answers 422 on update and leaves the columns and the enumerations unchanged" do
+      parent = dcf_enum_field(names: %w[P Q])
+      field = dcf_enum_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION,
+                             names: %w[c1 c2], parent: parent)
+      before = %w[possible_values format_store].map { |c| raw_column(field, c) }
+      names = field.enumerations.order(:id).pluck(:id, :name, :position)
+      stub_limits("format_store" => 1)
+      captured = capture_bytes
+
+      put "/depending_custom_fields/#{field.id}.json", params: { custom_field: {
+        name: "#{field.name}-x",
+        value_dependencies: { parent.enumerations.first.id.to_s => [field.enumerations.first.id.to_s] },
+        enumerations: [{ id: field.enumerations.first.id, name: "renamed", position: 1, active: true }]
+      } }
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body))
+        .to eq("errors" => [storage_message(:value_dependencies, captured.fetch("format_store"), 1)])
+      expect(%w[possible_values format_store].map { |c| raw_column(field, c) }).to eq(before)
+      expect(CustomField.find(field.id).name).to eq(field.name)
+      expect(field.enumerations.order(:id).pluck(:id, :name, :position)).to eq(names)
+    end
+
+    it "answers 422 for a possible_values update sent as a JSON body" do
+      field = dcf_list_field(values: %w[A B])
+      before = raw_column(field, "possible_values")
+      values = Array.new(50) { |i| "value #{i}" }
+      bytes = limits.serialized_bytesize(CustomField, "possible_values", values)
+      stub_limits("possible_values" => bytes - 1)
+
+      put "/depending_custom_fields/#{field.id}.json", params: { custom_field: { possible_values: values } }.to_json,
+                                                        headers: { "CONTENT_TYPE" => "application/json" }
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body)).to eq("errors" => [storage_message(:possible_values, bytes, bytes - 1)])
+      expect(raw_column(field, "possible_values")).to eq(before)
+    end
+
+    it "keeps 200 and the response keys at the limit" do
+      field = dcf_list_field(values: %w[A B])
+      get "/depending_custom_fields/#{field.id}.json"
+      keys = JSON.parse(response.body).keys
+      values = %w[A B C]
+      stub_limits("possible_values" => limits.serialized_bytesize(CustomField, "possible_values", values))
+
+      put "/depending_custom_fields/#{field.id}.json", params: { custom_field: { possible_values: values } }
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).keys).to eq(keys)
+      expect(CustomField.find(field.id).possible_values).to eq(values)
+    end
+  end
 end

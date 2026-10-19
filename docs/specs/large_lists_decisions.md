@@ -1,6 +1,6 @@
 # Large lists: decision register
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-37.
+> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-38.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ## Contents
 
-1. Owner decisions UD-01 to UD-37
+1. Owner decisions UD-01 to UD-38
 2. Deviations from the default decisions D1 to D10
 3. Area design decisions
 4. Which decisions block which release
@@ -54,6 +54,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-35 | Resolved | 0.1.0 (M1) | WP-05, WP-10, WP-16 | A stored self-parent (a field that names itself as parent): treat it as a cycle of one? |
 | UD-36 | Resolved | 0.1.0 (M1) | WP-05, WP-10 | Parent select on the admin form: never offer the field itself, even when it is the stored (self) parent? |
 | UD-37 | Open | 0.1.0 (M2) | WP-16, WP-17, WP-18 | May a minimal carrier for a role-invisible child reveal, per parent value, whether the hidden value is allowed, or is the server message the only feedback? |
+| UD-38 | Resolved | 0.1.0 (M1) | WP-06, WP-11, WP-13, WP-14 | On MySQL/MariaDB, spec/lib/depending_format_methods_spec.rb:395 (WP-06) saves the S1 list for real and can never pass on a TEXT column: exclude that one example where the column cannot hold S1, or run the MariaDB acceptance only after widen_core_columns? |
 
 ### UD-01
 
@@ -551,6 +552,20 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Work packages.** WP-16, WP-17, WP-18
 
+### UD-38
+
+**Status: Resolved by the owner (recommendation accepted).** On MySQL/MariaDB that one example skips itself, with the reason in the skip message, when the measured column limit cannot hold S1; it still runs on PostgreSQL, SQLite and widened MySQL columns. WP-13 makes the edit together with `.codex/test_setup.sh --db mysql`.
+
+**Question.** WP-11 acceptance item 2 ("Manual MariaDB recipe on 5.1 and 7.0: suite green including :mysql specs") cannot be met as the specs stand. `spec/lib/depending_format_methods_spec.rb:395` (WP-06, tag :large) saves the S1 list (5,570 values, 81,239 bytes of YAML) with `save!`. On a TEXT column (65,535 bytes) that save can never succeed: at 92b2a13 it raised `ActiveRecord::ValueTooLong`, since WP-11 it raises `ActiveRecord::RecordInvalid` (`dcf_storage_too_large`). WP-11 may not edit that spec; the WP-13 file list names it for this one example, only when UD-38 is resolved as recommended. How is that example treated on MySQL/MariaDB?
+
+**Recommendation.** Skip that one example where the measured column limit cannot hold S1 (a `StorageLimits.column_limit('possible_values')` guard in the example, with the reason in the skip message), so it still runs on PostgreSQL, SQLite and widened MySQL columns. The owner approves the edit of the WP-06 spec; WP-13 makes it together with `.codex/test_setup.sh --db mysql`.
+
+**Alternatives.** Run the MariaDB acceptance only after `widen_core_columns` (WP-13); the WP-11 :mysql examples read the real TEXT limit, so they would then need a second database that is not widened. Or accept the one red example and quote it in every MySQL acceptance run.
+
+**Impact.** WP-11 acceptance item 2 stays open until this is decided and applied (WP-11 Delivered block). WP-13 (MySQL recipe, `--db mysql`, the optional workflow) and the M1 checkpoint (WP-14). Not part of this question: on Redmine 5.1 the "validates and saves an update with the same number of queries" examples of `spec/requests/issue_form_query_invariance_spec.rb` are unstable on MariaDB (one query more or less between runs of the same seed, already at 92b2a13); WP-13 records them as an open input.
+
+**Work packages.** WP-06, WP-11, WP-13, WP-14
+
 ## 2. Deviations from the default decisions
 
 The area designs started from ten default decisions. This table shows where the final plan follows them, refines them or deviates from them, and why.
@@ -736,7 +751,7 @@ The area designs started from ten default decisions. This table shows where the 
 Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release 0.1.0 with milestones M1, M2 and M3.
 
 - **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
-- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28, UD-35, UD-36 (resolved). UD-07 was confirmed after the WP-09 observation: the rules lead on every object (plugin rule WP-09b for issues and projects).
+- **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28, UD-35, UD-36, UD-38 (resolved). UD-07 was confirmed after the WP-09 observation: the rules lead on every object (plugin rule WP-09b for issues and projects).
 - **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14, UD-37 (open).
 - **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (open).
 

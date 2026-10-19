@@ -79,9 +79,15 @@ de:
   error_dcf_audit_table_missing: "Die Audit-Tabelle für die Konfiguration fehlt. Führen Sie die Plugin-Migrationen aus, bevor Sie diese Funktion verwenden."
   error_dcf_hidden_child_conflict: "Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, den die Änderung nicht zulässt."
 
+  # Speichergrenzen der Datenbank (MySQL/MariaDB)
+  field_value_dependencies: "Abhängigkeitszuordnung"
+  text_dcf_storage_usage: "%{label}: %{size} von %{limit} Bytes in der Datenbank belegt (%{percent} %)."
+  text_dcf_storage_admin_help: "Verwenden Sie für sehr große Listen das Format Schlüssel/Wert-Liste (abhängig) oder vergrößern Sie die Datenbankspalten (siehe Plugin-README, Abschnitt „MySQL / MariaDB and large lists“)."
+
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:
     errors:
       messages:
         dcf_hidden_child_conflict: "kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, der nicht zum neuen Wert passt"
         dcf_circular_dependency: "verweist auf dieses Feld oder auf eines seiner abhängigen Felder, wodurch eine zirkuläre Abhängigkeit entstünde"
+        dcf_storage_too_large: "ist zu groß zum Speichern (%{size} Bytes, die Datenbank erlaubt höchstens %{limit} Bytes)"

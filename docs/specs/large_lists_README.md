@@ -1,7 +1,7 @@
 # Large lists, frontend runtime and dependency editor: specification set
 
 > Status: plan (spec only, no production code). Spec set: large_lists.
-> Points: 1 to 9. Owner area: delivery (spec set index). Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-37.
+> Points: 1 to 9. Owner area: delivery (spec set index). Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-38.
 
 ## Purpose
 
@@ -59,7 +59,7 @@ In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships 
 | # | Document | Purpose |
 |---|----------|---------|
 | 1 | this README | Scope, baseline, releases, reading order |
-| 2 | [`large_lists_decisions.md`](large_lists_decisions.md) | Owner decisions UD-01 to UD-37 with recommendations, deviations from the default decisions |
+| 2 | [`large_lists_decisions.md`](large_lists_decisions.md) | Owner decisions UD-01 to UD-38 with recommendations, deviations from the default decisions |
 | 3 | [`large_lists_compatibility.md`](large_lists_compatibility.md) | Guarantees for existing users, compatibility matrix, perceptible changes, deprecations, upgrade notes, rollback |
 | 4 | [`large_lists_server_design.md`](large_lists_server_design.md) | Rules module, shared format module, canonical issue-form client contract, context menu without cache, cycle validation, D1 leniency |
 | 5 | [`large_lists_frontend_design.md`](large_lists_frontend_design.md) | New issue-form runtime (points 1 to 5, client side) |
