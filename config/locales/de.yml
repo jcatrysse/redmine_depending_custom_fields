@@ -78,6 +78,9 @@ de:
   error_save_failed: "Die Änderung konnte nicht gespeichert werden."
   error_dcf_audit_table_missing: "Die Audit-Tabelle für die Konfiguration fehlt. Führen Sie die Plugin-Migrationen aus, bevor Sie diese Funktion verwenden."
   error_dcf_hidden_child_conflict: "Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, den die Änderung nicht zulässt."
+  error_dcf_values_too_large: "Die Werte des Feldes „%{field}“ würden %{size} Bytes belegen, für dieses Feld können jedoch höchstens %{limit} Bytes gespeichert werden. Entfernen oder kürzen Sie Werte oder wenden Sie sich an einen Administrator."
+  error_dcf_mapping_too_large: "Die Abhängigkeitszuordnung des Feldes „%{field}“ würde %{size} Bytes belegen, für dieses Feld können jedoch höchstens %{limit} Bytes gespeichert werden. Entfernen Sie Verknüpfungen oder Standardwerte oder wenden Sie sich an einen Administrator."
+  error_dcf_value_too_long: "Die Datenbank hat die Änderung abgelehnt, weil ein Wert zu groß zum Speichern ist. Wenden Sie sich an einen Administrator."
 
   # Speichergrenzen der Datenbank (MySQL/MariaDB)
   field_value_dependencies: "Abhängigkeitszuordnung"

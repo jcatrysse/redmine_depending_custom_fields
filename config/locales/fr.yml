@@ -78,6 +78,9 @@ fr:
   error_save_failed: "La modification n'a pas pu être enregistrée."
   error_dcf_audit_table_missing: "La table d'audit de la configuration est manquante. Exécutez les migrations du plugin avant d'utiliser cette fonctionnalité."
   error_dcf_hidden_child_conflict: "Cette modification ne peut pas être enregistrée, car un champ dépendant que vous ne pouvez pas voir a une valeur que la modification n'autorise pas."
+  error_dcf_values_too_large: "Les valeurs du champ « %{field} » occuperaient %{size} octets, mais au maximum %{limit} octets peuvent être enregistrés pour ce champ. Supprimez ou raccourcissez des valeurs, ou contactez un administrateur."
+  error_dcf_mapping_too_large: "Le mappage des dépendances du champ « %{field} » occuperait %{size} octets, mais au maximum %{limit} octets peuvent être enregistrés pour ce champ. Supprimez des liens ou des valeurs par défaut, ou contactez un administrateur."
+  error_dcf_value_too_long: "La base de données a refusé la modification car une valeur est trop volumineuse pour être enregistrée. Contactez un administrateur."
 
   # Limites de stockage de la base de données (MySQL/MariaDB)
   field_value_dependencies: "Mappage des dépendances"

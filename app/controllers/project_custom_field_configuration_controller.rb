@@ -67,16 +67,16 @@ class ProjectCustomFieldConfigurationController < ApplicationController
       project: @project, field: @field, user: User.current,
       params: dependency_params, request: request
     ).call
-    flash[:notice] = l(:notice_dependencies_saved)
+    flash[:notice] = translate_error(:notice_dependencies_saved)
     redirect_to custom_field_configuration_field_dependencies_path(@project, @field)
   rescue RedmineDependingCustomFields::OperationError => e
     case e.http_status
     when :forbidden then deny_access
     when :not_found then render_404
     else
-      flash.now[:error] = translate_error(e.key)
+      flash.now[:error] = translate_error(e)
       prepare_dependencies
-      render :edit_dependencies, status: e.http_status
+      render :edit_dependencies, status: dcf_status_code(e.http_status)
     end
   end
 
@@ -125,13 +125,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   def ensure_audit_table
     return if RedmineDependingCustomFields::ConfigAuditEvent.table_exists?
 
-    render_error(message: l(:error_dcf_audit_table_missing), status: :internal_server_error)
+    render_error(message: translate_error(:error_dcf_audit_table_missing), status: :internal_server_error)
   end
 
   def perform_value_operation(klass, action:, notice:)
     klass.new(project: @project, field: @field, user: User.current,
               params: value_params, request: request).call
-    flash[:notice] = l(notice)
+    flash[:notice] = translate_error(notice)
     redirect_to custom_field_configuration_field_path(@project, @field)
   rescue RedmineDependingCustomFields::ConfirmationRequired => e
     @impact = e.impact
@@ -144,9 +144,9 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     when :forbidden then deny_access
     when :not_found then render_404
     else
-      flash.now[:error] = translate_error(e.key)
+      flash.now[:error] = translate_error(e)
       prepare_show
-      render :show, status: e.http_status
+      render :show, status: dcf_status_code(e.http_status)
     end
   end
 
@@ -219,7 +219,31 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     end
   end
 
-  def translate_error(key)
-    l(key, default: key.to_s)
+  # Every flash and error page text of this controller goes through here
+  # (SP-06). Redmine renders flash messages with html_safe and I18n does not
+  # escape, so each interpolation is escaped exactly once; the locale text is
+  # not. The result is a plain String. I18n option keys are never passed on
+  # (RESERVED_KEYS does not hold :locale, a keyword of I18n.t).
+  # Interpolated texts go to flash only: the error page escapes its message.
+  def translate_error(error_or_key)
+    if error_or_key.is_a?(RedmineDependingCustomFields::OperationError)
+      key = error_or_key.key
+      values = error_or_key.interpolations || {}
+    else
+      key = error_or_key
+      values = {}
+    end
+    escaped = values.each_with_object({}) do |(name, value), result|
+      option = name.to_sym
+      next if option == :locale || I18n::RESERVED_KEYS.include?(option)
+
+      result[option] = ERB::Util.html_escape(String.new(value.to_s)).to_str
+    end
+    l(key, escaped.merge(default: key.to_s))
+  end
+
+  # Numeric statuses: no Rack 3.1 deprecation warning for :unprocessable_entity.
+  def dcf_status_code(symbol)
+    symbol == :conflict ? 409 : 422
   end
 end

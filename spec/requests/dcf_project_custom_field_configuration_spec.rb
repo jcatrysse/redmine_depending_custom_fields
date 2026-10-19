@@ -612,4 +612,294 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(response.body).to include(I18n.t(:text_no_manageable_custom_fields))
     end
   end
+
+  # --- Storage errors and flash escaping (WP-12, SP-06, SP-09) -----------
+  # The page heading prints the field name escaped as well, so the checks
+  # target the flash box.
+  describe 'storage errors on project pages (WP-12)' do
+    let(:limits) { RedmineDependingCustomFields::StorageLimits }
+    let(:markup) { '<img src=x onerror=alert(1)>' }
+    let(:secret_sql) do
+      "Mysql2::Error: Data too long for column 'possible_values' at row 1: " \
+        "UPDATE `custom_fields` SET `possible_values` = '--- SECRET_VALUE_42'"
+    end
+
+    def stub_limit_at_stored(column, field)
+      bytes = CustomField.connection.select_value(CustomField.where(id: field.id).select(column).to_sql).bytesize
+      allow(limits).to receive(:column_limit).and_return(nil)
+      allow(limits).to receive(:column_limit).with(column).and_return(bytes)
+    end
+
+    def flash_box
+      Nokogiri::HTML(response.body).at_css('#flash_error')
+    end
+
+    def expect_escaped_flash(name)
+      expect(response).to have_http_status(422)
+      box = flash_box
+      expect(box).not_to be_nil
+      expect(box.css('img')).to be_empty
+      expect(box.inner_html).to include(ERB::Util.html_escape(name))
+      expect(box.text).to include(name)
+      expect(response.body).not_to include('&amp;lt;')
+      expect(response.body).not_to include(name)
+    end
+
+    it 'escapes the field name once in the values page flash (T-SIZE-1, T-DEPJ-22)' do
+      field = dcf_list_field(name: markup, values: %w[A B], is_for_all: false, projects: [project])
+      stub_limit_at_stored('possible_values', field)
+      as(dcf_manager(project))
+
+      post custom_field_configuration_add_value_path(project, field), params: { value: 'SECRET_VAL_9' }
+
+      expect_escaped_flash(markup)
+      size = limits.serialized_bytesize(CustomField, 'possible_values', %w[A B SECRET_VAL_9])
+      limit = limits.column_limit('possible_values')
+      expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_values_too_large, field: markup,
+                                                size: limits.delimited(size), limit: limits.delimited(limit)))
+      expect(response.body).not_to include('SECRET_VAL_9')
+      expect(field.reload.possible_values).to eq(%w[A B])
+    end
+
+    it 'escapes the field name once in the German flash with German number delimiters' do
+      values = ['A', 'B' * 1_200]
+      field = dcf_list_field(name: markup, values: values, is_for_all: false, projects: [project])
+      stub_limit_at_stored('possible_values', field)
+      manager = dcf_manager(project)
+      manager.update_column(:language, 'de')
+      as(manager)
+      added = 'C' * 1_500
+
+      # The request switches the locale; with_locale puts it back.
+      I18n.with_locale(I18n.locale) do
+        post custom_field_configuration_add_value_path(project, field), params: { value: added }
+      end
+
+      expect_escaped_flash(markup)
+      expect(flash_box.text).to include("Die Werte des Feldes \u201E#{markup}\u201C")
+      size, limit = I18n.with_locale(:de) do
+        [limits.delimited(limits.serialized_bytesize(CustomField, 'possible_values', values + [added])),
+         limits.delimited(limits.column_limit('possible_values'))]
+      end
+      expect([size, limit]).to all(include('.'))
+      expect(flash_box.text.strip)
+        .to eq(I18n.t(:error_dcf_values_too_large, locale: :de, field: markup, size: size, limit: limit))
+    end
+
+    it 'shows the storage failure escaped on the project audit page' do
+      field = dcf_list_field(name: markup, values: %w[A B], is_for_all: false, projects: [project])
+      stub_limit_at_stored('possible_values', field)
+      as(dcf_manager(project))
+      post custom_field_configuration_add_value_path(project, field), params: { value: 'C' }
+
+      get custom_field_configuration_audit_path(project)
+
+      expect(response).to have_http_status(200)
+      table = Nokogiri::HTML(response.body).at_css('table')
+      expect(table.css('img')).to be_empty
+      expect(table.text).to include(markup)
+      expect(table.text).to match(/possible_values: \d+ bytes exceeds \d+ \(custom field #\d+\)/)
+    end
+
+    it 'escapes the field name once in the dependency page flash (T-SIZE-2)' do
+      parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
+      child = dcf_list_field(format: 'depending_list', name: markup, values: %w[c1], parent: parent, is_for_all: true)
+      stub_limit_at_stored('format_store', child)
+      as(dcf_manager(project))
+
+      patch custom_field_configuration_update_dependencies_path(project, child),
+            params: { value_dependencies: { 'A' => ['c1'] } }
+
+      expect_escaped_flash(markup)
+      expect(child.reload.value_dependencies).to eq({})
+    end
+
+    it 'names a visible child of a rename cascade, escaped once' do
+      parent = dcf_list_field(name: 'Parent', values: %w[A B], is_for_all: true)
+      child = dcf_list_field(format: 'depending_list', name: markup, values: %w[c1], parent: parent, is_for_all: true)
+      dcf_set_dependencies(child, value_dependencies: { 'A' => %w[c1] })
+      stub_limit_at_stored('format_store', child)
+      as(dcf_manager(project))
+
+      patch custom_field_configuration_rename_value_path(project, parent),
+            params: { old_value: 'A', new_value: "A#{'2' * 20}", confirm: '1' }
+
+      expect_escaped_flash(markup)
+      expect(parent.reload.possible_values).to eq(%w[A B])
+    end
+
+    it 'never names a child hidden from the manager role' do
+      parent = dcf_list_field(name: 'Parent', values: %w[A B], is_for_all: true)
+      child = dcf_list_field(format: 'depending_list', name: 'Secret child', values: %w[c1], parent: parent,
+                             is_for_all: true)
+      dcf_set_dependencies(child, value_dependencies: { 'A' => %w[c1] })
+      child.update!(visible: false, role_ids: [dcf_create_role.id])
+      stub_limit_at_stored('format_store', child)
+      as(dcf_manager(project))
+
+      patch custom_field_configuration_rename_value_path(project, parent),
+            params: { old_value: 'A', new_value: "A#{'2' * 20}", confirm: '1' }
+
+      expect(response).to have_http_status(422)
+      expect(flash_box.text.strip).to eq(I18n.t(:error_save_failed))
+      expect(response.body).not_to include('Secret child')
+      row = RedmineDependingCustomFields::ConfigAuditEvent.order(:id).last
+      expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
+    end
+
+    it 'shows the ValueTooLong text without database content (T-SIZE-4, SP-09)' do
+      field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      allow_any_instance_of(IssueCustomField).to receive(:save!)
+        .and_raise(ActiveRecord::ValueTooLong.new(secret_sql, sql: secret_sql))
+      log = StringIO.new
+      logger = ActiveSupport::Logger.new(log)
+      allow(Rails).to receive(:logger).and_return(logger)
+      as(dcf_manager(project))
+
+      # The controller and SQL loggers are set at boot, not read from Rails.logger.
+      saved = [ActionController::Base.logger, ActiveRecord::Base.logger]
+      begin
+        ActionController::Base.logger = logger
+        ActiveRecord::Base.logger = logger
+        post custom_field_configuration_add_value_path(project, field), params: { value: 'C' }
+      ensure
+        ActionController::Base.logger, ActiveRecord::Base.logger = saved
+      end
+
+      expect(log.string).to include('Processing by ProjectCustomFieldConfigurationController#add_value')
+      expect(log.string).to include('dcf_config_audit_events')
+      expect(response).to have_http_status(422)
+      expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_value_too_long))
+      # Core writes user_preferences with an UPDATE, so the log check names the table.
+      ['SECRET_VALUE_42', 'Data too long', 'UPDATE `custom_fields`', 'Mysql2'].each do |text|
+        expect(response.body).not_to include(text)
+        expect(log.string).not_to include(text)
+      end
+      expect(response.body).not_to include('UPDATE')
+      expect(field.reload.possible_values).to eq(%w[A B])
+    end
+
+    it 'keeps 409 for a stale dependency save (dcf_status_code)' do
+      parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
+      child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1], parent: parent, is_for_all: true)
+      as(dcf_manager(project))
+
+      patch custom_field_configuration_update_dependencies_path(project, child),
+            params: { value_dependencies: { 'A' => ['c1'] }, state_hash: 'stale' }
+
+      expect(response).to have_http_status(409)
+      expect(flash_box.text.strip).to eq(I18n.t(:error_stale_edit))
+    end
+
+    it 'keeps 422 with the unchanged text for a rejected value' do
+      field = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      as(dcf_manager(project))
+
+      post custom_field_configuration_add_value_path(project, field), params: { value: 'A' }
+
+      expect(response).to have_http_status(422)
+      expect(flash_box.text.strip).to eq(I18n.t(:error_value_duplicate))
+    end
+
+    it 'escapes the render_error message once (fr, an apostrophe)' do
+      field = dcf_list_field(values: %w[A B], is_for_all: true)
+      allow(RedmineDependingCustomFields::ConfigAuditEvent).to receive(:table_exists?).and_return(false)
+      manager = dcf_manager(project)
+      manager.update_column(:language, 'fr')
+      as(manager)
+
+      # The request switches the locale; with_locale puts it back.
+      I18n.with_locale(I18n.locale) do
+        get custom_field_configuration_field_path(project, field)
+      end
+
+      expect(response).to have_http_status(500)
+      text = I18n.t(:error_dcf_audit_table_missing, locale: :fr)
+      expect(text).to include("'")
+      expect(response.body).to include('La table d&#39;audit')
+      expect(response.body).not_to include('&amp;#39;')
+      expect(Nokogiri::HTML(response.body).at_css('#errorExplanation').text.strip).to eq(text)
+    end
+  end
+
+  describe 'translate_error (SP-06)' do
+    let(:subject_controller) { ProjectCustomFieldConfigurationController.new }
+
+    def translate(error_or_key)
+      subject_controller.send(:translate_error, error_or_key)
+    end
+
+    def storage_error(field)
+      RedmineDependingCustomFields::OperationError.new(:error_dcf_values_too_large,
+                                                       interpolations: { field: field, size: '1', limit: '2' })
+    end
+
+    it 'escapes every interpolation exactly once and returns a plain String' do
+      out = translate(storage_error('<b>&'))
+      expect(out).to include('&lt;b&gt;&amp;')
+      expect(out).not_to include('&amp;lt;')
+      expect(out.class).to eq(String)
+      expect(out).not_to be_html_safe
+      expect(translate(storage_error('R&D'))).to include('R&amp;D')
+      expect(translate(storage_error('R&D'))).not_to include('R&amp;amp;D')
+    end
+
+    it 'escapes an html_safe value as well' do
+      expect(translate(storage_error('<b>x</b>'.html_safe))).to include('&lt;b&gt;x&lt;/b&gt;')
+    end
+
+    it 'turns every value into text without calling it' do
+      expect(translate(storage_error(5))).to include('"5"')
+      expect(translate(storage_error(nil))).to include('""')
+      expect(translate(storage_error('%{limit}'))).to include('"%{limit}"')
+      expect(translate(storage_error(-> { raise 'called' }))).to include('Proc')
+    end
+
+    it 'drops I18n option keys, the locale included, from the interpolations' do
+      text = I18n.t(:error_dcf_values_too_large, field: 'F', size: '1', limit: '2')
+      [{ scope: 'evil', default: 'x' }, { locale: 'de' }, { 'locale' => 'zz' }, { raise: true }].each do |options|
+        error = RedmineDependingCustomFields::OperationError.new(
+          :error_dcf_values_too_large, interpolations: { field: 'F', size: '1', limit: '2' }.merge(options)
+        )
+        expect(translate(error)).to eq(text)
+      end
+    end
+
+    it 'keeps the text of a Symbol and falls back to the key' do
+      expect(translate(:error_stale_edit)).to eq(I18n.t(:error_stale_edit))
+      expect(translate(RedmineDependingCustomFields::OperationError.new(:error_stale_edit)))
+        .to eq(I18n.t(:error_stale_edit))
+      expect(translate(:missing_key)).to eq('missing_key')
+    end
+
+    it 'translates every error key of the services in the four locales' do
+      dir = File.expand_path('../../app/services/redmine_depending_custom_fields', __dir__)
+      keys = Dir[File.join(dir, '*.rb')].flat_map { |file| File.read(file).scan(/:(error_\w+)/).flatten }.uniq
+      expect(keys).to include('error_dcf_values_too_large', 'error_dcf_mapping_too_large', 'error_dcf_value_too_long')
+      %w[en de fr nl].each do |locale|
+        I18n.with_locale(locale) do
+          keys.each do |key|
+            error = RedmineDependingCustomFields::OperationError.new(
+              key.to_sym, interpolations: { field: 'F', size: '1', limit: '2' }
+            )
+            out = translate(error)
+            expect(out).to be_a(String)
+            expect(out).not_to include('translation missing')
+            expect(out).not_to eq(key)
+          end
+        end
+      end
+    end
+
+    it 'sends every flash and error page message through translate_error (S4)' do
+      source = File.read(File.expand_path('../../app/controllers/project_custom_field_configuration_controller.rb',
+                                          __dir__))
+      flash_lines = source.lines.grep(/flash(\.now)?\[/)
+      expect(flash_lines.size).to be >= 5
+      flash_lines.each { |line| expect(line).to match(/=\s*translate_error\(/) }
+      source.lines.grep(/render_error\(/).each { |line| expect(line).to match(/message: translate_error\(/) }
+      expect(source).not_to match(/translate_error\(e\.key/)
+      expect(source.scan(/\bl\(/).size).to eq(1)
+    end
+  end
 end

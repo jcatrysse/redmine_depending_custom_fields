@@ -2,7 +2,9 @@ module RedmineDependingCustomFields
   # Writes audit rows. Success rows are written by the caller INSIDE the change
   # transaction (so an audit failure rolls the change back). Failure rows are
   # written in their OWN top-level transaction so they persist even though the
-  # rejected operation never happened. See Audit Spec §6/§10.
+  # rejected operation never happened. See Audit Spec §6/§10. Values, ids and
+  # error messages are capped by AuditPayload (limits design 6.2), so no row
+  # outgrows a MySQL TEXT column.
   class AuditRecorder
     def initialize(project:, field:, user: User.current, request: nil)
       @project = project
@@ -32,7 +34,7 @@ module RedmineDependingCustomFields
       ActiveRecord::Base.transaction do
         ConfigAuditEvent.create!(
           base_attrs(action, status).merge(
-            error_message:   error_message&.to_s,
+            error_message:   AuditPayload.error_message(error_message),
             changes_summary: summary&.to_s&.slice(0, 1000)
           )
         )
@@ -64,15 +66,11 @@ module RedmineDependingCustomFields
     end
 
     def serialize(value)
-      return if value.nil?
-
-      ActiveSupport::JSON.encode(value)
+      AuditPayload.encode(value)
     end
 
     def serialize_ids(ids)
-      return if ids.nil?
-
-      ActiveSupport::JSON.encode(Array(ids))
+      AuditPayload.encode_ids(ids)
     end
   end
 end

@@ -78,6 +78,9 @@ en:
   error_save_failed: "The change could not be saved."
   error_dcf_audit_table_missing: "The configuration audit table is missing. Run the plugin migrations before using this feature."
   error_dcf_hidden_child_conflict: "This change cannot be saved because a dependent field you cannot see has a value that the change does not allow."
+  error_dcf_values_too_large: "The values of field \"%{field}\" would take %{size} bytes, but at most %{limit} bytes can be stored for this field. Remove or shorten values, or ask an administrator."
+  error_dcf_mapping_too_large: "The dependency mapping of field \"%{field}\" would take %{size} bytes, but at most %{limit} bytes can be stored for this field. Remove links or default values, or ask an administrator."
+  error_dcf_value_too_long: "The database rejected the change because a value is too large to be stored. Ask an administrator."
 
   # Database storage limits (MySQL/MariaDB)
   field_value_dependencies: "Dependency mapping"

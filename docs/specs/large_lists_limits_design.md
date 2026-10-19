@@ -906,7 +906,7 @@ Notes:
 |---|---|---|
 | MySQL strict: the admin form saves a value list or mapping over 64 KB | HTTP 500 `ValueTooLong`, rollback | form re-rendered with "Possible values is too large to store (85,869 bytes, the database allows at most 65,535 bytes)" |
 | Same through the JSON API | HTTP 500 | HTTP 422 `{"errors":[...]}` |
-| Same through a project service (add, rename with cascade, mapping save, import, sort) | HTTP 500, no audit row | 422 page, escaped flash naming field and sizes, exactly one `validation_failed` audit row |
+| Same through a project service (add, rename with cascade, mapping save, import, sort) | HTTP 500, no audit row | 422 page, escaped flash naming field and sizes (a cascaded field the user cannot see: the generic `error_save_failed` text, never its name), exactly one `validation_failed` audit row with the storage key |
 | MySQL non-strict | the save "succeeds" with data silently cut; possible_values may become unreadable | save refused, nothing written |
 | MySQL, limit unknown to the app | HTTP 500 | service: `error_dcf_value_too_long` with a `save_failed` row holding no DB message; admin and API unchanged (500) |
 | API rename-only PUT of a depending field | mapping sanitized only | unchanged: sanitized only, never pruned |

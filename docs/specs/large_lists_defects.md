@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-15)
+1. Defects tracked separately (SD-01 to SD-16)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -30,6 +30,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-13 | security (medium) | SECURITY: CSV import of extended_user fields bypasses the editable filter |
 | SD-14 | security (low) | SECURITY: the wizard options action is reachable over non-JSON formats without visibility or edit checks |
 | SD-15 | security (low) | SECURITY: the full dependency mapping is embedded in every page, including the login page |
+| SD-16 | security (low) | SECURITY: the project confirmation panel names dependent fields the manager cannot see |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
 
@@ -158,6 +159,14 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Evidence.** Found by the independent review of SD-14. `lib/redmine_depending_custom_fields/hooks/view_layouts_base_html_head_hook.rb:7-18` writes `window.DependingCustomFieldData` into the head of every page, also for anonymous users on `/login`. It holds every depending field's id, its parent id, every parent value with its allowed child values, the defaults and the hide flag. It carries no field names and no link to any issue, but option values of fields the viewer may not see are exposed.
 
 **Status.** Open. Fixed inside the plan by WP-18 (0.1.0 (M2)): the global and the inline script are removed, and the client reads visibility-gated `data-dcf-*` attributes per rendered field (WP-16). CHANGELOG line planned in 0.1.0: "Fixed: The dependency mapping is no longer embedded in every page, including the login page." Not hotfixed earlier: the legacy runtime (until WP-18) depends on the global, so removing it alone would break filtering.
+
+### SD-16: SECURITY: the project confirmation panel names dependent fields the manager cannot see
+
+**Severity.** security (low)
+
+**Evidence.** Found by the WP-12 implementation. `app/views/project_custom_field_configuration/_confirm_panel.html.erb:9` lists `impact.affected_child_fields.map(&:name)`; `UsageCalculator.affected_child_fields` (`app/services/redmine_depending_custom_fields/usage_calculator.rb:69-75`) takes every dependent field through `FieldRelevance.children_of`, without a project or role-visibility filter. A project manager who renames or removes a parent value therefore sees the names of dependent fields that are not used in the project or are hidden for the manager's roles. Plugin rule: a role-invisible field is never named.
+
+**Status.** Open. Fixed inside the plan by WP-28 (0.1.0 (M3)), which reworks UsageCalculator: name a dependent field only when it is the edited field, the user is an administrator, or it is used in the project and visible to the user (the WP-12 rule of `BaseService#nameable_field?`); count the others without names. Not hotfixed in WP-12: the panel is outside the WP-12 file list, and the counts it shows stay correct.
 
 ## 2. Defects fixed inside the plan
 

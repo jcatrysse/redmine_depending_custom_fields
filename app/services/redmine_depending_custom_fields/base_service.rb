@@ -48,6 +48,8 @@ module RedmineDependingCustomFields
     end
 
     # Returns the Outcome on success; raises OperationError or ConfirmationRequired.
+    # Every rejected call writes exactly one failure row: each mapped error is
+    # raised inside its rescue clause, which sibling clauses do not catch.
     def call
       preamble!
       outcome = nil
@@ -67,11 +69,25 @@ module RedmineDependingCustomFields
     rescue ConfirmationRequired
       raise
     rescue OperationError => e
-      record_failure(e.audit_status, e.key.to_s)
+      record_failure(e.audit_status, e.key.to_s, e.summary)
       raise
     rescue ActiveRecord::RecordInvalid => e
-      record_failure('save_failed', e.message)
+      violation = storage_violation(e.record)
+      if violation
+        error = storage_error(violation)
+        record_failure(error.audit_status, error.key.to_s, error.summary)
+        raise error if nameable_field?(e.record)
+
+        # A cascaded field the acting user cannot see is never named.
+        raise OperationError.new(:error_save_failed, summary: error.summary)
+      end
+      record_failure('save_failed', AuditPayload.error_message(e.message))
       raise OperationError.new(:error_save_failed)
+    rescue ActiveRecord::ValueTooLong => e
+      # Safety net for a limit the app does not know (SP-09): the row, the
+      # flash and the raised error never carry e.message, the SQL or a value.
+      record_failure('save_failed', 'error_dcf_value_too_long', value_too_long_summary(e))
+      raise OperationError.new(:error_dcf_value_too_long, audit_status: 'save_failed'), cause: nil
     end
 
     private
@@ -106,11 +122,62 @@ module RedmineDependingCustomFields
       end
     end
 
-    def record_failure(status, error_message)
-      @recorder.record_failure!(action: failure_action(status), status: status, error_message: error_message)
+    def record_failure(status, error_message, summary = nil)
+      @recorder.record_failure!(action: failure_action(status), status: status,
+                                error_message: error_message, summary: summary)
     rescue StandardError
       # Audit table missing / unwritable: never mask the original failure.
       nil
+    end
+
+    # The first storage violation of a CustomField that failed validation;
+    # nil for any other record (enumerations, audit rows, none).
+    def storage_violation(record)
+      return nil unless record.is_a?(CustomField)
+
+      StorageLimits.violation_in(record)
+    rescue StandardError
+      nil
+    end
+
+    # Limits design 5.2: the flash names the field and both sizes; the audit
+    # summary holds only the column, the byte counts and the field id.
+    def storage_error(violation)
+      key = violation.column == 'possible_values' ? :error_dcf_values_too_large : :error_dcf_mapping_too_large
+      OperationError.new(
+        key,
+        summary: "#{violation.column}: #{violation.bytes} bytes exceeds #{violation.limit} " \
+                 "(custom field ##{violation.custom_field_id})",
+        interpolations: { field: violation.custom_field_name.to_s,
+                          size: StorageLimits.delimited(violation.bytes),
+                          limit: StorageLimits.delimited(violation.limit) }
+      )
+    end
+
+    # The edited field, or one the user may see in this project (fail closed).
+    def nameable_field?(record)
+      return true if record.id == field.id || user.admin?
+
+      FieldRelevance.in_project?(record, project) && record.visible_by?(project, user)
+    rescue StandardError
+      false
+    end
+
+    # Limits design 5.3: the class name, a known column name, the field id
+    # and the byte counts of the edited field (the error carries no record).
+    def value_too_long_summary(error)
+      column = error.message.to_s[/column '([A-Za-z0-9_]{1,64})'/, 1]
+      column = 'unknown' unless column && known_column?(column)
+      sizes = StorageLimits::COLUMNS.keys.map { |c| "#{c}_bytes=#{StorageLimits.preview_bytes(field, c)}" }
+      "ActiveRecord::ValueTooLong column=#{column} field_id=#{field&.id} #{sizes.join(' ')}"
+    rescue StandardError
+      'ActiveRecord::ValueTooLong'
+    end
+
+    def known_column?(name)
+      [CustomField, CustomValue, CustomFieldEnumeration, ConfigAuditEvent].any? do |model|
+        model.column_names.include?(name)
+      end
     end
 
     def failure_action(status)

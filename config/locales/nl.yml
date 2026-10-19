@@ -78,6 +78,9 @@ nl:
   error_save_failed: "De wijziging kon niet worden opgeslagen."
   error_dcf_audit_table_missing: "De audittabel voor de configuratie ontbreekt. Voer de plugin-migraties uit voordat u deze functie gebruikt."
   error_dcf_hidden_child_conflict: "Deze wijziging kan niet worden opgeslagen, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die de wijziging niet toestaat."
+  error_dcf_values_too_large: "De waarden van veld \"%{field}\" zouden %{size} bytes innemen, maar voor dit veld kunnen maximaal %{limit} bytes worden opgeslagen. Verwijder of verkort waarden, of vraag een beheerder om hulp."
+  error_dcf_mapping_too_large: "De afhankelijkheidskoppeling van veld \"%{field}\" zou %{size} bytes innemen, maar voor dit veld kunnen maximaal %{limit} bytes worden opgeslagen. Verwijder koppelingen of standaardwaarden, of vraag een beheerder om hulp."
+  error_dcf_value_too_long: "De database heeft de wijziging geweigerd omdat een waarde te groot is om op te slaan. Vraag een beheerder om hulp."
 
   # Opslaglimieten van de database (MySQL/MariaDB)
   field_value_dependencies: "Afhankelijkheidskoppeling"
