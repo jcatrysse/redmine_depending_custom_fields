@@ -395,6 +395,14 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     it 'equals the stored bytes for the S1 list mapping (27 x 5,570)', :large do
       parent_values = DcfLargeList.names(27, prefix: 'P')
       child_values = DcfLargeList.names(5570, tricky_every: 97)
+      # UD-38 (WP-13): a TEXT column (MySQL/MariaDB) cannot hold S1, so skip before the first write there.
+      needed = DcfLargeList.yaml_list_bytes(child_values)
+      storage = RedmineDependingCustomFields::StorageLimits
+      limit = %w[possible_values format_store].filter_map { |c| storage.column_limit(c) }.min
+      if limit && limit < needed
+        skip "UD-38: S1 needs #{needed} bytes of possible_values (more in format_store), the column limit is " \
+             "#{limit} bytes; run widen_core_columns to cover it"
+      end
       parent = dcf_list_field(values: parent_values)
       child = CustomField.find(dcf_list_field(format: 'depending_list', values: child_values, parent: parent).id)
       mapping = DcfLargeList.partition(parent_values, child_values)

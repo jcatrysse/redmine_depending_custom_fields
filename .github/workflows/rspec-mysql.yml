@@ -1,0 +1,109 @@
+name: Plugin Specs on MariaDB (Redmine 5.1 and 7.0)
+
+# Optional manual run of the README MySQL / MariaDB recipe (UD-27). Started
+# by hand only: one dispatch runs both Redmine versions.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: RSpec on MariaDB 10.11 (Redmine ${{ matrix.redmine_branch }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - redmine_branch: 5.1-stable
+            ruby: 3.2.5
+          - redmine_branch: 7.0-stable
+            ruby: 3.4.5
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RAILS_ENV: test
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Clone Redmine
+        run: |
+          git clone --depth 1 --branch ${{ matrix.redmine_branch }} https://github.com/redmine/redmine.git redmine
+          mkdir -p redmine/plugins/$(basename "$GITHUB_WORKSPACE")
+          rsync -a --exclude redmine/ --exclude .git/ --exclude node_modules/ ./ redmine/plugins/$(basename "$GITHUB_WORKSPACE")/
+
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y build-essential libmariadb-dev
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: false
+          working-directory: redmine
+
+      # MariaDB 10.x knows tx_isolation only; MySQL 8 and MariaDB 11.1 or
+      # later use transaction_isolation. 127.0.0.1, not localhost (socket).
+      - name: Configure test database
+        run: |
+          cat > config/database.yml <<EOF
+          test:
+            adapter: mysql2
+            database: redmine_test
+            host: 127.0.0.1
+            port: 3306
+            username: root
+            password: root
+            encoding: utf8mb4
+            variables:
+              tx_isolation: "READ-COMMITTED"
+          EOF
+          rm -f db/schema.rb
+        working-directory: redmine
+
+      - name: Install gems
+        run: bundle install
+        working-directory: redmine
+
+      - name: Populate test database
+        run: |
+          bundle exec rake db:drop
+          bundle exec rake db:create
+          bundle exec rake db:migrate
+        working-directory: redmine
+
+      - name: Migrate plugins
+        run: bundle exec rake redmine:plugins:migrate
+        working-directory: redmine
+
+      # The :mysql specs run here; on TEXT columns the S1 example is pending (UD-38).
+      - name: Run RSpec tests
+        run: |
+          bundle exec rspec plugins/$(basename "$GITHUB_WORKSPACE")/spec --format progress
+        working-directory: redmine
+
+      - name: Rake tasks (report, widen dry run, widen, report, revert, report)
+        run: |
+          bundle exec rake redmine:depending_custom_fields:report_sizes
+          bundle exec rake redmine:depending_custom_fields:widen_core_columns
+          bundle exec rake redmine:depending_custom_fields:widen_core_columns CONFIRM=1
+          bundle exec rake redmine:depending_custom_fields:report_sizes
+          bundle exec rake redmine:depending_custom_fields:widen_core_columns REVERT=1 CONFIRM=1
+          bundle exec rake redmine:depending_custom_fields:report_sizes
+        working-directory: redmine

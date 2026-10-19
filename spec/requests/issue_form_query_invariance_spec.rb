@@ -119,12 +119,16 @@ RSpec.describe 'Issue form query invariance', type: :request do
   end
 
   # Submits every stored value unchanged, so core validates each custom value
-  # (custom_field_values_changed?) without writing one.
+  # (custom_field_values_changed?) without writing one. WP-13: core 5.1 and
+  # 6.0 set updated_on on every journalized update and MySQL stores it to the
+  # second, so the measured update wrote the issue only after a second
+  # boundary; an older updated_on makes it write every time there.
   def update_queries(world)
     issue = world[:issue]
     params = { issue: { custom_field_values: world[:values] } }
     patch "/issues/#{issue.id}", params: params
     expect(response).to have_http_status(302)
+    Issue.where(id: issue.id).update_all(updated_on: 1.hour.ago)
     count = dcf_count_queries { patch "/issues/#{issue.id}", params: params }
     expect(response).to have_http_status(302)
     world[:children].each do |child|

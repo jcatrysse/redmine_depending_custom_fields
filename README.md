@@ -86,6 +86,195 @@ before this check existed. The guards:
   and Rails 6.1, but Redmine 5.0 itself is not tested.
 * Ruby **2.7 or newer** is required.
 
+## MySQL / MariaDB and large lists
+
+### Storage
+
+Redmine stores the possible values of a custom field
+(`custom_fields.possible_values`) and its format settings, including this
+plugin's dependency mapping (`custom_fields.format_store`), as YAML in two
+`TEXT` columns. On MySQL and MariaDB a `TEXT` column holds at most 65,535
+bytes. PostgreSQL and SQLite have no such limit.
+
+### Approximate ceilings
+
+For values of about 12 characters, a `TEXT` column holds about:
+
+- 4,250 list values;
+- 3,750 links (allowed child values, counted over all parent values) for a
+  List (depending) field;
+- 5,000 links for a Key/Value list (depending) field.
+
+These numbers are a guide only: the plugin measures the exact bytes a save
+would write.
+
+### When a list or mapping is too large
+
+The save is refused with a validation error that names the field and the
+sizes, for example "Possible values is too large to store (85,869 bytes, the
+database allows at most 65,535 bytes)". This holds for the administration
+form, the JSON APIs (HTTP 422) and the project settings pages, where the
+refused attempt is audited. Nothing is ever truncated. Core List and
+Key/Value list fields are checked too. From 90 percent of the limit the
+administration form and the project pages show how much of the column a
+field uses.
+
+Before this version MySQL either answered with an internal error or, on a
+server without strict mode, silently cut the data, which could leave a field
+unreadable.
+
+A field whose stored YAML is not what Rails writes, and whose Rails version
+of it is over the limit, refuses every save, a rename included. An example is
+a list that MariaDB stored one byte over `TEXT` without its final newline.
+Widening the columns (below) is the way out.
+
+### Check the sizes
+
+```bash
+bundle exec rake redmine:depending_custom_fields:report_sizes RAILS_ENV=production
+```
+
+The task only reads. It lists every List, Key/Value list, List (depending)
+and Key/Value list (depending) field with these columns:
+
+- `value_count`: the number of values (rows for Key/Value lists);
+- `parents` and `links`: the parent values of the dependency mapping, and the
+  allowed child values over all of them;
+- `pv_bytes` and `pv_pct`: the bytes stored in `possible_values` and their
+  percent of the column limit (`n/a` without a limit);
+- `fs_bytes` and `fs_pct`: the same for `format_store`;
+- `load_ms`: the time to read both columns, which Redmine pays on every
+  request that loads the field;
+- `status`: one of
+  - `ok`;
+  - `WARN`: a column is at or above `WARN_AT` percent of its limit;
+  - `OVER`: a column is above its limit;
+  - `SUSPECT`: a column does not end with the newline YAML always writes, or
+    is exactly at the limit, so it was probably cut by a server without strict
+    mode;
+  - `CORRUPT`: a column cannot be read, or the value list has a missing
+    (null) entry;
+  - `n/a (no column limit)`: PostgreSQL and SQLite.
+
+On MySQL and MariaDB the report starts with the session `sql_mode` and
+whether it is strict (without strict mode oversized values are silently
+truncated), `max_allowed_packet`, and the type and limit of both columns.
+
+Options:
+
+- `FORMAT=csv`: CSV instead of the table (a header line and one line per
+  field, without the server lines);
+- `ALL=1`: every field format, not only the four above;
+- `WARN_AT=90`: the percent for `WARN` (default 90);
+- `FAIL_ABOVE=<percent>`: exit with status 1 when a column of any field
+  reaches that percent of its limit, for monitoring.
+
+`CORRUPT` and `SUSPECT` fields were probably truncated in the past, and a
+`CORRUPT` field may not open in the administration form: restore their values
+from a backup (widen the columns first when they do not fit). Run
+`report_sizes` again before a Redmine upgrade.
+
+### Widen the columns (optional)
+
+1. Back up the database.
+2. Dry run: it prints the plan and the exact SQL and changes nothing:
+   `bundle exec rake redmine:depending_custom_fields:widen_core_columns RAILS_ENV=production`
+3. Apply: the same command with `CONFIRM=1`.
+4. Restart Redmine. Running processes keep the old limit until they restart
+   (regenerate `db/schema_cache.yml` too if you use one).
+
+- The columns become `MEDIUMTEXT` (16,777,215 bytes); `TYPE=longtext` gives
+  `LONGTEXT`.
+- One `ALTER TABLE` statement changes both columns and keeps their character
+  set, collation, nullability and comment. It runs with a strict `sql_mode`.
+- The task is idempotent and never narrows a column. It refuses, with exit
+  status 1 and without any change, a column of an unexpected type, with a
+  default value or with an unusual character set or collation name.
+- It changes a core table. The plugin never does this by itself: no
+  migration, install or upgrade step calls it.
+- Check `max_allowed_packet`: a value larger than it cannot be written,
+  whatever the column type. The task prints it and warns below 16 MB.
+- On Galera clusters, run it in a maintenance window.
+- On PostgreSQL and SQLite it prints that there is nothing to do.
+
+### Revert and uninstall
+
+Uninstalling the plugin does not revert the widening; the wider columns are
+harmless. To go back to `TEXT`:
+
+1. Back up the database and stop Redmine (or block writes). Running processes
+   accept values up to the wider size until they restart, and `TEXT` cannot
+   hold them.
+2. Dry run:
+   `bundle exec rake redmine:depending_custom_fields:widen_core_columns REVERT=1 RAILS_ENV=production`
+3. Apply: the same command with `REVERT=1 CONFIRM=1`.
+4. Regenerate `db/schema_cache.yml` if you use one, then start Redmine.
+
+The revert is refused while any row holds more than 65,535 bytes; it runs
+with a strict `sql_mode` and keeps the collation. Redmine 5.1 to 7.0 contain
+no migration that changes these columns.
+
+### Very large lists
+
+Prefer Key/Value list (depending) for very large lists: its values are rows of
+their own, the mapping stores their ids, and the data sent to the issue form
+is about 2.7 times smaller.
+
+### Tests on MySQL / MariaDB (development)
+
+The specs tagged `:mysql` run only on MySQL or MariaDB. A local run, for
+example with MariaDB 10.11 in Docker:
+
+```bash
+docker run --rm -d --name dcf-mariadb -p 3307:3306 \
+  -e MARIADB_ROOT_PASSWORD=root -e MARIADB_USER=redmine -e MARIADB_PASSWORD=redmine mariadb:10.11
+# wait until the first start (user and password setup) has finished
+until docker exec dcf-mariadb healthcheck.sh --connect --innodb_initialized >/dev/null 2>&1; do sleep 1; done
+docker exec dcf-mariadb mariadb -uroot -proot -e "GRANT ALL ON *.* TO 'redmine'@'%'"
+# in the Redmine checkout (plugin in plugins/redmine_depending_custom_fields):
+cat > config/database.yml <<'YML'
+test:
+  adapter: mysql2
+  database: redmine_dcf_test
+  host: 127.0.0.1
+  port: 3307
+  username: redmine
+  password: redmine
+  encoding: utf8mb4
+  variables:
+    tx_isolation: "READ-COMMITTED"
+YML
+rm -f db/schema.rb
+bundle install
+RAILS_ENV=test bundle exec rake db:drop db:create db:migrate redmine:plugins:migrate
+RAILS_ENV=test bundle exec rspec plugins/redmine_depending_custom_fields/spec
+RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:report_sizes
+RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_columns
+RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_columns CONFIRM=1
+RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_columns REVERT=1 CONFIRM=1
+```
+
+- Use `host: 127.0.0.1`: with `localhost` the mysql2 adapter uses the Unix
+  socket.
+- MariaDB before 11.1 knows only `tx_isolation`; MySQL 8 and MariaDB 11.1 or
+  later need `transaction_isolation` instead.
+- Remove a `db/schema.rb` dumped by PostgreSQL: MySQL cannot load its
+  expression indexes.
+- On `TEXT` columns one example is reported as pending: it saves a list of
+  5,570 values (81,239 bytes) and needs widened columns.
+
+With the `.codex` scripts, `.codex/test_setup.sh 7.0 --db mysql` writes the
+same `database.yml` and migrates (defaults 127.0.0.1:3307, user and password
+`redmine`, database `dcf_mysql_70`; `DCF_DB_HOST`, `DCF_DB_PORT`,
+`DCF_DB_USER`, `DCF_DB_PASSWORD` and `DCF_DB_NAME` override them; it picks
+`tx_isolation` or `transaction_isolation` from the server version). The
+checkout follows the adapter (`database.yml`, `Gemfile.lock`), so give it its
+own `DCF_WORK_DIR`; the script refuses a checkout prepared for PostgreSQL and
+never creates users. Then run `.codex/test_plugin.sh 7.0 --suite rspec` with
+the same `DCF_WORK_DIR`. The optional manual workflow
+`.github/workflows/rspec-mysql.yml` (started by hand only) runs this recipe
+for Redmine 5.1 and 7.0 on MariaDB 10.11.
+
 ## Development
 
 Plugin specs run inside a Redmine checkout:
@@ -114,6 +303,8 @@ the scripts never create roles themselves):
 * Lint gate: `.codex/rubocop_ratchet.sh` (Ruby 2.7 syntax, compatibility check
   on added lines, no new RuboCop offenses in changed files).
 * The GitHub workflows are manual only (`workflow_dispatch`).
+* MySQL / MariaDB runs: see
+  [MySQL / MariaDB and large lists](#mysql--mariadb-and-large-lists).
 
 ## API
 

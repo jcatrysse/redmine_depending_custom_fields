@@ -49,7 +49,7 @@ Revision 1 evidence, verified on a real MariaDB 10.11.14 server installed in the
 | V5 | Exact boundary: a 65,535-byte YAML list saves; 65,536 is rejected with an i18n message. | same |
 | V6 | An explicit `ALTER TABLE ... MODIFY col MEDIUMTEXT CHARACTER SET x COLLATE y NULL` preserves charset, collation and nullability. A naive revert that hard-codes a collation silently changes it. | `SCRATCH/probe_mysql.*.out` |
 | V7 | Narrowing back to TEXT under strict mode with an 87,504-byte row fails instead of truncating. | same |
-| V8 | A running process keeps the old 65,535 limit after an ALTER until `reset_column_information` (a restart). This is the safe direction. | `SCRATCH/probe_schema_cache.rb` |
+| V8 | A running process keeps the old 65,535 limit after an ALTER until `reset_column_information` (a restart). This is the safe direction for widening; after a revert a running process keeps the wider limit, so Redmine is stopped first (7.5). | `SCRATCH/probe_schema_cache.rb` |
 | V9 | The rake tasks register under `redmine:depending_custom_fields:*`, plugin `lib/` eager-loads under Zeitwerk, and report and widener work end to end on 5.1 and 7.0. | `SCRATCH/probe_tasks.{5.1,7.0}.out` |
 | V10 | Service integration on MariaDB: an oversized save becomes an audited `OperationError` with interpolations and the DB is unchanged. An unknown limit falls through to the `ValueTooLong` safety net. | `SCRATCH/probe_services.7.0.out` |
 | V11 | The suite is green on MariaDB: 259 examples, 0 failures (5.1 and 7.0), unchanged and patched. Registering `validate` inside `CustomFieldPatch.prepended` broke 14 examples of `spec/patches/custom_field_required_validation_spec.rb`, whose stand-in class (`:31-33`, prepend at `:60`) has no callback API. A separate prepended module fixed it. | `SCRATCH/run/rspec{51,70}_mysql{,_patched}.log` |
@@ -591,7 +591,8 @@ Prototype: `SCRATCH/proto2/core_column_widener.rb` (V21).
 
 ### 7.5 Revert and uninstall
 
-- `REVERT=1` (dry run), then `REVERT=1 CONFIRM=1`. It is refused while any row exceeds 65,535 bytes, runs in strict mode and preserves the collation.
+- Back up, stop Redmine (or block writes), run `REVERT=1` (dry run) and `REVERT=1 CONFIRM=1`, regenerate `db/schema_cache.yml` if you use one, then start Redmine. Running processes accept values up to the wider size (MEDIUMTEXT or LONGTEXT) until they restart (V8), and a write between the size check and the ALTER can still lose trailing white space, which strict mode cuts with a warning only.
+- The revert is refused while any row exceeds 65,535 bytes, runs in strict mode and preserves the collation. After an applied revert the task says to start Redmine only then, instead of the restart notice.
 - Uninstalling the plugin does not revert the widening; the wider columns are harmless.
 - Redmine 5.1 to 7.0 contain no migration that changes these columns. Run `report_sizes` again before a Redmine upgrade.
 
@@ -789,6 +790,8 @@ Consolidation (compat section 2.4 row "Large-list generator", WP-02) adopted the
 ```bash
 docker run --rm -d --name dcf-mariadb -p 3307:3306 \
   -e MARIADB_ROOT_PASSWORD=root -e MARIADB_USER=redmine -e MARIADB_PASSWORD=redmine mariadb:10.11
+# wait until the first start (user and password setup) has finished
+until docker exec dcf-mariadb healthcheck.sh --connect --innodb_initialized >/dev/null 2>&1; do sleep 1; done
 docker exec dcf-mariadb mariadb -uroot -proot -e "GRANT ALL ON *.* TO 'redmine'@'%'"
 # in the Redmine checkout used by the CI steps (plugin in plugins/redmine_depending_custom_fields):
 cat > config/database.yml <<'YML'
@@ -924,7 +927,7 @@ Notes:
 - **Cascades.** Cascade failures name the child field (`e.record`).
 - **Two violations.** Both columns produce two messages. Services map the first, possible_values first.
 - **Locale.** Number formatting uses the locale active during validation or the request.
-- **Stale schema cache after widening.** Conservative until restart (V8).
+- **Stale schema cache after widening.** Conservative until restart (V8). After a revert it is not, so Redmine is stopped for the revert (7.5).
 - **Character sets.** latin1 tables over-estimate, because UTF-8 bytes are measured.
 - **Corrupt fields.** A field corrupted by non-strict history cannot be opened in the admin form. Recovery: report_sizes, widen, restore from a backup.
 - **Widener on an unexpected server.** If it returns odd character set or collation names, the plan is refused and no SQL runs.

@@ -632,7 +632,7 @@ Spec rules: English descriptions; `require_relative '../rails_helper'`; no top-l
 | `rspec-51.yml`, `rspec-60.yml`, `rspec-61.yml` (new), `rspec-70.yml` | whole `spec/` (R0-R4 + quality, fixtures in compare mode) on PostgreSQL 16; system specs only with the input, screenshots uploaded on failure | `system_specs` (boolean, default false) |
 | `rspec-70.yml` extra | ratchet + Ruby 2.7 syntax + compat grep (`.codex/rubocop_ratchet.sh --redmine "$GITHUB_WORKSPACE/redmine" --base "${{ inputs.base_ref }}"`), checkout `fetch-depth: 0` | `lint` (boolean, default true), `base_ref` (default `origin/main`) |
 | `js-tests.yml` (new) | `npm ci`, `npm run check`, `npm run test:ci`, then core stylelint on plugin CSS (shallow 7.0-stable clone, `yarn install`) | none |
-| optional manual MariaDB workflow (`rspec-mysql.yml`; UD-27, WP-13) | whole `spec/` on MariaDB 10.11 (`:mysql` specs active) | `redmine_branch` (5.1-stable / 7.0-stable) |
+| optional manual MariaDB workflow (`rspec-mysql.yml`; UD-27, WP-13) | whole `spec/` on MariaDB 10.11 (`:mysql` specs active), then the rake sequence report_sizes, widen_core_columns (dry run), widen_core_columns CONFIRM=1, report_sizes, widen_core_columns REVERT=1 CONFIRM=1, report_sizes | none (matrix: 5.1-stable with Ruby 3.2.5 and 7.0-stable with Ruby 3.4.5; one dispatch runs both, UD-32) |
 
 Ruby in CI: 3.2.5 (5.1), 3.3.9 (6.0, 6.1), 3.4.5 (7.0). Clone source upstream `redmine/redmine` for 6.1 too (E20, UD-31). None of these workflows has an automatic trigger; Claude dispatches them only under the policy of section 10 (UD-32, resolved).
 
