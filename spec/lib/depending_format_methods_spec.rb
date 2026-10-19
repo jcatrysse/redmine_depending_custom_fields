@@ -9,6 +9,7 @@ require_relative '../rails_helper'
 # work packages append to the describe of the method they change.
 RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
   include DcfFormatCharacterization
+  include DcfStoredCycle
 
   fixtures :users
 
@@ -423,11 +424,13 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(field.parent_custom_field_id).to eq(parent.id)
         end
 
+        # WP-10: a save refuses a self-parent (dcf_circular_dependency), so
+        # it is saved without validation here (was: save!).
         it 'keeps a stored self-parent (same type and family) and clears the core default value' do
           field = CustomField.find(child.id)
           field.parent_custom_field_id = child.id
           field.default_value = kit_key(child, 'a1')
-          field.save!
+          field.save!(validate: false)
           expect(CustomField.find(child.id).parent_custom_field_id).to eq(child.id)
           expect(CustomField.find(child.id).default_value).to be_nil
         end
@@ -490,27 +493,40 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           end
         end
 
-        it 'filters a stored self-parent by the field\'s own value' do
-          field = CustomField.find(child.id)
-          field.parent_custom_field_id = child.id
-          field.value_dependencies = { kit_key(child, 'a1') => [kit_key(child, 'a1')] }
-          field.save!
-          field = CustomField.find(child.id)
+        # Flipped by WP-10 (UD-35): was "filters a stored self-parent by the
+        # field's own value" (options('a1') under a1, all hidden under a2).
+        it 'returns the core list for a stored self-parent' do
+          field = write_store(child, 'parent_custom_field_id' => child.id,
+                                     'value_dependencies' => { kit_key(child, 'a1') => [kit_key(child, 'a1')] })
 
-          expect(fmt.possible_values_options(field, kit_issue(project, child => 'a1'))).to eq(options('a1'))
-          expect(fmt.possible_values_options(field, kit_issue(project, child => 'a2'))).to eq(options)
+          expect(fmt.possible_values_options(field, kit_issue(project, child => 'a1'))).to eq(core_base(child))
+          expect(fmt.possible_values_options(field, kit_issue(project, child => 'a2'))).to eq(core_base(child))
         end
 
-        it 'hides every option for a stored parent of another custom field type' do
+        # Flipped by WP-10: was "hides every option for a stored parent of
+        # another custom field type" (all hidden).
+        it 'returns the core list for a stored parent of another custom field type' do
           field = write_store(child, 'parent_custom_field_id' => other_type_field(kind).id)
-          expect(fmt.possible_values_options(field, kit_issue(project, parent => 'A'))).to eq(options)
+          expect(fmt.possible_values_options(field, kit_issue(project, parent => 'A'))).to eq(core_base(child))
         end
 
-        it 'filters by a stored parent outside the format family' do
+        # Flipped by WP-10: was "filters by a stored parent outside the format
+        # family" (options('a2')).
+        it 'returns the core list for a stored parent outside the format family' do
           other = other_family_field(kind, **(kind == :list ? { names: %w[A B] } : { values: %w[A B] }))
           field = write_store(child, 'parent_custom_field_id' => other.id,
                                      'value_dependencies' => { kit_key(other, 'A') => [kit_key(child, 'a2')] })
-          expect(fmt.possible_values_options(field, kit_issue(project, other => 'A'))).to eq(options('a2'))
+          expect(fmt.possible_values_options(field, kit_issue(project, other => 'A'))).to eq(core_base(child))
+        end
+
+        # WP-10 (UD-08): no hidden options in or below a stored cycle.
+        it 'returns the core list for the members of a stored cycle and the fields below them' do
+          world = dcf_stored_cycles(kind)
+          issue = kit_issue(project, world.x => 'x1', world.y => 'y2', world.child => 'c2',
+                                     world.self_parent => 's2', world.below_self_parent => 'd2')
+          [world.x, world.y, world.child, world.self_parent, world.below_self_parent].each do |field|
+            expect(field.format.possible_values_options(field, issue)).to eq(core_base(field)), field.name
+          end
         end
 
         it 'reads a pointer stored as a String like an Integer' do
@@ -886,24 +902,39 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(fmt.validate_custom_value(value_of(issue, field).tap { |v| v.custom_field = field })).to eq([invalid])
         end
 
-        it 'checks a stored self-parent against the field\'s own sanitized value' do
-          field = CustomField.find(child.id)
-          field.parent_custom_field_id = child.id
-          field.value_dependencies = { kit_key(child, 'a1') => [kit_key(child, 'a1')] }
-          field.save!
-          field = CustomField.find(child.id)
-          valid = kit_new_issue(project, child => 'a1')
-          wrong = kit_new_issue(project, child => 'a2')
-          expect(fmt.validate_custom_value(value_of(valid, child).tap { |v| v.custom_field = field })).to eq([])
-          expect(fmt.validate_custom_value(value_of(wrong, child).tap { |v| v.custom_field = field })).to eq([invalid])
+        # Flipped by WP-10 (UD-35): was "checks a stored self-parent against
+        # the field's own sanitized value" ([invalid] for a2).
+        it 'gives the core result for a stored self-parent' do
+          field = write_store(child, 'parent_custom_field_id' => child.id,
+                                     'value_dependencies' => { kit_key(child, 'a1') => [kit_key(child, 'a1')] })
+          valid = value_of(kit_new_issue(project, child => 'a1'), child).tap { |v| v.custom_field = field }
+          wrong = value_of(kit_new_issue(project, child => 'a2'), child).tap { |v| v.custom_field = field }
+          expect(fmt.validate_custom_value(valid)).to eq([])
+          expect(fmt.validate_custom_value(wrong)).to eq([])
+          expect(fmt.validate_custom_value(wrong)).to eq(core.validate_custom_value(wrong))
         end
 
-        it 'rejects a non-blank value under a stored parent of another custom field type' do
+        # Flipped by WP-10: was "rejects a non-blank value under a stored
+        # parent of another custom field type" ([invalid] for a1).
+        it 'gives the core result under a stored parent of another custom field type' do
           field = write_store(child, 'parent_custom_field_id' => other_type_field(kind).id)
-          filled = kit_new_issue(project, parent => 'A', child => 'a1')
-          blank = kit_new_issue(project, parent => 'A', child => [])
-          expect(fmt.validate_custom_value(value_of(filled, child).tap { |v| v.custom_field = field })).to eq([invalid])
-          expect(fmt.validate_custom_value(value_of(blank, child).tap { |v| v.custom_field = field })).to eq([])
+          filled = value_of(kit_new_issue(project, parent => 'A', child => 'a1'), child).tap { |v| v.custom_field = field }
+          blank = value_of(kit_new_issue(project, parent => 'A', child => []), child).tap { |v| v.custom_field = field }
+          expect(fmt.validate_custom_value(filled)).to eq([])
+          expect(fmt.validate_custom_value(filled)).to eq(core.validate_custom_value(filled))
+          expect(fmt.validate_custom_value(blank)).to eq([])
+        end
+
+        # WP-10 (UD-08, UD-35, server design section 8 rules 4 and 5): core
+        # validation only in or below a stored cycle.
+        it 'accepts any value core accepts in the members of a stored cycle and the fields below them' do
+          world = dcf_stored_cycles(kind)
+          issue = kit_new_issue(project, world.x => 'x2', world.y => 'y2', world.child => 'c2',
+                                         world.self_parent => 's2', world.below_self_parent => 'd2')
+          [world.x, world.y, world.child, world.self_parent, world.below_self_parent].each do |field|
+            expect(errors_for(issue, field)).to eq([]), field.name
+          end
+          expect(issue.valid?).to be(true), issue.errors.full_messages.inspect
         end
 
         it 'gives the core result for a dangling parent' do
@@ -1091,11 +1122,28 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         .to eq(Redmine::FieldFormat::EnumerationFormat.instance.validate_custom_field(field))
     end
 
-    it 'adds no parent check and no query' do
+    # WP-10: was "adds no parent check and no query"; the parent check runs
+    # only when the normalized parent id changes (D9 refinement, UD-08), so
+    # a stored self-parent saved unchanged still gives [] without a query.
+    it 'adds no parent check and no query while the parent id is unchanged' do
       kit = build_kit(:list)
       field = write_store(kit.last, 'parent_custom_field_id' => kit.last.id)
       expect(dcf_count_queries { expect(field.format.validate_custom_field(field)).to eq([]) }).to eq(0)
       expect(field.valid?).to be(true)
+      field.parent_custom_field_id = kit.last.id.to_s
+      expect(dcf_count_queries { expect(field.format.validate_custom_field(field)).to eq([]) }).to eq(0)
+    end
+
+    # WP-10: core pairs first, then the cycle pair of DependencyRules.parent_errors.
+    it 'adds the circular dependency pair after the core errors when the parent changes' do
+      [[:list, [[:possible_values, :blank]]], [:enumeration, [[:url_pattern, :invalid]]]].each do |kind, core_pairs|
+        field = CustomField.find(build_kit(kind).last.id)
+        field.possible_values = [] if kind == :list
+        field.url_pattern = 'http://exa mple.test/%value%' if kind == :enumeration
+        field.parent_custom_field_id = field.id
+        expect(field.format.validate_custom_field(field))
+          .to eq(core_pairs + [[:parent_custom_field_id, :dcf_circular_dependency]]), kind.to_s
+      end
     end
   end
 

@@ -36,7 +36,10 @@ module DcfFormatCharacterization
   end
 
   # Two depending fields of +kind+ that name each other as parent (a stored
-  # cycle; no validation prevents it today): x1 allows y1, y1 allows x1.
+  # cycle): x1 allows y1, y1 allows x1. Since WP-10 a save refuses the
+  # closing pointer, so it is saved without validation (before_save still
+  # stores it as an Integer); the mappings are saved normally (the pointer
+  # does not change).
   def build_cycle(kind)
     if kind == :list
       x = dcf_list_field(format: 'depending_list', values: %w[x1 x2])
@@ -46,7 +49,7 @@ module DcfFormatCharacterization
       y = dcf_enum_field(format: 'depending_enumeration', names: %w[y1 y2], parent: x)
     end
     x.parent_custom_field_id = y.id
-    x.save!
+    x.save!(validate: false)
     dcf_set_dependencies(x, value_dependencies: { kit_key(y, 'y1') => [kit_key(x, 'x1')] })
     dcf_set_dependencies(y, value_dependencies: { kit_key(x, 'x1') => [kit_key(y, 'y1')] })
     raise 'stored cycle was not saved' unless CustomField.find(x.id).parent_custom_field_id == y.id

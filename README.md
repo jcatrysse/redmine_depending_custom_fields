@@ -47,6 +47,29 @@ select boxes with a save button. Child fields are hidden from the normal menu so
 dependencies cannot be broken. The selected value is stored for every chosen
 issue once you click **Save**.
 
+## Circular dependencies
+
+A depending field cannot depend on itself or on one of its own dependent
+fields. Saving such a "Depends on" choice is refused with a form error, or
+with HTTP 422 in the JSON API; the "Depends on" select does not offer these
+fields, except the current parent of a field that is already part of a
+cycle (see below). The check runs only when the parent of an existing field
+changes, so other saves of a field (reordering, mappings, renames) keep
+working.
+
+Two administrators who save A depends on B and B depends on A at the same
+moment can still create a cycle, because each save checks the other field's
+old setting. This race is accepted. A cycle can also come from data saved
+before this check existed. The guards:
+
+- the server treats fields that are part of a cycle, or whose chain of parents
+  reaches one, as independent (no dependency check) until the cycle is fixed;
+- the admin form of a field that is part of a cycle shows a warning naming
+  the fields of the cycle; choosing another "Depends on" field breaks it;
+- every walk along the parents keeps a list of the fields it has visited, on
+  the server and, with the new issue-form script, in the browser, so a cycle
+  never loops.
+
 ## Installation
 
 1. Copy this plugin directory into `plugins` of your Redmine installation.
@@ -120,6 +143,11 @@ values per parent option. Parameters use the same types as in Redmine:
 - hashes for `value_dependencies` and `default_value_dependencies`
 - enumeration definitions in the `enumerations` array when using enumeration
   fields
+
+An update that sets `parent_custom_field_id` to the field itself or to one of
+its dependent fields is refused with HTTP 422 and `{"errors": [...]}` (see
+[Circular dependencies](#circular-dependencies)). An id that names no field of
+the same type and family is stored as `null`, as before.
 
 ### Example usage
 

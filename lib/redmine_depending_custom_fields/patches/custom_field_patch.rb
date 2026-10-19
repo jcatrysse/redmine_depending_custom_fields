@@ -10,7 +10,8 @@ module RedmineDependingCustomFields
       end
 
       # Strips the spurious "blank" error added by CustomField's independent is_required? guard when no child options are available for the current parent value.
-      # The parent read is DependencyRules.no_options? (WP-09), the one the formats use.
+      # The parent read is DependencyRules.no_options? (WP-09): the formats' parent state, or
+      # without an effective parent the 0.0.16 read of the stored parent until WP-18 (WP-10).
       def validate_custom_value(custom_value)
         errs = super
 

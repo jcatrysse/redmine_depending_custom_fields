@@ -331,4 +331,94 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect(response).to have_http_status(:no_content)
     end
   end
+
+  # WP-10 (PC-10, PC-21, UD-08): a circular parent is a new 422 reason; the
+  # payload shape, the other status codes and name-only round trips are
+  # unchanged.
+  describe "circular parents (WP-10)" do
+    include DcfStoredCycle
+
+    let(:circular_message) do
+      "Depends on refers to this field or to one of its dependent fields, which would create a circular dependency"
+    end
+
+    def raw_store(field)
+      CustomField.connection.select_value(CustomField.where(id: field.id).select(:format_store).to_sql)
+    end
+
+    def put_field(field, attributes)
+      put "/depending_custom_fields/#{field.id}.json", params: { custom_field: attributes }
+    end
+
+    it "answers 422 with the full message for the field's own id and stores nothing" do
+      root = dcf_list_field
+      field = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, parent: root)
+      before = raw_store(field)
+
+      put_field(field, parent_custom_field_id: field.id.to_s)
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body)).to eq("errors" => [circular_message])
+      expect(raw_store(field)).to eq(before)
+    end
+
+    it "answers 422 for a parent change that closes a <-> b" do
+      a = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST)
+      b = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, parent: a)
+
+      put_field(a, parent_custom_field_id: b.id.to_s, name: "renamed")
+
+      expect(response).to have_http_status(422)
+      expect(JSON.parse(response.body)).to eq("errors" => [circular_message])
+      expect(CustomField.find(a.id).parent_custom_field_id).to be_nil
+      expect(CustomField.find(a.id).name).not_to eq("renamed")
+    end
+
+    it "keeps 200 with a null parent for an unknown parent id" do
+      root = dcf_list_field
+      field = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, parent: root)
+
+      put_field(field, parent_custom_field_id: (CustomField.maximum(:id).to_i + 1_000).to_s)
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["parent_custom_field_id"]).to be_nil
+      expect(CustomField.find(field.id).parent_custom_field_id).to be_nil
+    end
+
+    it "creates a field below a stored cycle (a new record is never refused)" do
+      world = dcf_stored_cycles(:list)
+      post "/depending_custom_fields.json", params: { custom_field: {
+        name: "below", type: "IssueCustomField", field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST,
+        possible_values: %w[n1], parent_custom_field_id: world.x.id.to_s
+      } }
+
+      expect(response).to have_http_status(:created)
+      expect(JSON.parse(response.body)["parent_custom_field_id"]).to eq(world.x.id)
+    end
+
+    it "leaves the mapping byte-identical on a name-only PUT, also for a stored-cycle member" do
+      root = dcf_list_field(values: %w[A B])
+      field = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, values: %w[a1 b1],
+                             parent: root)
+      mapping = { "A" => %w[a1 nope], "ZZ" => %w[nope], "[x]" => %w[b1], "a]" => %w[b1] }
+      dcf_set_dependencies(field, value_dependencies: mapping, default_value_dependencies: { "ZZ" => "nope" })
+      world = dcf_stored_cycles(:list)
+      dcf_set_dependencies(world.x, value_dependencies: { "y1" => %w[x1], "ZZ" => %w[x2], "[x]" => %w[x1] })
+
+      [field, world.x].each do |record|
+        get "/depending_custom_fields/#{record.id}.json"
+        keys = JSON.parse(response.body).keys
+        before = CustomField.find(record.id).value_dependencies.to_hash.to_a
+        raw_before = raw_store(record)
+
+        put_field(record, name: "#{record.name}-renamed")
+
+        expect(response).to have_http_status(:ok), response.body
+        expect(JSON.parse(response.body).keys).to eq(keys)
+        expect(CustomField.find(record.id).value_dependencies.to_hash.to_a).to eq(before)
+        expect(raw_store(record)).to eq(raw_before)
+      end
+      expect(CustomField.find(world.x.id).parent_custom_field_id).to eq(world.y.id)
+    end
+  end
 end

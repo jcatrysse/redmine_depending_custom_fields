@@ -167,6 +167,8 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 **Status: Resolved by the owner (recommendation accepted).** Stored cycle members and chains reaching a cycle are unconstrained on server and client until fixed; the cycle check runs only when a persisted field's parent id changes (WP-10, WP-16).
 
+Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the dependency checks (parent_state, the option filter, validation and the enumeration filter values). The required bypass keeps its 0.0.16 read of the raw parent for these fields until WP-18 retires the legacy script, because that script still disables them while that parent allows nothing and posts '' (server design section 8).
+
 **Question.** Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)?
 
 **Recommendation.** Yes to both.

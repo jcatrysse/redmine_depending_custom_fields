@@ -20,6 +20,7 @@ module RedmineDependingCustomFields
     ALL_PARENT_FORMATS = (LIST_FAMILY + ENUM_FAMILY).freeze
     PARENT_FORMATS = { 'depending_list' => LIST_FAMILY, 'depending_enumeration' => ENUM_FAMILY }.freeze
     CANONICAL_ID = /\A[1-9]\d*\z/.freeze
+    CIRCULAR_ERROR = [:parent_custom_field_id, :dcf_circular_dependency].freeze
 
     # values/baseline: Arrays of Strings. baseline = the stored value
     # (stored_value), or the copy source's (server design section 8, rule 2).
@@ -107,6 +108,69 @@ module RedmineDependingCustomFields
       end
     end
 
+    # The effective parent id (server design 2.1, WP-10): the in-memory
+    # pointer as an Integer when it is not the field itself, names an
+    # existing field of the same type in the field's family, and the stored
+    # chain from it never revisits a field (the field included); nil
+    # otherwise, so fields in or below a stored cycle (a self-parent is a
+    # cycle of one) are unconstrained (UD-08, UD-35). nil without a query
+    # for other formats and a blank, invalid or own pointer. +lookup+ (id =>
+    # CustomField, from lookup_records) supplies loaded, unmodified records:
+    # their rows are read from the raw format_store, so a chain loaded on
+    # the object costs no query; a first hop it lacks comes from the
+    # memoized find_parent (shared with parent_state and no_options?), later
+    # unknown hops from one raw select per chain level. The index of the
+    # walk is kept on the first-hop record (dcf_memo), so the children of
+    # one loaded parent share the rows it fetched: an ancestor the object
+    # does not carry costs one select for all of them, not one per child
+    # (server design 3.3). Each child still walks from that record with its
+    # own id. No visibility check (ClientData adds it, WP-16). Memoized on
+    # the record per pointer, nil included; the result does not depend on
+    # +lookup+.
+    def effective_parent_id(cf, lookup = {})
+      pid = parent_id(cf)
+      return nil if pid.nil? || pid == cf.id
+
+      cf.dcf_memo(:effective_parent, [cf.id, pid]) do
+        records = lookup || {}
+        first = records[pid] || parent_record(cf, pid)
+        next nil unless first
+
+        index = first.dcf_memo(:chain_index, nil) do
+          FieldIndex.new(records: records[pid] ? records : records.merge(pid => first))
+        end
+        index.effective_parent_id_for(cf.id, cf.type, cf.field_format, pid)
+      end
+    end
+
+    # True when the normalized parent id differs from the stored one (the
+    # D9 refinement runs the cycle check only then, UD-08). True for new
+    # records; false without reading the old store when format_store will
+    # not be saved. Compares normalized ids, so '12' and 12, nil and '' or 0
+    # are no change; the store dirty helpers compare raw values (F1).
+    def parent_changed?(cf)
+      return true if cf.new_record?
+      return false unless cf.will_save_change_to_attribute?('format_store')
+
+      FieldIndex.parent_id_from_raw(cf.attribute_in_database('format_store')) != normalize_id(cf.parent_custom_field_id)
+    end
+
+    # The parent errors of a save (server design section 9), as [attribute,
+    # message] pairs for CustomField#validate_custom_field: the parent that
+    # before_save keeps (same memoized lookup) is the field itself or has
+    # the field in its stored chain (a fresh FieldIndex.load). Only for
+    # persisted depending fields whose parent id changes; an unresolvable
+    # parent keeps the silent nil of before_save (D9).
+    def parent_errors(cf)
+      return [] unless depending?(cf) && !cf.new_record? && parent_changed?(cf)
+
+      candidate = resolve_parent_for_save(cf)
+      return [] unless candidate
+      return [CIRCULAR_ERROR] if candidate.id == cf.id || FieldIndex.load.ancestor_ids(candidate.id).include?(cf.id)
+
+      []
+    end
+
     # True when +customized+ is an instance of the class the field belongs to
     # (an Issue for an IssueCustomField); false for a Project passed for an
     # issue field, as context menus and query filters do.
@@ -117,21 +181,29 @@ module RedmineDependingCustomFields
       false
     end
 
-    # The parent read of the depending formats (WP-06, today's semantics): the
-    # stored parent id names any existing field, of any type and any family,
-    # the field itself included. When the parent is among the loaded custom
-    # field values of +customized+, its value is read there (no query).
-    # Otherwise one find_parent per record and id (memoized, nil included)
-    # tells an unavailable parent (available false, no values) from a
-    # dangling one (nil). nil also for a blank or invalid pointer and a nil
-    # object, without a query. Values are Strings, blanks kept, as 0.0.16
-    # reads them. The baseline (WP-09) is the stored value (stored_value), or
-    # for a copy the source's value (baseline_source), without blanks. No
-    # carries? (WP-15), no effective parent or cycle rule (WP-10).
+    # The parent read of the depending formats: nil unless the field has an
+    # effective parent (WP-10), so a dangling parent, the field itself,
+    # another type or family and fields in or below a stored cycle give nil
+    # (core validation only, UD-08). When the parent is among the loaded
+    # custom field values of +customized+, its value is read there (no
+    # query). Otherwise the one memoized find_parent of effective_parent_id
+    # gives an unavailable parent (available false, no values). nil also for
+    # a blank or invalid pointer and a nil object, without a query. Values
+    # are Strings, blanks kept, as 0.0.16 reads them. The baseline (WP-09) is
+    # the stored value (stored_value), or for a copy the source's value
+    # (baseline_source), without blanks. No carries? (WP-15).
     def parent_state(cf, customized)
       pid = parent_id(cf)
       return nil if pid.nil? || customized.nil?
+      return nil unless effective_parent_id(cf, lookup_records(customized))
 
+      read_parent_state(cf, customized, pid)
+    end
+
+    # The parent read of parent_state for the raw pointer +pid+, without the
+    # effective-parent rule: the value from the loaded custom field values,
+    # else an unavailable state for an existing field, else nil.
+    def read_parent_state(cf, customized, pid)
       if customized.respond_to?(:custom_field_values)
         cfv = customized.custom_field_values.detect { |v| v.custom_field_id == pid }
         if cfv
@@ -229,12 +301,27 @@ module RedmineDependingCustomFields
     # True when the parent value of +customized+ allows no child value, so
     # the required bypass (CustomFieldPatch) drops the blank error. Like
     # 0.0.16, the parent field must still exist: one find_parent per record
-    # and id, memoized and shared with parent_state.
+    # and id, memoized and shared with parent_state. Without an effective
+    # parent (WP-10: in or below a stored cycle, a self-parent, another type
+    # or family) it keeps the 0.0.16 read (legacy_parent_state), because the
+    # legacy script still disables such a field while that parent allows
+    # nothing and posts ''; WP-18 removes the fallback with the script.
     def no_options?(cf, customized)
-      state = parent_state(cf, customized)
+      state = parent_state(cf, customized) || legacy_parent_state(cf, customized)
       return false unless state && allowed_for(cf, state).empty?
 
       !parent_record(cf, parent_id(cf)).nil?
+    end
+
+    # The parent read before WP-10, for the required bypass only: the raw
+    # pointer names any existing field, of any type and family, the field
+    # itself included, and its value is read from +customized+. nil for a
+    # blank or invalid pointer, a nil object and a dangling parent.
+    def legacy_parent_state(cf, customized)
+      pid = parent_id(cf)
+      return nil if pid.nil? || customized.nil?
+
+      read_parent_state(cf, customized, pid)
     end
 
     # id => CustomField from what is already loaded: the custom field values of
@@ -453,6 +540,7 @@ module RedmineDependingCustomFields
       cf.dcf_memo(:parent_record, pid) { find_parent(pid) }
     end
 
-    private_class_method :list_values, :enumerations_of, :key_set, :string_values, :parent_record, :stored_value
+    private_class_method :list_values, :enumerations_of, :key_set, :string_values, :parent_record, :stored_value,
+                         :read_parent_state, :legacy_parent_state
   end
 end

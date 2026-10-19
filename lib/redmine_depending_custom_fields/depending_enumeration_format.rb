@@ -34,13 +34,16 @@ module RedmineDependingCustomFields
       options + stored.map { |e| [e.to_s, e.id.to_s] }
     end
 
-    # Restricted by the parent value of the query's project when that maps a
-    # non-empty set, all values otherwise.
+    # Restricted by the value of the effective parent (WP-10) on the query's
+    # project when that maps a non-empty set, all values otherwise. Without
+    # an effective parent (in or below a stored cycle, a self-parent, another
+    # type or family, dangling) the field is unconstrained, as in
+    # validation (UD-08, UD-35). No parent lookup without a project.
     def query_filter_values(custom_field, query = nil)
       raw = super(custom_field, query)
       project = query&.project
-      parent = CustomField.find_by(id: custom_field.parent_custom_field_id)
-      parent_values = Array(project&.custom_field_value(parent)).map(&:to_s)
+      parent_id = project && DependencyRules.effective_parent_id(custom_field, DependencyRules.lookup_records(project))
+      parent_values = parent_id ? Array(project.custom_field_value(parent_id)).map(&:to_s) : []
       mapping = custom_field.value_dependencies || {}
       allowed = parent_values.flat_map { |pv| Array(mapping[pv]) }.map(&:to_s).uniq
 

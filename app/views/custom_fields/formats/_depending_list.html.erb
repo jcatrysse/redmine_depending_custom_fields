@@ -6,21 +6,28 @@
   <p><%= f.text_field(:default_value) %></p>
 <% end %>
 <p><%= f.text_field :url_pattern, :size => 50, :label => :label_link_values_to %></p>
+<%# WP-10: same type and family, without the field and its descendants (the current parent stays); one topology load per render. %>
+<% dcf_index = @custom_field.new_record? ? nil : RedmineDependingCustomFields::FieldIndex.load %>
 <p>
   <%= f.select :parent_custom_field_id,
-               CustomField.where(field_format: ['list', RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST],
-                                  type: @custom_field.type)
-                          .where.not(id: @custom_field.id)
-                          .map { |cf| [cf.name, cf.id.to_s] },
+               RedmineDependingCustomFields::DependencyRules.parent_candidates(@custom_field, index: dcf_index)
+                                                            .map { |cf| [cf.name, cf.id.to_s] },
                {include_blank: true},
                label: :field_parent_custom_field_id %>
 </p>
+<% dcf_cycle_ids = dcf_index ? RedmineDependingCustomFields::DependencyRules.cycle_member_ids(@custom_field, index: dcf_index) : [] %>
+<% if dcf_cycle_ids.any? %>
+  <% dcf_cycle_names = CustomField.where(id: dcf_cycle_ids).pluck(:id, :name).to_h %>
+  <% dcf_cycle_warning = l(:warning_dcf_parent_cycle, fields: dcf_cycle_ids.map { |id| dcf_cycle_names[id] }.compact.join(', ')) %>
+  <p class="icon icon-warning"><%= respond_to?(:sprite_icon) ? sprite_icon('warning', dcf_cycle_warning) : dcf_cycle_warning %></p>
+<% end %>
 <% if @custom_field.parent_custom_field_id.present? %>
   <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
   <%= render partial: 'custom_fields/formats/dependencies_matrix',
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
   <%= render partial: 'custom_fields/formats/default_dependencies',
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
+  <%# The required bypass (DependencyRules.no_options?) reads the stored parent as in 0.0.16, also without an effective parent (until WP-18), so no chain walk here. %>
   <% if @custom_field.is_required? && parent_cf %>
     <% dcf_mapping    = @custom_field.value_dependencies.to_h %>
     <% dcf_uncovered  = parent_cf.possible_values_options

@@ -50,15 +50,17 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     end
 
     # WP-09 adds dependency_check, no_options?, baseline_source and
-    # child_baseline; editable_by? is withdrawn (UD-07).
-    it 'uses format literals, keeps no state and defines no later work package function' do
+    # child_baseline; editable_by? is withdrawn (UD-07). WP-10: was
+    # "effective_parent_id, parent_errors and parent_changed? are not
+    # defined"; WP-10 adds them.
+    it 'uses format literals, keeps no state and defines no withdrawn function' do
       source = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/dependency_rules.rb', __dir__))
       expect(source).not_to include('FIELD_FORMAT')
       expect(source).not_to match(/@[a-z_]+ *(\|\|)?=|@@|Rails\.cache|CurrentAttributes|instance_variable_set/)
-      later = [:effective_parent_id, :parent_errors, :parent_changed?, :editable_by?]
-      expect(later.select { |name| described_class.respond_to?(name) }).to eq([])
-      added = [:dependency_check, :no_options?, :baseline_source, :child_baseline]
-      expect(added.map { |name| described_class.respond_to?(name) }).to eq([true] * 4)
+      expect(described_class.respond_to?(:editable_by?)).to be(false)
+      added = [:dependency_check, :no_options?, :baseline_source, :child_baseline,
+               :effective_parent_id, :parent_errors, :parent_changed?]
+      expect(added.map { |name| described_class.respond_to?(name) }).to eq([true] * 7)
       expect(described_class.respond_to?(:memo)).to be(false)
       expect(described_class.instance_variables).to eq([])
     end
@@ -362,8 +364,212 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     end
   end
 
+  # WP-10: the effective parent (server design 2.1), the one rule of server
+  # validation; client emission (WP-16) and the context menu (WP-15) use it
+  # too. Walks follow the stored pointers; the child's own pointer is the
+  # in-memory one.
+  describe '.effective_parent_id' do
+    let(:root) { dcf_list_field(values: %w[A B]) }
+
+    def depending(parent = nil, format: 'depending_list')
+      if format == 'depending_list'
+        dcf_list_field(format: format, values: %w[a b], parent: parent)
+      else
+        dcf_enum_field(format: format, names: %w[a b], parent: parent)
+      end
+    end
+
+    # label => [fresh field, expected effective parent id]
+    def pointer_table
+      valid = depending(root)
+      itself = depending.tap { |f| point(f, f.id) }
+      x = depending
+      y = depending(x)
+      point(x, y.id)
+      a = depending
+      c = depending(a)
+      b = depending(c)
+      point(a, b.id)
+      enum_root = dcf_enum_field
+      {
+        'valid' => [valid, root.id],
+        'a valid chain of two' => [depending(valid), valid.id],
+        'an enumeration parent' => [depending(enum_root, format: 'depending_enumeration'), enum_root.id],
+        'dangling' => [depending(root).tap { |f| point(f, CustomField.maximum(:id).to_i + 1_000) }, nil],
+        'another type' => [depending(root).tap { |f| point(f, dcf_list_field(type: ProjectCustomField).id) }, nil],
+        'another family' => [depending(root).tap { |f| point(f, dcf_enum_field.id) }, nil],
+        'itself' => [itself, nil],
+        'a member of x <-> y' => [x, nil],
+        'the other member of x <-> y' => [y, nil],
+        'below x <-> y' => [depending(x), nil],
+        'below a self-parent' => [depending(itself), nil],
+        'two levels below a self-parent' => [depending(depending(itself)), nil],
+        'a member of a -> b -> c -> a' => [b, nil]
+      }.transform_values { |(field, id)| [CustomField.find(field.id), id] }
+    end
+
+    it 'gives the Integer id of a valid, acyclic parent and nil for every other stored pointer' do
+      pointer_table.each do |label, (field, expected)|
+        expect(described_class.effective_parent_id(field)).to eq(expected), label
+        expect(described_class.effective_parent_id(field)).to be_a(Integer), label if expected
+      end
+    end
+
+    it 'equals FieldIndex#effective_parent_id_for on a fresh index for every row' do
+      pointer_table.each do |label, (field, _expected)|
+        oracle = RedmineDependingCustomFields::FieldIndex.load
+                   .effective_parent_id_for(field.id, field.type, field.field_format, field.parent_custom_field_id)
+        expect(described_class.effective_parent_id(field)).to eq(oracle), label
+      end
+    end
+
+    it 'implies parent_of, and is nil whenever parent_of is nil' do
+      pointer_table.each do |label, (field, _expected)|
+        effective = described_class.effective_parent_id(field)
+        parent = described_class.parent_of(CustomField.find(field.id))
+        expect(parent&.id).to eq(effective), label if effective
+        expect(effective).to be_nil, label if parent.nil?
+      end
+    end
+
+    it 'is nil without a query for a blank, zero, invalid or own pointer and for other formats' do
+      root
+      [nil, '', '  ', 0, '0', 'abc', -3].each do |raw|
+        field = unsaved('depending_list', parent: raw)
+        expect(dcf_count_queries { expect(described_class.effective_parent_id(field)).to be_nil }).to eq(0), raw.inspect
+      end
+      itself = depending
+      itself.parent_custom_field_id = itself.id
+      expect(dcf_count_queries { expect(described_class.effective_parent_id(itself)).to be_nil }).to eq(0)
+      plain = dcf_list_field
+      plain.parent_custom_field_id = root.id
+      expect(dcf_count_queries { expect(described_class.effective_parent_id(plain)).to be_nil }).to eq(0)
+    end
+
+    it 'works for a new record and follows an in-memory pointer change on the same instance' do
+      other = dcf_list_field
+      field = unsaved('depending_list', parent: root.id.to_s)
+      expect(described_class.effective_parent_id(field)).to eq(root.id)
+      field.parent_custom_field_id = other.id
+      expect(described_class.effective_parent_id(field)).to eq(other.id)
+      field.parent_custom_field_id = ''
+      expect(described_class.effective_parent_id(field)).to be_nil
+    end
+
+    it 'memoizes on the record, nil included, so a repeated call costs no query' do
+      valid = CustomField.find(depending(root).id)
+      dangling = CustomField.find(depending(root).tap { |f| point(f, CustomField.maximum(:id).to_i + 1_000) }.id)
+      [[valid, root.id], [dangling, nil]].each do |field, expected|
+        expect(described_class.effective_parent_id(field)).to eq(expected)
+        expect(dcf_count_queries { expect(described_class.effective_parent_id(field)).to eq(expected) }).to eq(0)
+      end
+      expect(described_class.instance_variables).to eq([])
+    end
+
+    it 'is nil for an in-memory pointer that closes a cycle with the stored chain' do
+      a = CustomField.find(depending.id)
+      b = depending(a)
+      c = depending(b)
+      [b, c].each do |candidate|
+        a.parent_custom_field_id = candidate.id
+        expect(described_class.effective_parent_id(a)).to be_nil, candidate.id.to_s
+      end
+      a.parent_custom_field_id = root.id
+      expect(described_class.effective_parent_id(a)).to eq(root.id)
+    end
+
+    it 'gives nil (unconstrained) when the chain is longer than the walk cap' do
+      stub_const('RedmineDependingCustomFields::FieldIndex::WALK_CAP', 3)
+      chain = [root]
+      4.times { chain << depending(chain.last) }
+      expect(described_class.effective_parent_id(CustomField.find(chain[2].id))).to eq(chain[1].id)
+      expect(described_class.effective_parent_id(CustomField.find(chain.last.id))).to be_nil
+    end
+
+    context 'with the records loaded on an issue' do
+      let(:project) { dcf_create_project }
+
+      def issue_with(fields)
+        tracker, = dcf_issue_infra(project)
+        fields.each { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+        issue = Issue.find(dcf_issue_with_value(project, fields.first, 'A').id)
+        issue.custom_field_values
+        issue
+      end
+
+      it 'walks a chain of three loaded on the issue without a query and without deserializing a parent store' do
+        middle = depending(root)
+        child = CustomField.find(depending(middle).id)
+        issue = issue_with([root, middle, child])
+        lookup = described_class.lookup_records(issue)
+        child.parent_custom_field_id
+        queries = nil
+        loads = dcf_count_yaml_loads do
+          queries = dcf_count_queries { expect(described_class.effective_parent_id(child, lookup)).to eq(middle.id) }
+        end
+
+        expect([queries, loads]).to eq([0, 0])
+      end
+
+      it 'looks an unloaded first hop up through the memoized find_parent, shared with parent_state' do
+        child = CustomField.find(depending(root).id)
+        issue = issue_with([dcf_list_field, child])
+        lookup = described_class.lookup_records(issue)
+        one_lookup = dcf_count_queries { described_class.find_parent(root.id) }
+        allow(described_class).to receive(:find_parent).and_call_original
+
+        first = dcf_count_queries { expect(described_class.effective_parent_id(child, lookup)).to eq(root.id) }
+        expect(first).to eq(one_lookup)
+        state = nil
+        expect(dcf_count_queries { state = described_class.parent_state(child, issue) }).to eq(0)
+        expect([state.parent, state.available]).to eq([root, false])
+        expect(described_class).to have_received(:find_parent).once
+      end
+
+      # G6 (server design 3.3): the children of a loaded first hop share its
+      # stored chain, so a grandparent the issue does not carry costs one raw
+      # select for all of them, not one per child.
+      it 'shares the stored chain of a loaded parent between its children' do
+        middle = depending(root)
+        children = Array.new(3) { depending(middle) }
+        issue = issue_with([dcf_list_field, middle] + children)
+        lookup = described_class.lookup_records(issue)
+        per_level = dcf_count_queries { RedmineDependingCustomFields::FieldIndex.new.ensure([root.id]) }
+
+        counts = lookup.values_at(*children.map(&:id)).map do |child|
+          dcf_count_queries { expect(described_class.effective_parent_id(child, lookup)).to eq(middle.id) }
+        end
+        expect(counts).to eq([per_level, 0, 0])
+      end
+
+      it 'keeps each child its own verdict on a shared chain: a child the chain passes through gets nil' do
+        x = depending(root)
+        parent = depending(x)
+        sibling = depending(parent)
+        issue = issue_with([dcf_list_field, x, parent, sibling])
+        lookup = described_class.lookup_records(issue)
+        closing = CustomField.find(x.id)
+        closing.parent_custom_field_id = parent.id
+
+        expect(described_class.effective_parent_id(lookup[sibling.id], lookup)).to eq(parent.id)
+        expect(described_class.effective_parent_id(closing, lookup)).to be_nil
+        expect(described_class.effective_parent_id(lookup[parent.id], lookup)).to eq(x.id)
+      end
+
+      it 'accepts the available fields of an Array of objects as lookup' do
+        middle = depending(root)
+        child = CustomField.find(depending(middle).id)
+        issues = [issue_with([root, middle, child]), issue_with([root, middle, child])]
+        lookup = described_class.lookup_records(issues)
+
+        expect(dcf_count_queries { expect(described_class.effective_parent_id(child, lookup)).to eq(middle.id) }).to eq(0)
+      end
+    end
+  end
+
   # WP-06 adds parent_state and allowed_for with 0.0.16's semantics; WP-10
-  # (effective parent, cycles) and WP-15 (carries?) change them.
+  # reads the effective parent (no state without one) and WP-15 (carries?)
+  # changes them again.
   describe '.parent_state' do
     let(:project) { dcf_create_project }
     let(:parent) { dcf_list_field(values: %w[A B C]) }
@@ -426,27 +632,44 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(dcf_count_queries { described_class.parent_state(field, issue) }).to eq(0)
     end
 
-    it 'accepts a parent of any type, of any family and the field itself, unlike parent_of' do
+    # Flipped by WP-10 (UD-08, UD-35): was "accepts a parent of any type, of
+    # any family and the field itself, unlike parent_of", expecting a state
+    # read from the field itself, an unavailable state for the other type and
+    # a state read from the enumeration.
+    it 'is nil for a parent of another type, of another family or the field itself, like parent_of' do
       point(child, child.id)
       own = CustomField.find(child.id)
-      state = described_class.parent_state(own, issue_on(own => 'a1'))
-      expect([state.parent.id, state.available, state.values]).to eq([child.id, true, ['a1']])
+      expect(described_class.parent_state(own, issue_on(own => 'a1'))).to be_nil
       expect(described_class.parent_of(own)).to be_nil
 
       other_type = dcf_list_field(type: ProjectCustomField)
       point(child, other_type.id)
       field = CustomField.find(child.id)
-      state = described_class.parent_state(field, issue_on(parent => 'A'))
-      expect([state.parent, state.available]).to eq([other_type, false])
+      expect(described_class.parent_state(field, issue_on(parent => 'A'))).to be_nil
       expect(described_class.parent_of(field)).to be_nil
 
       enum = dcf_enum_field(names: %w[X])
       point(child, enum.id)
       field = CustomField.find(child.id)
-      x = enum.enumerations.first.id.to_s
-      state = described_class.parent_state(field, issue_on(enum => x))
-      expect([state.parent.id, state.available, state.values]).to eq([enum.id, true, [x]])
+      expect(described_class.parent_state(field, issue_on(enum => enum.enumerations.first.id.to_s))).to be_nil
       expect(described_class.parent_of(field)).to be_nil
+    end
+
+    # WP-10 (UD-08, UD-35): no state in or below a stored cycle.
+    it 'is nil for the members of a stored cycle and for a field whose chain reaches one' do
+      x = CustomField.find(dcf_list_field(format: 'depending_list', values: %w[x1]).id)
+      y = dcf_list_field(format: 'depending_list', values: %w[y1], parent: x)
+      point(x, y.id)
+      below = dcf_list_field(format: 'depending_list', values: %w[c1], parent: x)
+      itself = dcf_list_field(format: 'depending_list', values: %w[s1])
+      point(itself, itself.id)
+      below_itself = dcf_list_field(format: 'depending_list', values: %w[d1], parent: itself)
+      fields = [x, y, below, itself, below_itself].map { |f| CustomField.find(f.id) }
+      issue = issue_on(fields.index_with { |f| f.possible_values.first })
+
+      fields.each do |field|
+        expect(described_class.parent_state(field, issue)).to be_nil, field.possible_values.inspect
+      end
     end
 
     it 'is nil without a query, a lookup or a load for no pointer, an invalid pointer, no object or another format' do
@@ -775,6 +998,56 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
         expect(described_class.no_options?(fresh, issue)).to be(false)
         expect(dcf_count_queries { described_class.no_options?(fresh, issue) }).to eq(0)
         expect(described_class).to have_received(:find_parent).once
+      end
+
+      # semantics-r2-1: without an effective parent, parent_state is nil
+      # (UD-08, UD-35) but no_options? keeps the 0.0.16 read (the raw pointer:
+      # any existing field, of any type and family, the field itself
+      # included, its value read from the object) until WP-18 retires the
+      # legacy script, which disables such a field while that parent allows
+      # nothing and posts ''.
+      context 'without an effective parent (0.0.16 read kept until WP-18)' do
+        include DcfStoredCycle
+
+        it 'reads the stored parent of a cycle member, a self-parent and a field below a cycle from the object' do
+          world = dcf_stored_cycles(:list)
+          x, self_parent, below = [world.x, world.self_parent, world.child].map { |f| CustomField.find(f.id) }
+          { 'y1' => false, 'y2' => true, '' => true }.each do |y_value, expected|
+            issue = kit_new_issue(project, world.y => y_value.empty? ? [] : y_value, x => [])
+            expect(described_class.parent_state(x, issue)).to be_nil
+            expect(described_class.no_options?(x, issue)).to be(expected), y_value.inspect
+          end
+          { 's1' => false, 's2' => true }.each do |own, expected|
+            issue = kit_new_issue(project, self_parent => own)
+            expect(described_class.parent_state(self_parent, issue)).to be_nil
+            expect(described_class.no_options?(self_parent, issue)).to be(expected), own
+          end
+          { 'x1' => false, 'x2' => true }.each do |x_value, expected|
+            issue = kit_new_issue(project, world.x => x_value, below => [])
+            expect(described_class.parent_state(below, issue)).to be_nil
+            expect(described_class.no_options?(below, issue)).to be(expected), x_value
+          end
+        end
+
+        it 'reads a parent of another type or family: unavailable or unmapped allows nothing, a mapped value allows' do
+          other_type = dcf_list_field(values: %w[A B C], type: ProjectCustomField)
+          field = dcf_store_parent(child, other_type)
+          issue = kit_new_issue(project, parent => 'A', field => [])
+          expect(described_class.parent_state(field, issue)).to be_nil
+          expect(described_class.no_options?(field, issue)).to be(true)
+
+          enum = dcf_enum_field(names: %w[A])
+          enum_key = kit_key(enum, 'A')
+          field = dcf_store_parent(child, enum)
+          # A fresh Project instance: a Project memoizes its custom fields.
+          issue = kit_new_issue(Project.find(project.id), enum => 'A', field => [])
+          expect(issue.custom_field_values.map(&:custom_field_id)).to include(enum.id)
+          expect(described_class.parent_state(field, issue)).to be_nil
+          expect(described_class.no_options?(field, issue)).to be(true)
+          store = field.format_store.to_hash.merge('value_dependencies' => { enum_key => %w[a1] })
+          CustomField.where(id: field.id).update_all(['format_store = ?', dump(store)])
+          expect(described_class.no_options?(CustomField.find(field.id), issue)).to be(false)
+        end
       end
     end
   end

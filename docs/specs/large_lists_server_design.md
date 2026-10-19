@@ -322,7 +322,7 @@ Problem = Struct.new(:type, :parent_key, :child_key, keyword_init: true)
 | `allowed_set(map, parent_values)` / `allowed_values` / `default_values(map, defaults, parent_values, multiple:)` | Pure. Set-based union; first-seen order for `allowed_values`; defaults filtered by allowed; single gives the first. Shared cases in `rules_cases.json`. |
 | `allowed_for(cf, state)` | `allowed_set(cf.value_dependencies \|\| {}, state.values)` |
 | `dependency_check(custom_value, state)` | Returns `[allowed_empty, errors]`; section 8. No current user and no query (UD-07: no `editable_by?`); the parent comes only from `state`. The WP-09b caller (`NonEditableDependencies`, from the Issue and Project patches) resolves the user, places only the custom values core did not validate, and passes an unavailable parent as an unchanged one (WP-09c, section 8 rule 3 (d)). |
-| `no_options?(cf, customized)` | A parent state exists, `allowed_for` is empty, and the parent field still exists (one memoized `find_parent` per record and id, shared with `parent_state`), as in 0.0.16. Used by the required bypass. |
+| `no_options?(cf, customized)` | A parent state exists, `allowed_for` is empty, and the parent field still exists (one memoized `find_parent` per record and id, shared with `parent_state`), as in 0.0.16. Used by the required bypass. Without an effective parent (WP-10) the state is the 0.0.16 read of the raw pointer (any existing field, of any type and family, the field itself included), until WP-18 retires the legacy script (section 8). |
 | `hide_when_disabled?(cf)`, `mapping(cf)`, `defaults(cf)` | as before |
 | `value_keys(cf, include_inactive: true)` | List family: `possible_values` strings, deduplicated keeping the first occurrence. Enum family: ids as strings, by `[position, id]`, inactive included unless `include_inactive: false`. Uses in-memory values, so the textarea of the same request counts. |
 | `value_options(cf)` | **The single value-option source (R7)**: ordered Ruby tuples `[key, label, active]`, see 3.2. The wire shape is produced from it only by `DependencyEditorConfig.wire_values` (gap 3). |
@@ -382,6 +382,8 @@ The wire shape is the one shape for:
 The issue form, edit and validation paths resolve parent CF instances and values from `customized.custom_field_values`, which core memoizes (0 queries, probe_rev and probe_d1). Hops in the cycle walk read the stored parent id of loaded records from raw YAML. Queries happen only for ids that are not loaded, in one batched raw select per chain level.
 
 The bound is therefore O(distinct parents not available on the object). For the G6 fixtures, where parents are available, the counts are invariant. Role-restricted parents cost one `roles` load per parent instance in `visible_by?`. Instances are shared across issues of a project.
+
+Stored chains (WP-10): `effective_parent_id` keeps the index of its walk on the first-hop record (`dcf_memo`), so the children of one parent the object carries share the rows it fetched. An ancestor the object does not carry costs one raw select per chain level for all of them, not one per child (G6: 1 vs 5 children of a parent whose own parent is not on the tracker). A first hop the object does not carry is looked up once per child (`find_parent` memoized on the child, as before WP-10), and the chain above it is walked once per such lookup; such a child has an unavailable parent and must be cleared anyway (UD-05).
 
 ## 4. FieldIndex: the single topology helper (R18)
 
@@ -806,7 +808,7 @@ Rules:
 
 When this runs: core validates custom values only on `new_record? || custom_field_values_changed?` (acts_as_customizable 127-131), and the WP-09b check uses the same gate. Form, bulk, REST, mail and the wizard all assign values.
 
-Required bypass (`CustomFieldPatch#validate_custom_value`): the semantics are unchanged; the lookup moves to `DependencyRules.no_options?(self, custom_value.customized)`. Leniency only concerns non-blank values, so the required rule is untouched. Workflow-required depending children with no options still fail through `Issue#validate_required_fields` (pre-existing, tracked separately).
+Required bypass (`CustomFieldPatch#validate_custom_value`): the semantics are unchanged; the lookup moves to `DependencyRules.no_options?(self, custom_value.customized)`. Leniency only concerns non-blank values, so the required rule is untouched. Workflow-required depending children with no options still fail through `Issue#validate_required_fields` (pre-existing, tracked separately). Fields without an effective parent (rules 4 and 5: in or below a stored cycle, a self-parent, another type or family) have no parent state, but `no_options?` then falls back to the 0.0.16 read of the raw pointer (`legacy_parent_state`: any existing field, the field itself included, its value read from the object), so the bypass stays as in 0.0.16 for them (WP-10, semantics-r2-1). Reason: until 0.1.0 (M2) the legacy script still disables such a field while that parent is blank or allows nothing and posts '' (a cycle partner, or the field itself, starts blank on a new issue), so without the bypass a required field of that kind could never be saved from the issue form. WP-18 removes the fallback together with the legacy script: the new runtime gets no parent attributes for these fields (UD-08, Q18), so the user can pick a value and core's required check applies. A dangling parent keeps no bypass, as in 0.0.16.
 
 ## 9. Point 5: cycle validation and the parent select
 
@@ -990,7 +992,7 @@ Requirements on the parity spec (quality area):
 - **`parent_custom_field_id = ''`** stays `''`.
 - **Corrupt stored mapping:** ClientData fails open, and validation behaves as before.
 - **Very large maps on PostgreSQL:** documented scale limit (limits section 5).
-- **Memo staleness:** if a chain member is changed in the same request after a child memoized its effective parent, the memo is stale for that request only. Admin saves never use it.
+- **Memo staleness:** if a chain member is changed in the same request after a child memoized its effective parent, or after a child walked through a first-hop record (whose chain index, with the rows it fetched, is memoized on that record, section 3.3), later effective-parent reads through that record are stale for that request only. Admin saves never use either: `parent_errors` uses a fresh `FieldIndex.load`.
 
 ## 18. Implementation order (characterization first)
 

@@ -8,8 +8,10 @@ de:
   label_depending_list: "Liste (abhängig)"
   label_depending_enumeration: "Schlüssel/Wert-Liste (abhängig)"
   field_parent_custom_field_id: "Abhängig von"
+  field_parent_custom_field: "Abhängig von"
   field_hide_when_disabled: "Ausblenden, wenn keine gültigen Optionen vorhanden sind"
   warning_required_child_no_options: "Warnung: Dieses Pflichtfeld hat für einen oder mehrere übergeordnete Werte keine erlaubten Optionen. Wenn keine Optionen verfügbar sind, wird die Pflichtfeld-Prüfung nicht angewendet."
+  warning_dcf_parent_cycle: "Dieses Feld ist Teil einer zirkulären Abhängigkeit zwischen diesen Feldern: %{fields}. Ändern Sie das Feld, von dem es abhängt, um den Zyklus aufzulösen."
 
   # Benutzerdefinierte Feldkonfiguration auf Projektebene
   permission_manage_project_custom_field_configuration: "Benutzerdefinierte Felder verwalten"
@@ -82,3 +84,4 @@ de:
     errors:
       messages:
         dcf_hidden_child_conflict: "kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, der nicht zum neuen Wert passt"
+        dcf_circular_dependency: "verweist auf dieses Feld oder auf eines seiner abhängigen Felder, wodurch eine zirkuläre Abhängigkeit entstünde"

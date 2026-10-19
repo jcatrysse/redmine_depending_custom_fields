@@ -8,8 +8,10 @@ en:
   label_depending_list: "List (depending)"
   label_depending_enumeration: "Key/Value list (depending)"
   field_parent_custom_field_id: "Depends on"
+  field_parent_custom_field: "Depends on"
   field_hide_when_disabled: "Hide when no valid options"
   warning_required_child_no_options: "Warning: this required field has no allowed options for one or more parent values. When no options are available the required constraint is not enforced."
+  warning_dcf_parent_cycle: "This field is part of a circular dependency between these fields: %{fields}. Change the field it depends on to break the cycle."
 
   # Project-level custom field configuration
   permission_manage_project_custom_field_configuration: "Manage custom fields"
@@ -82,3 +84,4 @@ en:
     errors:
       messages:
         dcf_hidden_child_conflict: "cannot be changed because a dependent field you cannot see has a value that does not match the new value"
+        dcf_circular_dependency: "refers to this field or to one of its dependent fields, which would create a circular dependency"

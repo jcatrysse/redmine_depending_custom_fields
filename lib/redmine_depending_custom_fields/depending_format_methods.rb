@@ -49,7 +49,8 @@ module RedmineDependingCustomFields
     end
 
     # nil (new and edit forms, admin views) and an Array of objects (bulk
-    # edit) give the full core list. For one object every option is kept and
+    # edit) give the full core list, and so does one object without a parent
+    # state (no effective parent, WP-10). Otherwise every option is kept and
     # the ones its parent value does not allow are hidden, so a stored legacy
     # value stays visible.
     def possible_values_options(custom_field, object = nil)
@@ -71,8 +72,10 @@ module RedmineDependingCustomFields
       end
     end
 
-    # Drops blank values first (kept: the value is assigned back). With a
-    # parent, DependencyRules.dependency_check applies D1 per value: while
+    # Drops blank values first (kept: the value is assigned back). Without a
+    # parent state (no effective parent: none, dangling, in or below a stored
+    # cycle, WP-10) only core validates. With one,
+    # DependencyRules.dependency_check applies D1 per value: while
     # the parent is unchanged the stored values (for a copy, the source's)
     # are kept and only new values must be allowed. When the parent value
     # allows nothing, a blank or rejected value skips the core check; values
@@ -94,9 +97,12 @@ module RedmineDependingCustomFields
       errors + (dep_errors - errors)
     end
 
-    # The core checks only; WP-10 adds the parent checks here.
-    def validate_custom_field(custom_field) # rubocop:disable Lint/UselessMethodDefinition
-      super
+    # The core checks, then the parent check (WP-10): a persisted field whose
+    # parent id changes may not name itself or one of its dependent fields.
+    # Core adds each pair to the record's errors, so the plugin API, the
+    # admin form and the services all refuse such a save.
+    def validate_custom_field(custom_field)
+      super + DependencyRules.parent_errors(custom_field)
     end
 
     # Matches labels of the full list, hidden values included: import and

@@ -65,4 +65,64 @@ RSpec.describe RedmineDependingCustomFields::DependingEnumerationFormat do
       end
     end
   end
+
+  # WP-10 compat-ui-r2-2: the filter values read the effective parent, like
+  # parent_state, possible_values_options and validation (UD-08, UD-35), so a
+  # field in a stored cycle, a self-parent and a stored pointer to another
+  # type offer every value; a valid project parent still restricts them.
+  describe '#query_filter_values' do
+    include DcfStoredCycle
+
+    let(:project) { dcf_create_project }
+
+    def project_field(names, parent: nil)
+      dcf_enum_field(format: 'depending_enumeration', names: names, type: ProjectCustomField, parent: parent)
+    end
+
+    def with_project_values(values)
+      record = Project.find(project.id)
+      record.custom_field_values = values.to_h { |f, name| [f.id.to_s, kit_key(f, name)] }
+      record.save!(validate: false)
+      IssueQuery.new(name: '_', project: Project.find(project.id))
+    end
+
+    def all_pairs(field)
+      field.enumerations.sort_by(&:position).map { |e| [e.name, e.id.to_s] }
+    end
+
+    it 'restricts the values by a valid project parent' do
+      root = dcf_enum_field(names: %w[A B], type: ProjectCustomField)
+      child = project_field(%w[a1 a2], parent: root)
+      child = dcf_set_dependencies(child, value_dependencies: { kit_key(root, 'A') => [kit_key(child, 'a1')] })
+      query = with_project_values(root => 'A')
+
+      expect(format.query_filter_values(child, query)).to eq([['a1', kit_key(child, 'a1')]])
+    end
+
+    it 'offers every value for a stored self-parent and for the members of a stored cycle' do
+      itself = project_field(%w[s1 s2])
+      itself = dcf_set_dependencies(itself, value_dependencies: { kit_key(itself, 's1') => [kit_key(itself, 's1')] })
+      itself = dcf_store_parent(itself, itself)
+      x = project_field(%w[x1 x2])
+      y = project_field(%w[y1 y2], parent: x)
+      y = dcf_set_dependencies(y, value_dependencies: { kit_key(x, 'x1') => [kit_key(y, 'y1')] })
+      x = dcf_set_dependencies(x, value_dependencies: { kit_key(y, 'y1') => [kit_key(x, 'x1')] })
+      x = dcf_store_parent(x, y)
+      query = with_project_values(itself => 's1', x => 'x1', y => 'y1')
+
+      expect(format.query_filter_values(itself, query)).to eq(all_pairs(itself))
+      expect(format.query_filter_values(CustomField.find(x.id), query)).to eq(all_pairs(x))
+      expect(format.query_filter_values(CustomField.find(y.id), query)).to eq(all_pairs(y))
+    end
+
+    it 'offers every value for an issue field whose stored pointer names a project field' do
+      root = dcf_enum_field(names: %w[A B], type: ProjectCustomField)
+      child = dcf_enum_field(format: 'depending_enumeration', names: %w[a1 a2])
+      child = dcf_set_dependencies(child, value_dependencies: { kit_key(root, 'A') => [kit_key(child, 'a1')] })
+      child = dcf_store_parent(child, root)
+      query = with_project_values(root => 'A')
+
+      expect(format.query_filter_values(child, query)).to eq(all_pairs(child))
+    end
+  end
 end

@@ -17,7 +17,9 @@ require_relative '../rails_helper'
 #   legacy value" (D1 per value and copies judged against the source: all
 #   four now accept). Not flipped by owner decision: the unavailable parent
 #   (UD-05).
-# - WP-10: "validates the members of a stored cycle against their mappings".
+# - WP-10, done: "validates the members of a stored cycle against their
+#   mappings" (members of a stored cycle are unconstrained, UD-08: now
+#   accepts any value).
 # - WP-15 (carries?): "hides every option when a Project is passed for an
 #   issue field" (the core list is returned for non-carrying objects).
 # Helpers: spec/support/dcf_format_characterization.rb.
@@ -198,10 +200,12 @@ RSpec.describe 'Depending formats (characterization)' do
         expect(errors_for(issue, child)).to eq([invalid])
       end
 
-      it 'validates the members of a stored cycle against their mappings' do
+      # Flipped by WP-10: was "validates the members of a stored cycle against
+      # their mappings", expecting new_disallowed_errors for y2 (UD-08).
+      it 'accepts any value in the members of a stored cycle (Flipped by WP-10)' do
         x, y = build_cycle(kind)
         expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y1'), y)).to eq([])
-        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y2'), y)).to eq(new_disallowed_errors)
+        expect(errors_for(kit_new_issue(project, x => 'x1', y => 'y2'), y)).to eq([])
       end
 
       context 'with a multiple child holding a legacy value' do

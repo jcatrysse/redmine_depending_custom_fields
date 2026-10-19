@@ -16,8 +16,11 @@ module RedmineDependingCustomFields
   # (only the first hop of effective_parent_id_for is validated), keep a
   # visited Set and stop after WALK_CAP ids.
   #
-  # One index serves one operation: there is no class-level state and nothing
-  # is written onto the records it reads.
+  # One index serves one operation, or the children of one first-hop record:
+  # DependencyRules.effective_parent_id keeps the index of its walk in that
+  # record's dcf_memo, since rows are stored state whatever lookup built them.
+  # There is no class-level state and the index writes nothing onto the
+  # records it reads.
   class FieldIndex
     # A top-level key only: nested keys, block scalars and folded lines are indented.
     PARENT_RE = /^parent_custom_field_id: *(?:'(\d*)'|"(\d*)"|(\d*)) *$/.freeze
