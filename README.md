@@ -30,7 +30,9 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - New custom field types can be used when editing multiple issues at once
    - Allowed values are calculated across all selected issues so only valid options remain available
    - Javascript behaviour ensures only allowed values are selectable when parent fields change
-   - Invalid combinations submitted via API or email are rejected server-side
+   - The server rejects a new value the parent value does not allow, also via
+     API or email; a value already stored is accepted while its parent value
+     is unchanged (see [Validation](#validation))
    - "None" can be chosen to clear a value while bulk editing
    - Selecting "None" for a parent field automatically clears all of its
      dependent fields
@@ -45,7 +47,110 @@ entry for each parent custom field that is valid for all selected issues.
 Choosing one of these entries expands the menu in place and shows cascading
 select boxes with a save button. Child fields are hidden from the normal menu so
 dependencies cannot be broken. The selected value is stored for every chosen
-issue once you click **Save**.
+issue once you click **Save**, except in the fields you may not edit on that
+issue (read-only by workflow or hidden for your role): their values are
+ignored, as in Redmine's bulk edit. Each issue is saved on its own. An issue
+that cannot be saved, for example because a dependent field you cannot edit
+holds a value the new parent value does not allow, keeps its values; the
+other issues are saved and the wizard shows the error messages.
+
+## Validation
+
+The server checks every saved value of a dependent field against the values
+its parent value allows: on the forms of issues, projects and other objects,
+in bulk edit, in the context menu wizard, through the REST API, by email, in
+CSV imports and on copies. A value the parent value does not allow is refused
+with "is invalid" (HTTP 422 in the REST API), except in the cases below.
+
+### Stored values
+
+A value that was saved earlier and that the parent value no longer allows,
+for example after the dependency mapping changed, is accepted on save while
+the parent value is unchanged. The values of a multi-value parent are
+compared regardless of their order.
+
+- Each value counts on its own: other values of a multi-value field can still
+  be added or removed, but every newly added value must be allowed.
+- Once the parent value changes, every value must be allowed.
+- Only values saved on the record count. A new record that is no copy has
+  none, so it is checked strictly; a copy is checked against its source (see
+  [Copies](#copies)). The default value a field gets when a tracker or
+  project change makes it available is checked strictly too.
+
+This applies to the REST API, email, bulk edit (fields left on "(No change)"
+and updates of other attributes), the context menu wizard and copies. The
+forms in the browser (the issue form, including the copy form, project
+settings, time entries and others) still remove such a value when they open,
+if the parent field is on the form. Saving such a form clears the value, or
+is refused for a required field.
+
+### Copies
+
+A copy is checked against the issue it was copied from. Values the source
+holds are kept when they are copied unchanged and the parent value is the
+same as on the source; a changed parent value or an added value is checked
+strictly. Bulk copy, project copy and a copy made through the REST API
+(`copy_from`) keep such values, and a project copy no longer skips those
+issues. A field you cannot edit gets its default value on a copy instead
+(see [Dependent fields you cannot edit](#dependent-fields-you-cannot-edit)).
+The copy form in the browser is the issue form, so it clears such values (see
+above).
+
+### Unavailable parent, missing parent and cycles
+
+- When the parent field is not available on the record (not enabled for its
+  tracker or project), a dependent field you can edit must be empty when the
+  custom field values are saved; a value gives "is invalid", as before. For a
+  dependent field you cannot edit, see the next section.
+- A field whose parent field no longer exists is not checked, as before.
+- Fields that are part of a stored circular dependency, or whose chain of
+  parents reaches one, are not checked on the server until the cycle is
+  fixed, and a "Depends on" change that would create a cycle is refused. See
+  [Circular dependencies](#circular-dependencies).
+
+### Dependent fields you cannot edit
+
+On issues and projects Redmine checks only the custom fields the user may
+edit. The plugin also checks the dependent fields you cannot edit (read-only
+by workflow or hidden for your role), with the same rule for stored values:
+
+- A parent change is refused while such a field holds a value the new parent
+  value does not allow. This applies to the issue form, the project settings
+  form, bulk edit, the context menu wizard, email and REST updates (HTTP 422).
+- A field you can see reports "is invalid" under its name. A field you cannot
+  see is never named: the error is shown on the parent field, for example
+  "Hardware cannot be changed because a dependent field you cannot see has a
+  value that does not match the new value", or as the general message "This
+  change cannot be saved because a dependent field you cannot see has a value
+  that the change does not allow." when you cannot see the parent field either
+  or its value did not change.
+- A new issue, a new project or a copy gets the default value of a dependent
+  field you cannot edit, and so does an issue moved to a tracker or project
+  where that field was not available. The save is refused when the parent
+  value does not allow that default (for a copy, unless the source issue
+  holds that value under the same parent value), and a project copy skips
+  such an issue. This is not the stored-value case above: a value the source
+  issue holds in a field you can edit is kept by a project copy.
+- While the parent field is not available on an issue, a dependent field you
+  cannot edit keeps its stored value: edits on the form, in bulk edit, in the
+  wizard, by email (notes-only replies included) or through REST, and tracker
+  or project moves that make the parent unavailable, still save. A default
+  value the field gets on a new issue, a copy or a move is still checked.
+- The forms in the browser (the issue form, including the copy form, the
+  project settings form and others) clear an editable dependent field whose
+  stored value its parent value does not allow, if the parent field is on the
+  form (see [Stored values](#stored-values)). So the form save is refused
+  when a field you cannot edit depends on that cleared field and holds a
+  value.
+
+To get such a save through, ask someone who may edit that field to change or
+clear it first, or an administrator to fix a default value the parent value
+does not allow.
+
+On time entries, versions and other objects the plugin adds no such check:
+Redmine itself validates every custom field value there, so such a parent
+change was already refused. Redmine's error there names the dependent field,
+also one that is hidden for your role.
 
 ## Circular dependencies
 
@@ -66,9 +171,12 @@ before this check existed. The guards:
   reaches one, as independent (no dependency check) until the cycle is fixed;
 - the admin form of a field that is part of a cycle shows a warning naming
   the fields of the cycle; choosing another "Depends on" field breaks it;
-- every walk along the parents keeps a list of the fields it has visited, on
-  the server and, with the new issue-form script, in the browser, so a cycle
-  never loops.
+- every walk along the parents on the server keeps a list of the fields it
+  has visited and stops after 1,000 fields, so a cycle never loops there. The
+  issue-form script of this version has no such guard and still filters the
+  members of a cycle by their mappings: on a form with a stored cycle it can
+  loop and raise script errors in the browser, so fix the cycle with the help
+  of the warning.
 
 ## Installation
 
@@ -81,7 +189,9 @@ before this check existed. The guards:
 
 ## Compatibility
 
-* Tested with Redmine **5.1, 6.0, 6.1 and 7.0** (PostgreSQL).
+* Tested with Redmine **5.1, 6.0, 6.1 and 7.0** on PostgreSQL; 5.1 and 7.0
+  also on MariaDB 10.11 (manual run, see
+  [MySQL / MariaDB and large lists](#mysql--mariadb-and-large-lists)).
 * `requires_redmine` stays at **5.0**: the code is kept compatible with Ruby 2.7
   and Rails 6.1, but Redmine 5.0 itself is not tested.
 * Ruby **2.7 or newer** is required.
@@ -340,6 +450,51 @@ its dependent fields is refused with HTTP 422 and `{"errors": [...]}` (see
 [Circular dependencies](#circular-dependencies)). An id that names no field of
 the same type and family is stored as `null`, as before.
 
+### Errors
+
+Routes, authentication (administrators only), parameters and the response
+shape are unchanged. A refused create or update answers HTTP 422 with
+`{"errors": [...]}` holding the full messages, like any other validation
+error. Reasons added in this version:
+
+- a circular parent, as described above;
+- on MySQL and MariaDB, possible values or a dependency mapping that the
+  database column cannot hold, for example
+  `{"errors": ["Dependency mapping is too large to store (70,204 bytes, the database allows at most 65,535 bytes)"]}`.
+  Nothing is written, and a create with `enumerations` is rolled back. This
+  holds for List, Key/Value list and both depending formats; PostgreSQL and
+  SQLite have no such limit. The section
+  [MySQL / MariaDB and large lists](#mysql--mariadb-and-large-lists) has the
+  details.
+
+Redmine's own REST API for issues and projects (not the plugin's
+`/depending_custom_fields` endpoints) keeps its response shape too, HTTP 422
+with `{"errors": [...]}`. The rules of [Validation](#validation) give it
+these reasons:
+
+- `PUT /issues/:id.json` and `PUT /projects/:id.json` are refused when the
+  parent value changes while a dependent field you cannot edit (read-only by
+  workflow or hidden for your role) holds a value the new parent value does
+  not allow. A field you can see reports "is invalid" under its name; a field
+  you cannot see is never named: the message is on the parent field, or it is
+  the general message "This change cannot be saved because a dependent field
+  you cannot see has a value that the change does not allow."
+- `POST /issues.json`, a copy with
+  `POST /projects/:id/issues.json?copy_from=<id>` and `POST /projects.json`
+  give a dependent field you cannot edit its default value, and so does a
+  `PUT /issues/:id.json` whose new `tracker_id` or `project_id` makes such a
+  field available. The request is refused when the parent value does not
+  allow that default; a copy is judged against its source, so a default the
+  source issue holds is accepted while the parent value is the same as on
+  the source.
+- Fewer refusals: an update that sends the stored custom field values
+  unchanged, or changes only another custom field, for example
+  `PUT /issues/:id.json` with `custom_fields` holding the stored values, is no
+  longer refused because a stored value no longer fits its parent value. A
+  newly added value the parent value does not allow still answers 422, and
+  for Key/Value list (depending) it gives one "is invalid" instead of two
+  errors.
+
 ### Example usage
 
 List all configured fields:
@@ -498,7 +653,9 @@ Parent Field: Hardware
 Child Field: Keyboard
 ```
 
-Invalid combinations are rejected just like when using the API.
+A new value the parent value does not allow is rejected just like when using
+the API, and a value already stored is accepted while its parent value is
+unchanged (see [Validation](#validation)).
 
 
 ## Project-level custom field configuration
