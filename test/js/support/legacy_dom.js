@@ -8,7 +8,8 @@ const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
 const ASSETS = path.join(__dirname, '..', '..', '..', 'assets', 'javascripts');
-const SCRIPT = fs.readFileSync(path.join(ASSETS, 'depending_custom_fields.js'), 'utf8');
+// WP-17: the legacy script was renamed; the new runtime took its old name.
+const SCRIPT = fs.readFileSync(path.join(ASSETS, 'depending_custom_fields_legacy.js'), 'utf8');
 const WIZARD = fs.readFileSync(path.join(ASSETS, 'context_menu_wizard.js'), 'utf8');
 const JQUERY = fs.readFileSync(require.resolve('jquery/dist/jquery.js'), 'utf8');
 

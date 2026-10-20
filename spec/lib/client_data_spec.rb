@@ -501,12 +501,14 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
 
   # The legacy scripts (untouched until WP-18) read and write their state
   # through dataset keys and data-* names; no contract or carrier attribute
-  # may map onto one of them.
+  # may map onto one of them. WP-17 renamed the legacy script to
+  # depending_custom_fields_legacy.js (the new runtime took the old name).
   it 'uses no attribute name the legacy scripts read or write' do
     names = %w[dcf_field dcf_context dcf_kind dcf_multiple dcf_parent dcf_parent_name dcf_map dcf_defaults dcf_hide
                dcf_parent_values dcf_parent_label dcf_stored dcf_locked_parent dcf_locked_stored dcf_locked_allowed_by]
     root = File.expand_path('../..', __dir__)
-    legacy = %w[assets/javascripts/depending_custom_fields.js assets/javascripts/context_menu_wizard.js].map do |path|
+    files = %w[assets/javascripts/depending_custom_fields_legacy.js assets/javascripts/context_menu_wizard.js]
+    legacy = files.map do |path|
       File.read(File.join(root, path))
     end.join("\n")
     keys = legacy.scan(/dataset\.([A-Za-z]+)/).flatten.uniq

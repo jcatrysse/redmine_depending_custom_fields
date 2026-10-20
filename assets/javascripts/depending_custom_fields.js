@@ -1,561 +1,983 @@
-/* globals window, document, MutationObserver, jQuery */
+/* Redmine Depending Custom Fields: issue-form runtime (frontend design 4 and 5).
+ * One UMD file: under CommonJS the pure rules are module.exports and no DOM
+ * runtime starts; in a browser the runtime reads the per-field data-dcf-*
+ * attributes and exposes window.DependingCustomFields (rules at .rules).
+ * ES2017 only (npm run check); names are compared as strings, never through
+ * a CSS escape helper (jsdom has none). */
 (function () {
-    const NONE_VALUE = '__none__';
+  'use strict';
 
-    function collectRelevantFieldIds(mapping) {
-        const ids = new Set();
-        Object.keys(mapping).forEach(childId => {
-            ids.add(String(childId));
-            const info = mapping[childId];
-            if (info && info.parent_id != null) ids.add(String(info.parent_id));
-        });
-        return ids;
+  // ---------------------------------------------------------------- rules
+  function buildRules() {
+    var NONE = '__none__';
+    var BLANK = '';
+    // Memory keys outside the JSON array strings parentKey() returns.
+    var NOCHANGE_KEY = '\u0000nochange';
+    var NONE_KEY = '\u0000none';
+    var VERSION = '1';
+    var NAME_RE = /^(.+)\[custom_field_values\]\[(\d+)\](\[\])?$/;
+    var hasOwn = Object.prototype.hasOwnProperty;
+
+    function str(v) { return v === null || v === undefined ? '' : String(v); }
+    // Ruby blank?: nil, '' and [[:space:]] only (U+0085 is blank, U+FEFF is not).
+    var BLANK_RE = /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
+    function isBlank(v) { return v === null || v === undefined || BLANK_RE.test(String(v)); }
+    function uniq(values) {
+      var seen = new Set();
+      return values.filter(function (v) {
+        if (seen.has(v)) return false;
+        seen.add(v);
+        return true;
+      });
+    }
+    function isPlainObject(o) { return o !== null && typeof o === 'object' && !Array.isArray(o); }
+    function asList(v) { return Array.isArray(v) ? v : [v]; }
+
+    // 'bulk' only for data-dcf-context="bulk"; missing or unknown means form.
+    function contextOf(raw) { return raw === 'bulk' ? 'bulk' : 'form'; }
+
+    // Concrete values: blanks dropped, and '__none__' in bulk context.
+    function concrete(ctx, values) {
+      return uniq(values.map(str).filter(function (v) { return !isBlank(v) && !(ctx === 'bulk' && v === NONE); }));
     }
 
-    const FIELD_NAME_REGEX = /^([^[]+)\[custom_field_values\]\[(\d+)\](\[\])?/;
+    function parseFieldName(name) {
+      if (typeof name !== 'string') return null;
+      var m = NAME_RE.exec(name);
+      return m ? { prefix: m[1], fieldId: m[2], multiple: !!m[3] } : null;
+    }
 
-    const parseFieldName = (name) => {
-        if (!name) return null;
-        const match = name.match(FIELD_NAME_REGEX);
-        if (!match) return null;
-        return { prefix: match[1], fieldId: match[2] };
-    };
+    function parseJSON(raw) {
+      if (raw === null || raw === undefined || raw === '') return { ok: true, value: null };
+      try {
+        return { ok: true, value: JSON.parse(raw) };
+      } catch (e) {
+        return { ok: false, value: null };
+      }
+    }
 
-    const isSelectElement = (element) => element && element.tagName === 'SELECT';
+    // null: absent or not an object (the field stays unfiltered); {} gives an empty Map.
+    function normalizeMap(obj) {
+      if (!isPlainObject(obj)) return null;
+      var out = new Map();
+      Object.keys(obj).forEach(function (k) {
+        if (isBlank(k)) return;
+        var set = new Set(asList(obj[k]).filter(function (v) { return !isBlank(v); }).map(String));
+        if (set.size) out.set(k, set);
+      });
+      return out;
+    }
 
-    const ensureElementId = (() => {
-        let counter = 0;
-        return (element) => {
-            if (!element.id) {
-                counter += 1;
-                element.id = `depending_cf_${counter}`;
+    function normalizeDefaults(obj) {
+      var out = new Map();
+      if (!isPlainObject(obj)) return out;
+      Object.keys(obj).forEach(function (k) {
+        if (isBlank(k)) return;
+        var list = uniq(asList(obj[k]).filter(function (v) { return !isBlank(v); }).map(String));
+        if (list.length) out.set(k, list);
+      });
+      return out;
+    }
+
+    function normalizeList(arr) {
+      if (!Array.isArray(arr)) return null;
+      return uniq(arr.filter(function (v) { return !isBlank(v); }).map(String));
+    }
+
+    // data-dcf-stored {"child": [...], "parent": [...]}; null when absent (new record).
+    function normalizeStored(obj) {
+      if (!isPlainObject(obj)) return null;
+      return { child: normalizeList(obj.child) || [], parent: normalizeList(obj.parent) };
+    }
+
+    // Union in first-seen order: parent order, then map order.
+    function allowedFor(map, parentValues) {
+      var out = new Set();
+      if (!map) return out;
+      parentValues.forEach(function (pv) {
+        if (isBlank(pv)) return;
+        var set = map.get(String(pv));
+        if (set) set.forEach(function (v) { out.add(v); });
+      });
+      return out;
+    }
+
+    function defaultsFor(defaults, parentValues, allowed) {
+      var out = [];
+      var seen = new Set();
+      parentValues.forEach(function (pv) {
+        if (isBlank(pv)) return;
+        (defaults.get(String(pv)) || []).forEach(function (v) {
+          if (allowed.has(v) && !seen.has(v)) {
+            seen.add(v);
+            out.push(v);
+          }
+        });
+      });
+      return out;
+    }
+
+    function parentKey(values) {
+      return JSON.stringify(uniq(values.filter(function (v) { return !isBlank(v); }).map(String)).sort());
+    }
+    function sameSet(a, b) { return parentKey(a) === parentKey(b); }
+    function isSuperset(next, prev) {
+      var set = new Set(next);
+      return prev.length > 0 && prev.every(function (v) { return set.has(v); });
+    }
+
+    // Frontend design 5.3. present: the parent control is in the scope; raw:
+    // its selected values; staticValues: data-dcf-parent-values (form) or null;
+    // hasMap false: data-dcf-map absent or invalid.
+    function parentState(ctx, present, raw, staticValues, hasMap) {
+      var unfiltered = { kind: 'unfiltered', values: [], key: NOCHANGE_KEY };
+      if (hasMap === false) return unfiltered;
+      if (!present) {
+        if (ctx === 'form' && Array.isArray(staticValues)) {
+          var list = normalizeList(staticValues);
+          return { kind: 'static', values: list, key: parentKey(list) };
+        }
+        return unfiltered;
+      }
+      var rawList = (raw || []).map(str);
+      var values = concrete(ctx, rawList);
+      if (values.length) return { kind: 'values', values: values, key: parentKey(values) };
+      if (ctx === 'bulk') {
+        if (rawList.indexOf(NONE) !== -1) return { kind: 'none', values: [], key: NONE_KEY };
+        return unfiltered;
+      }
+      return { kind: 'empty', values: [], key: parentKey([]) };
+    }
+
+    // D1 per value (UD-04): stored child values the allowed set lacks stay
+    // usable while the server sees the parent as unchanged (ParentState#changed?:
+    // current values against the baseline, a read-only parent too).
+    function legacyEligible(i, allowed) {
+      var out = new Set();
+      if (i.ctx !== 'form' || !i.stored || !allowed) return out;
+      var unchanged = i.stored.parent !== null && sameSet(i.values, i.stored.parent);
+      if (!unchanged) return out;
+      i.stored.child.forEach(function (v) { if (!allowed.has(v)) out.add(v); });
+      return out;
+    }
+
+    function result() {
+      return { values: [], legacy: new Set(), eligible: new Set(), filter: null, state: 'ok', hint: null,
+               auto: false, hideField: false, rememberKey: null };
+    }
+
+    function decideUnfiltered(i, out) {
+      var has = function (v) { return i.optionValues.has(v) && !(v === NONE && i.noneRequired); };
+      out.state = 'unfiltered';
+      if (i.ctx === 'bulk' && i.parentChanged) {
+        var nc = i.memory.get(NOCHANGE_KEY);
+        out.values = nc ? nc.filter(has) : [];
+      } else {
+        out.values = i.current.filter(has);
+      }
+      if (!out.values.length && !i.multiple && i.hasBlank) out.values = [BLANK];
+      if (i.ctx === 'bulk' && i.initial) out.rememberKey = NOCHANGE_KEY;
+      return out;
+    }
+
+    // Frontend design 5.5 (UD-09, UD-10).
+    function decideBulk(i, out) {
+      var allowed = i.kind === 'none' ? new Set() : (i.allowed || new Set());
+      var single = !i.multiple;
+      if (!allowed.size) {
+        out.state = i.kind === 'none' ? 'none' : 'empty';
+        out.values = i.hasNone ? [NONE] : (single && i.hasBlank ? [BLANK] : []);
+        out.auto = i.hasNone && !i.initial;
+        out.hint = i.hasNone ? (out.auto ? 'bulkCleared' : null) : 'empty';
+        out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: !i.hasNone, noneEnabled: true,
+                       requiredNoneEnabled: true };
+        if (i.initial) out.rememberKey = i.key;
+        return out;
+      }
+      var ok = function (v) { return v === BLANK || (v === NONE && !i.noneRequired) || allowed.has(v); };
+      var has = function (v) { return i.optionValues.has(v); };
+      var current = i.current.filter(ok);
+      var values;
+      if (i.initial) {
+        values = current;
+      } else {
+        var remembered = i.memory.get(i.key);
+        if (remembered !== undefined) {
+          values = remembered.filter(function (v) { return ok(v) && has(v); });
+          if (remembered.length && !values.length) remembered = undefined;
+        }
+        if (remembered === undefined) {
+          var carry = i.prevValues.length === 0 || isSuperset(i.values, i.prevValues);
+          values = carry ? concrete('bulk', current) : [];
+          if (!values.length) {
+            values = defaultsFor(i.defaults, i.values, allowed);
+            out.auto = values.filter(has).length > 0;
+          }
+        }
+      }
+      values = uniq(values.filter(has));
+      if (single) values = values.slice(0, 1);
+      if (!values.length && single && i.hasBlank) values = [BLANK];
+      out.values = values;
+      out.hint = out.auto ? 'bulkDefault' : null;
+      out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: true, noneEnabled: !i.noneRequired,
+                     requiredNoneEnabled: false };
+      if (i.initial) out.rememberKey = i.key;
+      return out;
+    }
+
+    // Form state (frontend 5.4); its hint has the same name, none for 'ok'.
+    function formState(kind, allowedSize, legacySize) {
+      if (legacySize) return 'legacy';
+      if (kind === 'empty') return 'waiting';
+      return allowedSize ? 'ok' : 'empty';
+    }
+
+    // Frontend design 5.4 (D1 per value, UD-04, UD-05, UD-12).
+    function decideForm(i, out) {
+      var allowed = i.allowed || new Set();
+      var single = !i.multiple;
+      var eligible = legacyEligible(i, allowed);
+      var has = function (v) { return i.optionValues.has(v); };
+      var usable = function (v) { return (allowed.has(v) || eligible.has(v)) && has(v); };
+      var current = concrete('form', i.current);
+      var values = null;
+      if (i.initial) {
+        values = current.filter(usable);
+        // An empty child takes memory (AJAX re-render); a plain new record
+        // with no usable value left takes the per-parent defaults.
+        var remembered0 = current.length ? undefined : i.memory.get(i.key);
+        if (remembered0 !== undefined) values = remembered0.filter(usable);
+        else if (!values.length && !i.stored && i.kind === 'values') values = defaultsFor(i.defaults, i.values, allowed);
+      } else {
+        var remembered = i.memory.get(i.key);
+        if (remembered !== undefined) {
+          var restored = remembered.filter(usable);
+          if (!(remembered.length && !restored.length)) values = restored;
+        }
+        if (values === null) {
+          if (i.stored && i.stored.parent !== null && sameSet(i.values, i.stored.parent)) {
+            values = i.stored.child.filter(usable);
+          } else {
+            var carry = i.prevValues.length === 0 || isSuperset(i.values, i.prevValues);
+            values = carry ? current.filter(function (v) { return allowed.has(v) && has(v); }) : [];
+            if (!values.length) {
+              values = defaultsFor(i.defaults, i.values, allowed);
+            } else if (i.multiple) {
+              var before = new Set(i.prevValues);
+              var added = i.values.filter(function (v) { return !before.has(v); });
+              values = values.concat(defaultsFor(i.defaults, added, allowed));
             }
-            return element.id;
+          }
+        }
+      }
+      values = uniq(values.filter(has));
+      if (single) values = values.slice(0, 1);
+      if (!values.length && single && i.hasBlank) values = [BLANK];
+      out.values = values;
+      out.eligible = eligible;
+      out.legacy = new Set(values.filter(function (v) { return eligible.has(v); }));
+      out.filter = { allowed: allowed, eligible: eligible, blankEnabled: true, noneEnabled: false,
+                     requiredNoneEnabled: false };
+      out.state = formState(i.kind, allowed.size, out.legacy.size);
+      out.hint = out.state === 'ok' ? null : out.state;
+      out.hideField = !!i.hide && !allowed.size && !out.legacy.size;
+      out.rememberKey = i.key;
+      return out;
+    }
+
+    // Pure decision for one evaluation of one child control.
+    function decide(i) {
+      var out = result();
+      if (i.kind === 'unfiltered') return decideUnfiltered(i, out);
+      if (i.ctx === 'bulk') return decideBulk(i, out);
+      return decideForm(i, out);
+    }
+
+    // requiredNone: the option carries data-dcf-required-none="1" (UD-10).
+    function optionEnabled(filter, value, requiredNone) {
+      if (requiredNone && value === NONE) return !!(filter && filter.requiredNoneEnabled);
+      if (!filter) return true;
+      if (value === BLANK) return filter.blankEnabled;
+      if (value === NONE) return filter.noneEnabled;
+      return filter.allowed.has(value) || filter.eligible.has(value);
+    }
+
+    // Parents first, stable; terminates on cycles and self-parents.
+    function orderByDepth(nodes) {
+      var byId = new Map();
+      nodes.forEach(function (n) { if (!byId.has(String(n.id))) byId.set(String(n.id), n); });
+      var depth = new Map();
+      function depthOf(id) {
+        if (depth.has(id)) return depth.get(id);
+        var seen = new Set([id]);
+        var d = 0;
+        var cur = byId.get(id);
+        while (cur && byId.has(String(cur.parentId)) && !seen.has(String(cur.parentId))) {
+          seen.add(String(cur.parentId));
+          d += 1;
+          cur = byId.get(String(cur.parentId));
+        }
+        depth.set(id, d);
+        return d;
+      }
+      return nodes.map(function (n, idx) { return { n: n, d: depthOf(String(n.id)), idx: idx }; })
+        .sort(function (a, b) { return a.d - b.d || a.idx - b.idx; })
+        .map(function (x) { return x.n; });
+    }
+
+    // %{name} tokens; unknown names stay as written, inserted text is never re-read.
+    function interpolate(text, vars) {
+      return str(text).replace(/%\{(\w+)\}/g, function (m, k) {
+        return vars && hasOwn.call(vars, k) && vars[k] !== undefined && vars[k] !== null ? String(vars[k]) : m;
+      });
+    }
+
+    // UD-37 carrier (WP-16): a change of the parent to the values V is refused
+    // by the server when V differs from the stored baseline as a set and some
+    // stored child value is allowed by none of V. Hook point only: WP-18 adds
+    // the warning text (new key) and the wiring.
+    function lockedRefused(stored, allowedBy, values) {
+      var next = normalizeList(values) || [];
+      if (sameSet(next, normalizeList(stored) || [])) return false;
+      var set = new Set(next);
+      return (Array.isArray(allowedBy) ? allowedBy : []).some(function (entry) {
+        return !(normalizeList(asList(entry)) || []).some(function (v) { return set.has(v); });
+      });
+    }
+
+    return {
+      VERSION: VERSION, NONE: NONE, BLANK: BLANK, NOCHANGE_KEY: NOCHANGE_KEY, NONE_KEY: NONE_KEY,
+      isBlank: isBlank, contextOf: contextOf, parseFieldName: parseFieldName, parseJSON: parseJSON,
+      normalizeMap: normalizeMap, normalizeDefaults: normalizeDefaults, normalizeList: normalizeList,
+      normalizeStored: normalizeStored, allowedFor: allowedFor, defaultsFor: defaultsFor, parentKey: parentKey,
+      sameSet: sameSet, parentState: parentState, legacyEligible: legacyEligible, formState: formState, decide: decide,
+      optionEnabled: optionEnabled, orderByDepth: orderByDepth, interpolate: interpolate,
+      lockedRefused: lockedRefused
+    };
+  }
+
+  // -------------------------------------------------------------- runtime
+  function startRuntime(window, document, R) {
+    if (window.DependingCustomFields && window.DependingCustomFields.__runtime) return;
+
+    var CHILD_SEL = '[data-dcf-parent]';
+    var ATTRS = ['data-dcf-field', 'data-dcf-parent', 'data-dcf-context', 'data-dcf-parent-name', 'data-dcf-map',
+                 'data-dcf-defaults', 'data-dcf-hide', 'data-dcf-parent-values', 'data-dcf-parent-label',
+                 'data-dcf-stored'];
+    // English fallbacks, equal to the en texts of large_lists_i18n_registry.md.
+    var I18N = {
+      selectParent: 'Select a value for %{parent} first.',
+      noOptions: 'No values are available for the selected %{parent}.',
+      noOptionsGeneric: 'No values are available for this field.',
+      legacy: 'Stored values that do not match the selected %{parent} are kept until you change %{parent}: %{values}.',
+      legacyLocked: 'Stored values that do not match %{parent} (not editable here) are kept unchanged: %{values}.',
+      legacyGeneric: 'Stored values that do not match the current selection are kept unchanged: %{values}.',
+      bulkDefault: 'Set to the default for the selected %{parent}. Choose (No change) to keep the current values.',
+      bulkCleared: 'Cleared because the current choice for %{parent} allows no values for this field.',
+      liveMessage: '%{field}: %{message}',
+      saveFailed: 'The change could not be saved.'
+    };
+    var states = new WeakMap();
+    var configs = new WeakMap();
+    var memories = new WeakMap();
+    var ownEvents = new WeakSet();
+    var hiddenByUs = new WeakSet();
+    var texts = null;
+    var hintSeq = 0;
+    var live = { el: null, timer: null, pending: new Map() };
+    var setupRoots = new Set();
+    var setupTimer = null;
+    var started = false;
+
+    function t(key, vars) {
+      if (texts === null) {
+        texts = {};
+        var meta = document.querySelector('meta[name="dcf-i18n"]');
+        var parsed = meta ? R.parseJSON(meta.getAttribute('content')) : { ok: false };
+        if (parsed.ok && parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value)) {
+          texts = parsed.value;
+        }
+      }
+      var own = Object.prototype.hasOwnProperty;
+      var text = own.call(texts, key) && typeof texts[key] === 'string' ? texts[key] :
+        (own.call(I18N, key) ? I18N[key] : '');
+      return R.interpolate(text, vars);
+    }
+
+    function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+    function isSelect(el) { return !!el && el.tagName === 'SELECT'; }
+    function scopeOf(el) { return el.closest('form') || el.closest('.cf-wizard') || el.ownerDocument; }
+    // Radio and check box inputs only: core's hidden '' input and the WP-19
+    // sentinel are never touched.
+    function choiceInputs(ctl) {
+      return Array.prototype.filter.call(ctl.querySelectorAll('input'), function (i) {
+        return i.type === 'radio' || i.type === 'checkbox';
+      });
+    }
+    function controlName(ctl) {
+      if (isSelect(ctl)) return ctl.name;
+      var input = choiceInputs(ctl).filter(function (i) { return !!i.name; })[0];
+      return input ? input.name : '';
+    }
+    function readValues(ctl) {
+      if (isSelect(ctl)) {
+        return Array.prototype.filter.call(ctl.options, function (o) { return o.selected; })
+          .map(function (o) { return o.value; });
+      }
+      return choiceInputs(ctl).filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
+    }
+    function sameList(a, b) { return a.length === b.length && a.every(function (v, k) { return v === b[k]; }); }
+    function jsonAttr(raw) { var p = R.parseJSON(raw); return p.ok ? p.value : null; }
+
+    // Parsed attributes, cached per element while the raw strings stay the same.
+    function config(ctl) {
+      var raw = ATTRS.map(function (a) { return ctl.getAttribute(a); });
+      var cached = configs.get(ctl);
+      if (cached && sameList(cached.raw, raw)) return cached.cfg;
+      var cfg = null;
+      var name = controlName(ctl);
+      var parsed = R.parseFieldName(name);
+      var parentId = raw[1];
+      var usable = isSelect(ctl) || choiceInputs(ctl).length > 0;
+      if (usable && parsed && parentId && parentId !== raw[0] && parentId !== parsed.fieldId) {
+        var ctx = R.contextOf(raw[2]);
+        var form = ctx === 'form';
+        var mapParsed = R.parseJSON(raw[4]);
+        cfg = {
+          fieldId: parsed.fieldId,
+          prefix: parsed.prefix,
+          parentName: raw[3] || (parsed.prefix + '[custom_field_values][' + parentId + ']'),
+          ctx: ctx,
+          multiple: isSelect(ctl) ? ctl.multiple : choiceInputs(ctl).some(function (i) { return i.type === 'checkbox'; }),
+          map: mapParsed.ok ? R.normalizeMap(mapParsed.value) : null,
+          defaults: R.normalizeDefaults(jsonAttr(raw[5])),
+          hide: form && raw[6] === '1',
+          staticValues: form ? R.normalizeList(jsonAttr(raw[7])) : null,
+          parentLabel: form ? (raw[8] || '') : '',
+          stored: form ? R.normalizeStored(jsonAttr(raw[9])) : null
         };
-    })();
-
-    const getFieldInputs = (element) => {
-        if (!element || isSelectElement(element)) return [];
-        const fieldId = element.dataset.dependingFieldId;
-        return Array.from(element.querySelectorAll('input[type="checkbox"], input[type="radio"]')).filter(input => {
-            if (!fieldId) return true;
-            const parsed = parseFieldName(input.name || '');
-            return parsed && parsed.fieldId === fieldId;
-        });
-    };
-
-    const extractPrefix = (element) => {
-        if (!element) return null;
-        if (isSelectElement(element)) {
-            if (element.name) {
-                const parsed = parseFieldName(element.name);
-                if (parsed) return parsed.prefix;
-            }
-            if (element.id) return element.id.replace(/_custom_field_values_.*/, '');
-            return null;
-        }
-        const input = element.querySelector('input[name]');
-        if (!input) return null;
-        const parsed = parseFieldName(input.name);
-        return parsed ? parsed.prefix : null;
-    };
-
-    const findCheckboxGroup = (root, prefix, fieldId) => {
-        if (!root || !root.querySelectorAll) return null;
-        const spans = Array.from(root.querySelectorAll('span.check_box_group'));
-        return spans.find(span => {
-            return Array.from(span.querySelectorAll('input[name]')).some(input => {
-                const parsed = parseFieldName(input.name);
-                return parsed && parsed.prefix === prefix && parsed.fieldId === String(fieldId);
-            });
-        }) || null;
-    };
-
-    const findFieldElement = (root, prefix, fieldId) => {
-        if (!prefix) return null;
-        const baseId = `${prefix}_custom_field_values_${fieldId}`;
-        const altId  = `${baseId}_`;
-
-        const searchIn = (container) => {
-            if (!container || !container.querySelector) return null;
-            return container.querySelector(`#${baseId}, #${altId}`);
-        };
-
-        const candidate = searchIn(root) || document.getElementById(baseId) || document.getElementById(altId);
-        if (candidate) {
-            if (!root || root === document || (candidate.parentNode && root.contains(candidate))) {
-                return candidate;
-            }
-        }
-
-        const checkbox = findCheckboxGroup(root, prefix, fieldId) || findCheckboxGroup(document, prefix, fieldId);
-        if (checkbox && (!root || root === document || root.contains(checkbox))) {
-            return checkbox;
-        }
-
-        return candidate || checkbox;
-    };
-
-    const getContextRoot = (element) => {
-        if (!element || !element.closest) return document;
-        return element.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form, form') || document;
-    };
-
-    const getValues = (field) => {
-        if (!field) return [];
-        if (isSelectElement(field)) {
-            if (field.multiple) {
-                return Array.from(field.options)
-                    .filter(o => o.selected)
-                    .map(o => String(o.value));
-            }
-            return field.value === '' ? [] : [String(field.value)];
-        }
-        const inputs = getFieldInputs(field);
-        const checked = inputs.filter(input => input.checked).map(input => String(input.value || ''));
-        return checked;
-    };
-
-    const setValues = (field, values) => {
-        if (!field) return;
-        const strVals = Array.isArray(values) ? values.map(String) : [String(values)];
-        if (isSelectElement(field)) {
-            if (field.multiple) {
-                Array.from(field.options).forEach(opt => {
-                    opt.selected = strVals.includes(String(opt.value));
-                });
-            } else {
-                field.value = strVals[0] || '';
-            }
-        } else {
-            const inputs = getFieldInputs(field);
-            const hasNone = strVals.includes(NONE_VALUE);
-            inputs.forEach(input => {
-                if (hasNone) {
-                    input.checked = false;
-                } else {
-                    input.checked = strVals.includes(String(input.value || ''));
-                }
-            });
-        }
-    };
-
-    const ensureHiddenContainer = (field) => {
-        if (!field || !field.parentNode || !isSelectElement(field)) return null;
-        let container = field.parentElement.querySelector(`span[data-hidden-for="${field.id}"]`);
-        if (!container) {
-            container = document.createElement('span');
-            container.dataset.hiddenFor = field.id;
-            container.style.display = 'none';
-            field.parentNode.insertBefore(container, field.nextSibling);
-        }
-        return container;
-    };
-
-    const removeOldHiddenInputs = (field) => {
-        if (!field || !isSelectElement(field) || !field.parentElement) return;
-        Array.from(field.parentElement.querySelectorAll('input[type="hidden"]')).forEach(input => {
-            if (input.name === field.name && !input.closest(`span[data-hidden-for="${field.id}"]`)) {
-                input.remove();
-            }
-        });
-    };
-
-    const appendHidden = (container, name, value) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        container.appendChild(input);
-    };
-
-    const syncBulkInputs = (select, values, container) => {
-        if (!select.multiple && values.length === 1 && values[0] === '') return;
-        if (select.multiple && values.length === 1 && values[0] === NONE_VALUE) {
-            appendHidden(container, select.name.replace(/\[\]$/, ''), NONE_VALUE);
-            return;
-        }
-        values.forEach(v => {
-            if (v !== '') appendHidden(container, select.name, v);
-        });
-    };
-
-    const syncInlineInputs = (select, container) => {
-        appendHidden(container, select.name.replace(/\[\]$/, ''), '');
-    };
-
-    const syncRegularInputs = (select, values, container) => {
-        if (values.length === 0) {
-            appendHidden(container, select.name, '');
-        } else {
-            values.forEach(v => appendHidden(container, select.name, v));
-        }
-    };
-
-    const syncHiddenInputs = (field) => {
-        if (!field || !isSelectElement(field) || !field.parentNode) return;
-        removeOldHiddenInputs(field);
-        const container = ensureHiddenContainer(field);
-        container.innerHTML = '';
-        const values = getValues(field);
-        const isBulk = !!field.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form');
-        const isInlineEdit = !!field.closest('#inline_edit_form');
-
-        if (isBulk) {
-            syncBulkInputs(field, values, container);
-        } else if (isInlineEdit && values.length === 0) {
-            syncInlineInputs(field, container);
-        } else {
-            syncRegularInputs(field, values, container);
-        }
-    };
-
-    const calculateAllowed = (parentValues, mapping) => {
-        const hasMapping = parentValues.some(v => Object.prototype.hasOwnProperty.call(mapping, v));
-        let allowed = [];
-        parentValues.forEach(v => {
-            if (Object.prototype.hasOwnProperty.call(mapping, v) && Array.isArray(mapping[v])) {
-                allowed = allowed.concat(mapping[v].map(String));
-            }
-        });
-        allowed = Array.from(new Set(allowed));
-        return { allowed, hasMapping };
-    };
-
-    const updateOptionVisibility = (field, allowed, hasMapping) => {
-        if (isSelectElement(field)) {
-            Array.from(field.querySelectorAll('option')).forEach(opt => {
-                const val       = String(opt.value);
-                const isSpecial = val === NONE_VALUE;
-                const disallowed = !hasMapping
-                    ? val !== '' && !isSpecial
-                    : !allowed.includes(val) && val !== '' && !isSpecial;
-                opt.hidden        = disallowed;
-                opt.style.display = disallowed ? 'none' : '';
-            });
-            return;
-        }
-
-        getFieldInputs(field).forEach(input => {
-            const val       = String(input.value || '');
-            const isSpecial = val === NONE_VALUE;
-            const disallowed = !hasMapping
-                ? val !== '' && !isSpecial
-                : !allowed.includes(val) && val !== '' && !isSpecial;
-            const label = input.closest('label');
-            if (label) {
-                label.style.display = disallowed ? 'none' : '';
-            }
-            input.dataset.dependingHiddenOption = disallowed ? '1' : '0';
-            if (disallowed && input.checked) {
-                input.checked = false;
-            }
-        });
-    };
-
-    const setParentVisibility = (childSelect, visible) => {
-        const parent = childSelect.closest('p');
-        if (!parent) return;
-        parent.hidden = !visible;
-    };
-
-    const parseStoredCombos = (field) => {
-        if (!field || !field.dataset) return { combos: {} };
-        const raw = field.dataset.valueMap;
-        if (!raw) return { combos: {} };
-        try {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object') {
-                if (parsed.combos && typeof parsed.combos === 'object') {
-                    return { combos: parsed.combos };
-                }
-                const combos = {};
-                Object.keys(parsed).forEach(key => {
-                    combos[key] = parsed[key];
-                });
-                return { combos };
-            }
-        } catch (e) {
-            // ignore invalid state
-        }
-        return { combos: {} };
-    };
-
-    const storeCombos = (field, combos) => {
-        if (!field || !field.dataset) return;
-        field.dataset.valueMap = JSON.stringify({ combos });
-    };
-
-    const buildParentKey = (values) => {
-        if (!values || values.length === 0) return '';
-        return values.slice().sort().join('||');
-    };
-
-    const applyChildState = (parentValues, childSelect, allowed, hasMapping, defaults, hideParent) => {
-        const isSelect = isSelectElement(childSelect);
-        const isBulk = isSelect
-            ? childSelect.querySelector(`option[value="${NONE_VALUE}"]`) !== null
-            : !!childSelect.closest('.cf-wizard, .cf-wizard-form, #context-menu, .bulk-edit, #bulk_edit_form');
-        const noChangeOption = isSelect ? childSelect.querySelector('option[value=""]') : null;
-        const hasNone  = parentValues.includes(NONE_VALUE);
-        const hasValue = parentValues.some(v => v !== '' && v !== NONE_VALUE);
-        const hasAllowed = allowed.length > 0;
-
-        let visible = true;
-        if (hasNone) {
-            if (isSelect) {
-                childSelect.disabled = true;
-                setValues(childSelect, [NONE_VALUE]);
-            } else {
-                getFieldInputs(childSelect).forEach(input => { input.disabled = true; });
-                setValues(childSelect, []);
-            }
-            visible = false;
-        } else if (!hasValue || !hasMapping || !hasAllowed) {
-            if (isSelect) {
-                childSelect.disabled = !isBulk;
-            } else {
-                getFieldInputs(childSelect).forEach(input => { input.disabled = !isBulk; });
-            }
-            visible = false;
-            if (!isBulk) {
-                setValues(childSelect, []);
-            } else {
-                const currentVals = getValues(childSelect).filter(v => allowed.includes(v) || v === NONE_VALUE);
-                setValues(childSelect, currentVals);
-            }
-        } else {
-            if (isSelect) {
-                childSelect.disabled = false;
-            } else {
-                getFieldInputs(childSelect).forEach(input => { input.disabled = false; });
-            }
-            const currentVals = getValues(childSelect).filter(v => allowed.includes(v) || v === NONE_VALUE);
-            setValues(childSelect, currentVals);
-            visible = true;
-        }
-
-        if (isSelect && isBulk && hasValue && noChangeOption) {
-            noChangeOption.hidden       = true;
-            noChangeOption.style.display = 'none';
-            if (getValues(childSelect).length === 0) {
-                setValues(childSelect, [NONE_VALUE]);
-            }
-        } else if (isSelect && noChangeOption) {
-            noChangeOption.hidden       = false;
-            noChangeOption.style.display = '';
-        }
-
-        if (hideParent) {
-            setParentVisibility(childSelect, visible);
-        } else {
-            setParentVisibility(childSelect, true);
-        }
-
-        const isDisabled = isSelect ? childSelect.disabled : getFieldInputs(childSelect).every(input => input.disabled);
-        if (!isDisabled && hasValue) {
-            const { combos } = parseStoredCombos(childSelect);
-            const uniqueParents = Array.from(new Set(parentValues.filter(v => v !== '' && v !== NONE_VALUE)));
-            const parentKey = buildParentKey(uniqueParents);
-            const previousKey = childSelect.dataset.lastParentKey || '';
-            const previousParents = previousKey ? previousKey.split('||').filter(Boolean) : [];
-            const canCarryExisting = previousParents.length > 0 && previousParents.every(p => uniqueParents.includes(p));
-            const initialRun = childSelect.dataset.initialized !== 'true';
-
-            const collectValues = (source) => {
-                if (!source) return [];
-                const raw = Array.isArray(source) ? source : [source];
-                return raw.map(String).filter(v => allowed.includes(v));
-            };
-
-            const hasStoredCombo = parentKey !== '' && Object.prototype.hasOwnProperty.call(combos, parentKey);
-            const storedValues = hasStoredCombo ? collectValues(combos[parentKey]) : [];
-            const currentSelection = getValues(childSelect).filter(v => v !== NONE_VALUE && allowed.includes(v));
-            const canReuseExisting = initialRun || canCarryExisting;
-
-            if (hasStoredCombo) {
-                setValues(childSelect, storedValues);
-            } else {
-                const baseValues = canReuseExisting ? currentSelection.slice() : [];
-                const nextValues = baseValues.slice();
-                const addedParents = uniqueParents.filter(v => !previousParents.includes(v));
-                const shouldApplyDefaults = () => {
-                    if (initialRun && currentSelection.length > 0) return false;
-                    if (nextValues.length === 0) return true;
-                    return addedParents.length > 0;
-                };
-
-                if (shouldApplyDefaults()) {
-                    const defaultValues = uniqueParents
-                        .filter(v => Object.prototype.hasOwnProperty.call(defaults, v))
-                        .reduce((acc, parent) => {
-                            collectValues(defaults[parent]).forEach(val => {
-                                if (!acc.includes(val)) acc.push(val);
-                            });
-                            return acc;
-                        }, []);
-
-                    defaultValues.forEach(val => {
-                        if (!nextValues.includes(val)) nextValues.push(val);
-                    });
-                }
-
-                setValues(childSelect, nextValues);
-            }
-
-            const storedSelection = getValues(childSelect).filter(v => v !== NONE_VALUE && allowed.includes(v));
-            if (parentKey) {
-                combos[parentKey] = storedSelection;
-            }
-            storeCombos(childSelect, combos);
-            childSelect.dataset.lastParentKey = parentKey;
-            childSelect.dataset.initialized = 'true';
-        }
-    };
-
-    const updateChild = (parentSelect, childSelect, mapping, defaults = {}, hideParentSetting = false) => {
-        const parentValues = getValues(parentSelect);
-        const { allowed, hasMapping } = calculateAllowed(parentValues, mapping);
-        const hideParent = hideParentSetting === true || hideParentSetting === '1' || hideParentSetting === 1;
-        updateOptionVisibility(childSelect, allowed, hasMapping);
-        applyChildState(parentValues, childSelect, allowed, hasMapping, defaults, hideParent);
-        syncHiddenInputs(childSelect);
-        if (isSelectElement(childSelect)) {
-            childSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-            const inputs = getFieldInputs(childSelect);
-            if (inputs.length > 0) {
-                inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-    };
-
-    const setup = (root = document) => {
-        const rawData = window.DependingCustomFieldData;
-        let mapping   = null;
-        if (rawData && typeof rawData === 'object') {
-            mapping = typeof rawData.mapping === 'object' ? rawData.mapping : rawData;
-        }
-        if (!mapping || typeof mapping !== 'object') {
-            return;
-        }
-
-        const relevantFieldIds = collectRelevantFieldIds(mapping);
-
-        Object.keys(mapping).forEach(cid => {
-            const info = mapping[cid];
-            const cidStr = String(cid);
-            const selectMatches = Array.from(root.querySelectorAll(
-                `[id$="_custom_field_values_${cid}"], [id$="_custom_field_values_${cid}_"]`
-            ));
-            const checkboxMatches = Array.from(root.querySelectorAll('span.check_box_group')).filter(span => {
-                return Array.from(span.querySelectorAll('input[name]')).some(input => {
-                    const parsed = parseFieldName(input.name);
-                    return parsed && parsed.fieldId === cidStr;
-                });
-            });
-            const childElements = Array.from(new Set([...selectMatches, ...checkboxMatches]));
-
-            childElements.forEach(childElement => {
-                const inMenu = childElement.closest('#context-menu');
-                if (inMenu && !childElement.closest('.cf-wizard')) {
-                    const li = childElement.closest('li');
-                    if (li) li.style.display = 'none';
-                    return;
-                }
-                if (childElement.dataset.dependingInitialized) return;
-
-                const prefix = extractPrefix(childElement);
-                if (!prefix) return;
-                childElement.dataset.dependingFieldId = cidStr;
-                childElement.dataset.dependingPrefix = prefix;
-
-                const contextRoot = getContextRoot(childElement);
-                const parentSelect = findFieldElement(contextRoot, prefix, info.parent_id);
-                if (!parentSelect) return;
-
-                const parentPrefix = extractPrefix(parentSelect) || prefix;
-                parentSelect.dataset.dependingFieldId = parentSelect.dataset.dependingFieldId || String(info.parent_id);
-                parentSelect.dataset.dependingPrefix = parentSelect.dataset.dependingPrefix || parentPrefix;
-                const parentIdAttr = ensureElementId(parentSelect);
-                const parentKey = parentSelect.dataset.dependingKey || `${parentPrefix}:${parentSelect.dataset.dependingFieldId}:${parentIdAttr}`;
-                parentSelect.dataset.dependingKey = parentKey;
-                childElement.dataset.dependingParentKey = parentKey;
-
-                syncHiddenInputs(childElement);
-                childElement.classList.add('depending-child');
-                childElement.dataset.dependingInitialized = '1';
-
-                if (!childElement.dataset.changeListener) {
-                    childElement.addEventListener('change', () => syncHiddenInputs(childElement));
-                    childElement.dataset.changeListener = '1';
-                }
-
-                const key = 'dependingChildKeys';
-                const entry = `${prefix}|${cidStr}`;
-                const stored = (parentSelect.dataset[key] || '').split(',').filter(Boolean);
-                if (!stored.includes(entry)) {
-                    stored.push(entry);
-                    parentSelect.dataset[key] = stored.join(',');
-                }
-
-                if (!parentSelect.dataset.dependingChangeListener) {
-                    parentSelect.addEventListener('change', () => {
-                        const allEntries = (parentSelect.dataset[key] || '').split(',').filter(Boolean);
-                        const searchRoot = getContextRoot(parentSelect);
-                        allEntries.forEach(item => {
-                            const [childPrefix, childId] = item.split('|');
-                            if (!childPrefix || !childId) return;
-                            const child = findFieldElement(searchRoot, childPrefix, childId) || findFieldElement(document, childPrefix, childId);
-                            const childInfo = mapping[childId] || {};
-                            if (child) updateChild(parentSelect, child, childInfo.map || {}, childInfo.defaults || {}, childInfo.hide_when_disabled);
-                        });
-                    });
-                    parentSelect.dataset.dependingChangeListener = '1';
-                }
-
-                updateChild(parentSelect, childElement, info.map || {}, info.defaults || {}, info.hide_when_disabled);
-            });
-        });
-
-        root.querySelectorAll('select[data-field-id]').forEach(sel => {
-            if (relevantFieldIds.has(String(sel.dataset.fieldId))) {
-                syncHiddenInputs(sel);
-                if (!sel.dataset.syncHiddenInputListener) {
-                    sel.addEventListener('change', () => syncHiddenInputs(sel));
-                    sel.dataset.syncHiddenInputListener = '1';
-                }
-            }
-        });
-    };
-
-    let debounceTimeout;
-    const requestSetup = (root = document) => {
-        clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(() => setup(root), 100);
-    };
-
-    document.addEventListener('DOMContentLoaded', () => setup());
-
-    if (window.jQuery) {
-        jQuery(document).ajaxComplete(() => requestSetup(document));
+      }
+      configs.set(ctl, { raw: raw, cfg: cfg });
+      return cfg;
     }
 
-    const observeContextMenu = () => {
-        const menu = document.getElementById('context-menu');
-        if (menu && !menu.dataset.dependingObserver) {
-            const observer = new MutationObserver(() => requestSetup(menu));
-            observer.observe(menu, { childList: true, subtree: true });
-            menu.dataset.dependingObserver = '1';
-            requestSetup(menu);
-        }
-    };
-
-    observeContextMenu();
-    if (window.MutationObserver && document.body) {
-        const bodyObserver = new MutationObserver(observeContextMenu);
-        bodyObserver.observe(document.body, { childList: true });
+    // Non-hidden select or input elements named like the parent (or with []),
+    // compared as strings; resolved on every evaluation.
+    function findParent(scope, name) {
+      var multi = name + '[]';
+      var els = Array.prototype.filter.call(scope.querySelectorAll('select, input'), function (el) {
+        return (el.name === name || el.name === multi) && el.type !== 'hidden';
+      });
+      if (!els.length) return null;
+      var first = els[0];
+      var values = isSelect(first) ? readValues(first) : els.filter(function (i) {
+        return (i.type === 'radio' || i.type === 'checkbox') && i.checked;
+      }).map(function (i) { return i.value; });
+      return { el: first, values: values };
     }
 
-    window.DependingCustomFields = { requestSetup, setup };
-})();
+    function textOf(node) { return node.textContent.replace(/\s+/g, ' ').trim(); }
+
+    // The field label of a control: the first label or .field-description of
+    // its p or .cf-wizard-field outside .check_box_group, without controls,
+    // .required and hints.
+    function labelText(el) {
+      var box = el.closest('p, .cf-wizard-field');
+      if (!box) return '';
+      var lab = Array.prototype.filter.call(box.querySelectorAll('label, .field-description'), function (n) {
+        return !n.closest('.check_box_group');
+      })[0];
+      if (!lab) return '';
+      var clone = lab.cloneNode(true);
+      each(clone.querySelectorAll('select, input, textarea, button, .required, .dcf-hint'), function (n) {
+        n.parentNode.removeChild(n);
+      });
+      return textOf(clone);
+    }
+
+    function memoryFor(scope, cfg) {
+      var byScope = memories.get(scope);
+      if (!byScope) {
+        byScope = new Map();
+        memories.set(scope, byScope);
+      }
+      var k = cfg.prefix + '|' + cfg.fieldId;
+      if (!byScope.has(k)) byScope.set(k, new Map());
+      return byScope.get(k);
+    }
+
+    function optionsOf(ctl) {
+      if (isSelect(ctl)) return Array.prototype.slice.call(ctl.options);
+      return choiceInputs(ctl);
+    }
+    function isRequiredNone(o) { return o.value === R.NONE && o.getAttribute('data-dcf-required-none') === '1'; }
+
+    function setHidden(el, hidden) {
+      if (el.hidden !== hidden) el.hidden = hidden;
+      // Server pre-hidden markup (inline display:none) is reset when enabled.
+      if (!hidden && el.hasAttribute('style') && el.style.display === 'none') el.style.display = '';
+    }
+    function setClass(el, name, on) {
+      if (el.classList.contains(name) !== on) el.classList.toggle(name, on);
+    }
+
+    // Point 2: the control itself is never disabled; options and choice inputs
+    // are hidden and disabled. A single select gets the target option, else
+    // the enabled '' option, else no selection.
+    // options: a snapshot taken before any write (a live collection would be
+    // rebuilt after every attribute change).
+    function apply(ctl, d, options) {
+      var target = new Set(d.values);
+      var enabled = function (o) { return R.optionEnabled(d.filter, o.value, isRequiredNone(o)) || target.has(o.value); };
+      if (isSelect(ctl)) {
+        options.forEach(function (o) {
+          var on = enabled(o);
+          if (o.disabled !== !on) o.disabled = !on;
+          setHidden(o, !on);
+          setClass(o, 'dcf-legacy-option', d.eligible.has(o.value));
+        });
+        if (ctl.multiple) {
+          options.forEach(function (o) {
+            var s = target.has(o.value) && !o.disabled;
+            if (o.selected !== s) o.selected = s;
+          });
+        } else {
+          var want = d.values.length ? d.values[0] : R.BLANK;
+          var pick = null;
+          var blank = null;
+          options.forEach(function (o) {
+            if (o.disabled) return;
+            if (!pick && o.value === want) pick = o;
+            if (!blank && o.value === R.BLANK) blank = o;
+          });
+          pick = pick || blank;
+          if (pick) {
+            if (!pick.selected) pick.selected = true;
+          } else if (ctl.selectedIndex !== -1) {
+            ctl.selectedIndex = -1;
+          }
+        }
+      } else {
+        options.forEach(function (input) {
+          var on = enabled(input);
+          var label = input.closest('label') || input;
+          if (input.disabled !== !on) input.disabled = !on;
+          setHidden(label, !on);
+          setClass(label, 'dcf-legacy-option', d.eligible.has(input.value));
+          var c = target.has(input.value) && on;
+          if (input.checked !== c) input.checked = c;
+        });
+      }
+    }
+
+    function describedTargets(ctl) { return isSelect(ctl) ? [ctl] : choiceInputs(ctl); }
+    function setDescribedBy(el, id, on) {
+      var current = el.getAttribute('aria-describedby') || '';
+      var tokens = current.split(/\s+/).filter(Boolean);
+      var idx = tokens.indexOf(id);
+      if (on && idx === -1) tokens.push(id);
+      if (!on && idx !== -1) tokens.splice(idx, 1);
+      var next = tokens.join(' ');
+      if (next === current) return;
+      if (next) el.setAttribute('aria-describedby', next);
+      else el.removeAttribute('aria-describedby');
+    }
+
+    function optionLabel(ctl, value) {
+      var found = optionsOf(ctl).filter(function (o) { return o.value === value; })[0];
+      if (!found) return value;
+      return textOf(isSelect(ctl) ? found : (found.closest('label') || found)) || value;
+    }
+
+    // legacyValues: the selected legacy values, in order.
+    function hintText(ctl, cfg, hint, legacyValues, parentEl) {
+      if (!hint) return '';
+      var parent = (parentEl ? labelText(parentEl) : '') || cfg.parentLabel;
+      var names = legacyValues.map(function (v) { return optionLabel(ctl, v); });
+      var shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ', ...' : '');
+      switch (hint) {
+        case 'waiting': return parent ? t('selectParent', { parent: parent }) : t('noOptionsGeneric');
+        case 'empty': return parentEl && parent ? t('noOptions', { parent: parent }) : t('noOptionsGeneric');
+        case 'legacy':
+          if (parentEl && parent) return t('legacy', { parent: parent, values: shown });
+          if (parent) return t('legacyLocked', { parent: parent, values: shown });
+          return t('legacyGeneric', { values: shown });
+        case 'bulkDefault': return parent ? t('bulkDefault', { parent: parent }) : '';
+        case 'bulkCleared': return parent ? t('bulkCleared', { parent: parent }) : '';
+        default: return '';
+      }
+    }
+
+    // One em.info.dcf-hint per control, created lazily; true when a visible
+    // text newly appeared or changed.
+    function setHint(ctl, st, text, legacy) {
+      if (!text && !st.hint) return false;
+      if (!st.hint) {
+        var em = document.createElement('em');
+        em.className = 'info dcf-hint';
+        em.id = 'dcf-hint-' + (++hintSeq);
+        em.hidden = true;
+        var box = ctl.closest('p, .cf-wizard-field');
+        if (box) box.appendChild(em);
+        else ctl.parentNode.insertBefore(em, ctl.nextSibling);
+        st.hint = em;
+      }
+      var hint = st.hint;
+      var changed = !!text && (hint.hidden || hint.textContent !== text);
+      if (text && hint.textContent !== text) hint.textContent = text;
+      if (hint.hidden !== !text) hint.hidden = !text;
+      setClass(hint, 'dcf-hint--legacy', !!text && legacy);
+      describedTargets(ctl).forEach(function (el) { setDescribedBy(el, hint.id, !!text); });
+      return changed;
+    }
+
+    function hideHint(ctl, st) {
+      if (!st.hint) return;
+      if (!st.hint.hidden) st.hint.hidden = true;
+      describedTargets(ctl).forEach(function (el) { setDescribedBy(el, st.hint.id, false); });
+    }
+
+    // The visible hint text of a control, or null.
+    function shownHint(ctl) {
+      var st = states.get(ctl);
+      return st && st.hint && !st.hint.hidden ? st.hint.textContent : null;
+    }
+
+    // D3: only the field's own p, only when it holds no control of another
+    // field; un-hiding removes only what the runtime added.
+    function setFieldHidden(ctl, hide, cfg) {
+      var p = ctl.closest('p');
+      if (!p) return;
+      if (hide) {
+        if (hiddenByUs.has(p) || p.hidden) return;
+        var foreign = Array.prototype.some.call(p.querySelectorAll('select, input, textarea'), function (el) {
+          if (el === ctl || ctl.contains(el) || !el.name) return false;
+          var parsed = R.parseFieldName(el.name);
+          return !parsed || parsed.fieldId !== cfg.fieldId || parsed.prefix !== cfg.prefix;
+        });
+        if (foreign) return;
+        hiddenByUs.add(p);
+        p.classList.add('dcf-hidden');
+        p.hidden = true;
+      } else if (hiddenByUs.has(p)) {
+        hiddenByUs.delete(p);
+        p.classList.remove('dcf-hidden');
+        p.hidden = false;
+      }
+    }
+
+    function evaluate(ctl) {
+      var cfg = config(ctl);
+      if (!cfg) return null;
+      var st = states.get(ctl);
+      var initial = !st;
+      var scope = scopeOf(ctl);
+      var parent = findParent(scope, cfg.parentName);
+      var ps = R.parentState(cfg.ctx, !!parent, parent ? parent.values : [], cfg.staticValues, !!cfg.map);
+      var sig = ps.kind + '|' + ps.key;
+      if (!initial && sig === st.sig) return null;
+      if (initial) {
+        st = { sig: null, key: null, kind: null, values: [], hint: null, autoHint: false, form: null };
+        states.set(ctl, st);
+        ctl.classList.add('depending-child');
+      }
+      var before = readValues(ctl);
+      var options = optionsOf(ctl);
+      var optionValues = new Set();
+      var noneRequired = false;
+      options.forEach(function (o) {
+        optionValues.add(o.value);
+        if (isRequiredNone(o)) noneRequired = true;
+      });
+      var allowed = ps.kind === 'values' || ps.kind === 'static' ? R.allowedFor(cfg.map, ps.values) :
+        (ps.kind === 'empty' || ps.kind === 'none' ? new Set() : null);
+      var mem = memoryFor(scope, cfg);
+      var d = R.decide({
+        ctx: cfg.ctx, kind: ps.kind, key: ps.key, values: ps.values, prevValues: st.values, allowed: allowed,
+        current: before, initial: initial, parentChanged: !initial, multiple: cfg.multiple,
+        hasBlank: optionValues.has(R.BLANK), hasNone: optionValues.has(R.NONE), noneRequired: noneRequired,
+        optionValues: optionValues, defaults: cfg.defaults, memory: mem, hide: cfg.hide, stored: cfg.stored
+      });
+      apply(ctl, d, options);
+      var legacyValues = d.values.filter(function (v) { return d.legacy.has(v); });
+      var text = hintText(ctl, cfg, d.hint, legacyValues, parent && parent.el);
+      var announce = setHint(ctl, st, text, d.hint === 'legacy');
+      setFieldHidden(ctl, d.hideField, cfg);
+      if (ctl.getAttribute('data-dcf-state') !== d.state) ctl.setAttribute('data-dcf-state', d.state);
+      // The class marks the bulk default only; a user change hides both bulk hints.
+      setClass(ctl, 'dcf-auto-applied', d.hint === 'bulkDefault');
+      st.sig = sig;
+      st.key = ps.key;
+      st.kind = ps.kind;
+      st.values = ps.values;
+      st.autoHint = d.hint === 'bulkDefault' || d.hint === 'bulkCleared';
+      // What a user pick needs to recompute the legacy state (recordPick).
+      st.form = cfg.ctx === 'form' && d.filter ? { kind: ps.kind, allowedSize: allowed.size, eligible: d.eligible } : null;
+      var after = readValues(ctl);
+      if (d.rememberKey !== null) {
+        mem.set(d.rememberKey, cfg.ctx === 'form' ? after.filter(function (v) { return !R.isBlank(v); }) : after.slice());
+      }
+      return { ctl: ctl, fieldId: cfg.fieldId, state: d.state, values: after, changed: !sameList(before, after),
+               announce: announce ? text : null };
+    }
+
+    function dependentsOf(scope, prefix, fieldId) {
+      var name = prefix + '[custom_field_values][' + fieldId + ']';
+      return Array.prototype.filter.call(scope.querySelectorAll('[data-dcf-parent="' + fieldId + '"]'), function (c) {
+        var cfg = c.isConnected ? config(c) : null;
+        return !!cfg && cfg.parentName === name && scopeOf(c) === scope;
+      });
+    }
+
+    // BFS over dependents with a visited set: each control is evaluated at
+    // most once per pass, so stored cycles terminate.
+    function spread(scope, queue, visited, results) {
+      while (queue.length) {
+        var ctl = queue.shift();
+        if (visited.has(ctl)) continue;
+        visited.add(ctl);
+        var res = evaluate(ctl);
+        if (!res) continue;
+        results.push(res);
+        var cfg = config(ctl);
+        queue = queue.concat(dependentsOf(scope, cfg.prefix, cfg.fieldId));
+      }
+    }
+
+    function dispatchAll(results) {
+      results.forEach(function (r) {
+        if (!r.ctl.isConnected) return;
+        if (r.changed) {
+          var target = isSelect(r.ctl) ? r.ctl : (choiceInputs(r.ctl)[0] || r.ctl);
+          var ev = new window.Event('change', { bubbles: true });
+          ownEvents.add(ev);
+          target.dispatchEvent(ev);
+        }
+        r.ctl.dispatchEvent(new window.CustomEvent('dcf:updated', {
+          bubbles: true,
+          detail: { fieldId: r.fieldId, state: r.state, values: r.values, changed: r.changed }
+        }));
+      });
+    }
+
+    // One page-level polite live region, created empty when the first message
+    // is queued, so it exists before its text changes.
+    function liveRegion() {
+      if (!live.el || !live.el.isConnected) {
+        live.el = document.createElement('div');
+        live.el.id = 'dcf-live';
+        live.el.className = 'hidden-for-sighted dcf-live';
+        live.el.setAttribute('role', 'status');
+        live.el.setAttribute('aria-live', 'polite');
+        (document.body || document.documentElement).appendChild(live.el);
+      }
+      return live.el;
+    }
+
+    // 400 ms after the last user change: the latest message of each control
+    // whose hint is still shown with that text; nothing when none is left.
+    function flushLive() {
+      live.timer = null;
+      var parts = [];
+      live.pending.forEach(function (text, ctl) {
+        if (!ctl.isConnected || shownHint(ctl) !== text) return;
+        var field = labelText(ctl);
+        parts.push(field ? t('liveMessage', { field: field, message: text }) : text);
+      });
+      live.pending.clear();
+      if (parts.length) liveRegion().textContent = parts.join(' ');
+    }
+
+    // Pending messages per control: a later one replaces it, a hidden hint drops it.
+    function announce(results) {
+      var queued = false;
+      results.forEach(function (r) {
+        if (r.announce) {
+          live.pending.delete(r.ctl);
+          live.pending.set(r.ctl, r.announce);
+          queued = true;
+        } else if (shownHint(r.ctl) === null) {
+          live.pending.delete(r.ctl);
+        }
+      });
+      if (!live.pending.size && live.timer !== null) {
+        window.clearTimeout(live.timer);
+        live.timer = null;
+      }
+      if (!queued) return;
+      liveRegion();
+      if (live.timer !== null) window.clearTimeout(live.timer);
+      live.timer = window.setTimeout(flushLive, 400);
+    }
+
+    // A user or third-party change of the child: its pick is remembered, the
+    // bulk hints go, and in form context state and hint follow the selected
+    // legacy values (frontend 5.4); no value changes and no re-evaluation.
+    function recordPick(ctl) {
+      var cfg = config(ctl);
+      var st = states.get(ctl);
+      if (!cfg || !st) return;
+      var values = readValues(ctl);
+      if (st.kind !== 'none' && !(cfg.ctx === 'form' && st.kind === 'unfiltered')) {
+        var kept = cfg.ctx === 'form' ? values.filter(function (v) { return !R.isBlank(v); }) : values;
+        memoryFor(scopeOf(ctl), cfg).set(st.key, kept);
+      }
+      if (st.autoHint) {
+        st.autoHint = false;
+        setClass(ctl, 'dcf-auto-applied', false);
+        hideHint(ctl, st);
+      }
+      if (!st.form) return;
+      var legacy = values.filter(function (v) { return st.form.eligible.has(v); });
+      var state = R.formState(st.form.kind, st.form.allowedSize, legacy.length);
+      var hint = state === 'ok' ? null : state;
+      var parent = findParent(scopeOf(ctl), cfg.parentName);
+      setHint(ctl, st, hintText(ctl, cfg, hint, legacy, parent && parent.el), hint === 'legacy');
+      if (ctl.getAttribute('data-dcf-state') !== state) ctl.setAttribute('data-dcf-state', state);
+    }
+
+    function childOf(target) {
+      if (isSelect(target)) return target.hasAttribute('data-dcf-parent') ? target : null;
+      if (target.type !== 'radio' && target.type !== 'checkbox') return null;
+      var group = target.closest(CHILD_SEL);
+      return group && !isSelect(group) ? group : null;
+    }
+
+    function handleTarget(target) {
+      if (!target || (target.tagName !== 'SELECT' && target.tagName !== 'INPUT') || !target.isConnected) return;
+      var parsed = R.parseFieldName(target.name);
+      if (!parsed) return;
+      var ctl = childOf(target);
+      if (ctl) recordPick(ctl);
+      // WP-18 hook point (UD-37): span[data-dcf-locked-parent] carriers of this
+      // field can be checked here with rules.lockedRefused (needs a new key).
+      var scope = scopeOf(target);
+      var visited = new Set();
+      if (ctl) visited.add(ctl);
+      var results = [];
+      spread(scope, dependentsOf(scope, parsed.prefix, parsed.fieldId), visited, results);
+      dispatchAll(results);
+      announce(results);
+    }
+
+    function onNativeChange(e) {
+      if (!ownEvents.has(e)) handleTarget(e.target);
+    }
+    function onJQueryChange(e) {
+      if (e.isTrigger) handleTarget(e.target);
+    }
+
+    function controlsIn(root) {
+      var list = [];
+      if (root.nodeType === 1 && root.matches(CHILD_SEL)) list.push(root);
+      return list.concat(Array.prototype.slice.call(root.querySelectorAll(CHILD_SEL)));
+    }
+
+    // Synchronous and idempotent: an evaluation whose parent state did not
+    // change is a no-op.
+    function init(root) {
+      root = root || document;
+      if (!root || !root.querySelectorAll || (root.nodeType !== 9 && !root.isConnected)) return;
+      var byScope = new Map();
+      controlsIn(root).forEach(function (c) {
+        if (!c.isConnected || !config(c)) return;
+        var s = scopeOf(c);
+        if (!byScope.has(s)) byScope.set(s, []);
+        byScope.get(s).push(c);
+      });
+      var results = [];
+      byScope.forEach(function (list, scope) {
+        var nodes = list.map(function (c) {
+          var cfg = config(c);
+          var p = R.parseFieldName(cfg.parentName);
+          return { id: cfg.prefix + '|' + cfg.fieldId, parentId: p ? p.prefix + '|' + p.fieldId : '', ctl: c };
+        });
+        var visited = new Set();
+        var queue = [];
+        R.orderByDepth(nodes).forEach(function (n) {
+          visited.add(n.ctl);
+          var res = evaluate(n.ctl);
+          if (!res) return;
+          results.push(res);
+          if (res.changed) {
+            var cfg = config(n.ctl);
+            queue = queue.concat(dependentsOf(scope, cfg.prefix, cfg.fieldId));
+          }
+        });
+        // Dependents outside this root follow a value changed here.
+        spread(scope, queue, visited, results);
+      });
+      dispatchAll(results);
+    }
+
+    function publicInit(root) {
+      var api = window.DependingCustomFields;
+      if (api && typeof api.init === 'function') api.init(root);
+      else init(root);
+    }
+
+    // Gap 13: the added roots of one callback, deduplicated and without nested
+    // or detached ones, are initialised synchronously; no timer.
+    function onMutations(records) {
+      var seen = new Set();
+      var roots = [];
+      records.forEach(function (r) {
+        each(r.addedNodes, function (n) {
+          if (n.nodeType !== 1 || seen.has(n)) return;
+          seen.add(n);
+          if (n.matches(CHILD_SEL) || n.querySelector(CHILD_SEL)) roots.push(n);
+        });
+      });
+      roots.filter(function (n) {
+        return n.isConnected && !roots.some(function (o) { return o !== n && o.contains(n); });
+      }).forEach(publicInit);
+    }
+
+    // Deprecated (0.1.0, removable no earlier than 0.2.0): init debounced by
+    // 25 ms; roots detached by then are skipped.
+    function requestSetup(root) {
+      setupRoots.add(root || document);
+      if (setupTimer !== null) window.clearTimeout(setupTimer);
+      setupTimer = window.setTimeout(function () {
+        setupTimer = null;
+        var roots = Array.from(setupRoots);
+        setupRoots.clear();
+        roots.forEach(function (r) {
+          if (r === document || r.isConnected) publicInit(r);
+        });
+      }, 25);
+    }
+
+    function start() {
+      if (started) return;
+      started = true;
+      document.addEventListener('change', onNativeChange, false);
+      if (typeof window.jQuery === 'function') window.jQuery(document).on('change.dcf', 'select, input', onJQueryChange);
+      if (typeof window.MutationObserver === 'function') {
+        new window.MutationObserver(onMutations).observe(document.body || document.documentElement,
+          { childList: true, subtree: true });
+      }
+      init(document);
+    }
+
+    window.DependingCustomFields = {
+      __runtime: true,
+      VERSION: R.VERSION,
+      rules: R,
+      t: t,
+      init: function (root) { init(root); },
+      setup: function (root) { init(root); },
+      requestSetup: requestSetup
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+  }
+
+  var rules = buildRules();
+  if (typeof window !== 'undefined' && window && window.document) {
+    startRuntime(window, window.document, rules);
+  } else if (typeof module === 'object' && module && module.exports) {
+    module.exports = rules;
+  }
+}());

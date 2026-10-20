@@ -23,7 +23,7 @@ module RedmineDependingCustomFields
           };
         JS
 
-        javascript_include_tag('depending_custom_fields', plugin: 'redmine_depending_custom_fields') +
+        javascript_include_tag('depending_custom_fields_legacy', plugin: 'redmine_depending_custom_fields') +
           javascript_tag(script) +
           javascript_include_tag('context_menu_wizard', plugin: 'redmine_depending_custom_fields') +
           stylesheet_link_tag('depending_custom_fields', plugin: 'redmine_depending_custom_fields')
