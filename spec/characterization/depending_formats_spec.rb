@@ -20,8 +20,8 @@ require_relative '../rails_helper'
 # - WP-10, done: "validates the members of a stored cycle against their
 #   mappings" (members of a stored cycle are unconstrained, UD-08: now
 #   accepts any value).
-# - WP-15 (carries?): "hides every option when a Project is passed for an
-#   issue field" (the core list is returned for non-carrying objects).
+# - WP-15 (carries?), done: "hides every option when a Project is passed for
+#   an issue field" (the core list is returned for non-carrying objects).
 # Helpers: spec/support/dcf_format_characterization.rb.
 RSpec.describe 'Depending formats (characterization)' do
   include DcfFormatCharacterization
@@ -65,9 +65,10 @@ RSpec.describe 'Depending formats (characterization)' do
           .to eq([pair(child, 'a1', hidden), pair(child, 'a2', hidden), pair(child, 'b1', hidden)])
       end
 
-      it 'hides every option when a Project is passed for an issue field' do
-        expect(fmt.possible_values_options(child, project))
-          .to eq([pair(child, 'a1', hidden), pair(child, 'a2', hidden), pair(child, 'b1', hidden)])
+      # Flipped by WP-15 (carries?): was "hides every option when a Project is
+      # passed for an issue field", expecting every option as a hidden 3-tuple.
+      it 'returns the core list when a Project is passed for an issue field (Flipped by WP-15)' do
+        expect(fmt.possible_values_options(child, project)).to eq(core_base(child))
       end
 
       it 'returns the core list for a record when the parent field no longer exists' do

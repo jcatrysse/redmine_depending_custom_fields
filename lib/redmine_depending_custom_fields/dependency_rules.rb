@@ -181,20 +181,26 @@ module RedmineDependingCustomFields
       false
     end
 
-    # The parent read of the depending formats: nil unless the field has an
+    # The parent read of the depending formats: nil unless +customized+ has
+    # custom field values and is an object the field belongs to (carries?,
+    # WP-15: a Project passed for an issue field by core menus and query
+    # filters, or any other object, gives nil before the pointer is read, so
+    # without a format_store parse or a query), and the field has an
     # effective parent (WP-10), so a dangling parent, the field itself,
     # another type or family and fields in or below a stored cycle give nil
     # (core validation only, UD-08). When the parent is among the loaded
     # custom field values of +customized+, its value is read there (no
     # query). Otherwise the one memoized find_parent of effective_parent_id
     # gives an unavailable parent (available false, no values). nil also for
-    # a blank or invalid pointer and a nil object, without a query. Values
-    # are Strings, blanks kept, as 0.0.16 reads them. The baseline (WP-09) is
-    # the stored value (stored_value), or for a copy the source's value
-    # (baseline_source), without blanks. No carries? (WP-15).
+    # a blank or invalid pointer, without a query. Values are Strings, blanks
+    # kept, as 0.0.16 reads them. The baseline (WP-09) is the stored value
+    # (stored_value), or for a copy the source's value (baseline_source),
+    # without blanks.
     def parent_state(cf, customized)
+      return nil unless customized.respond_to?(:custom_field_values) && carries?(cf, customized)
+
       pid = parent_id(cf)
-      return nil if pid.nil? || customized.nil?
+      return nil if pid.nil?
       return nil unless effective_parent_id(cf, lookup_records(customized))
 
       read_parent_state(cf, customized, pid)

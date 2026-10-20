@@ -1,6 +1,6 @@
 # Patch that removes depending custom fields from the default issue context menu
-# and cleans up grouped user options. It delegates to MappingBuilder to know
-# which fields to hide.
+# and cleans up grouped user options. The fields to hide come from the
+# per-request SelectionGraph of the selected issues (WP-15, no cache).
 
 module RedmineDependingCustomFields
   module Patches
@@ -28,19 +28,22 @@ module RedmineDependingCustomFields
           (params[:controller] == 'context_menus/issues' && params[:action] == 'index')
       end
 
-      def filter_depending_custom_fields
-        mapping = Rails.cache.fetch('depending_custom_fields/mapping') { MappingBuilder.build }
-        ids = (mapping.keys + mapping.values.map { |v| v[:parent_id] }).map(&:to_i).uniq
-
-        if instance_variable_defined?(:@custom_fields) && @custom_fields
-          @custom_fields = @custom_fields.reject { |cf| ids.include?(cf.id) }
-        end
-
-        if instance_variable_defined?(:@options_by_custom_field) &&
-           @options_by_custom_field.respond_to?(:reject!)
-          @options_by_custom_field.reject! { |field, _| ids.include?(field.id) }
-        end
+      # One graph per request, shared with ContextMenuHook.
+      def dcf_selection_graph
+        @dcf_selection_graph ||= SelectionGraph.new(Array(@issues))
       end
+
+      # Hides the children with an effective parent that are available on the
+      # selection, and their parents. Nothing to do (and no graph) without
+      # core submenus: no edit permission, a closed project, an error page.
+      def filter_depending_custom_fields
+        options = instance_variable_defined?(:@options_by_custom_field) ? @options_by_custom_field : nil
+        return if options.blank? || !options.respond_to?(:reject!)
+
+        hidden = dcf_selection_graph.hidden_field_ids
+        options.reject! { |field, _| hidden.include?(field.id) }
+      end
+
       def remove_illegal_user_values
         return unless instance_variable_defined?(:@options_by_custom_field)
 

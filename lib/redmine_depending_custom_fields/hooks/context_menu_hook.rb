@@ -1,6 +1,7 @@
 # View hook that injects a mini wizard for depending custom fields into the
 # issue context menu. Only shown when the current user is allowed to edit all
-# selected issues.
+# selected issues, and only for fields the user may edit on all of them.
+# The listener is a process-wide singleton: it keeps nothing between calls.
 
 module RedmineDependingCustomFields
   module Hooks
@@ -11,25 +12,39 @@ module RedmineDependingCustomFields
 
         return if issues.any? {|issue| !user.allowed_to?(:edit_issues, issue.project)}
 
-        parents = ParentMenuBuilder.build(issues)
-        mapping = Rails.cache.fetch('depending_custom_fields/mapping') do
-          MappingBuilder.build
-        end
-        parent_ids   = parents.map { |p| p[:id].to_i }
-        field_ids    = (parent_ids + mapping.keys.map(&:to_i) +
-                        mapping.values.map { |v| v[:parent_id].to_i }).uniq
-        fields_by_id = CustomField.where(id: field_ids).index_by(&:id)
+        render_wizard(ctx[:controller], issues, user)
+      rescue StandardError => e
+        Rails.logger.warn("[DCF] context menu wizard failed: #{e.class}")
+        nil
+      end
 
-        view_context = ctx[:controller].view_context
+      private
+
+      def render_wizard(controller, issues, user)
+        graph = selection_graph(controller, issues)
+        parents = ParentDetector.for_issues(issues, graph: graph, user: user)
+        return nil if parents.empty?
+
+        view_context = controller.view_context
         view_context.extend(CustomFieldsHelper)
         view_context.extend(ContextMenuWizardHelper)
 
         view_context.render(
           partial: 'depending_custom_fields/context_menu_wizard',
           collection: parents,
-          as: :parent,
-          locals: { issues: issues, mapping: mapping, fields_by_id: fields_by_id }
+          as: :parent_field,
+          locals: { issues: issues, graph: graph, user: user }
         )
+      end
+
+      # The graph of the patched controller when it was built for the same
+      # issues, otherwise a new one.
+      def selection_graph(controller, issues)
+        if controller.respond_to?(:dcf_selection_graph, true)
+          graph = controller.send(:dcf_selection_graph)
+          return graph if graph&.built_for?(issues)
+        end
+        SelectionGraph.new(issues)
       end
     end
   end

@@ -1,43 +1,19 @@
 <%# frozen_string_literal: true %>
-<% parent_id = parent[:id].to_i %>
+<%# One wizard entry per root (ContextMenuHook): the levels hold only fields the gate user (local user, default User.current) may edit on every selected issue (ParentDetector.wizard_levels). %>
 <% issue_ids = Array(issues).map(&:id) %>
-<%
-  children_by_parent = mapping.group_by { |cid, info| info[:parent_id].to_i }
-                              .transform_values { |arr| arr.map { |cid, _| cid.to_i } }
-  field_ids = ([parent_id] + mapping.keys.map(&:to_i) + mapping.values.map { |v| v[:parent_id].to_i if v[:parent_id] }.compact).uniq
-
-  fields_by_id ||= CustomField.where(id: field_ids).index_by(&:id)
-  parent_cf = fields_by_id[parent_id]
-
-  fields_hierarchy = []
-  current = [parent_cf.id]
-  while current.any?
-    next_ids = []
-    fields = current.map { |cid| fields_by_id[cid] }.compact.select do |cf|
-      visible = issues.all? do |issue|
-        begin
-          issue.available_custom_fields.include?(cf) &&
-            RedmineDependingCustomFields::CustomFieldVisibility.visible_to_user?(cf, issue.project, User.current)
-        rescue NoMethodError
-          true
-        end
-      end
-      next_ids += (children_by_parent[cf.id] || []) if visible
-      visible
-    end
-    fields_hierarchy << fields if fields.any?
-    current = next_ids
-  end
-%>
+<% fields_hierarchy = RedmineDependingCustomFields::ParentDetector.wizard_levels(parent_field, issues, graph: graph, user: local_assigns.fetch(:user, User.current)) %>
+<% if fields_hierarchy.any? %>
 <li class="folder cf-parent"
-    data-parent-id="<%= parent_cf.id %>"
+    data-parent-id="<%= parent_field.id %>"
     data-issue-ids="<%= issue_ids.join(',') %>"
-    data-template-id="cf-wizard-<%= parent_cf.id %>">
-  <a href="#" class="submenu" data-template-id="cf-wizard-<%= parent_cf.id %>"><%= h(parent_cf.name) %></a>
+    data-template-id="cf-wizard-<%= parent_field.id %>">
+  <a href="#" class="submenu" data-template-id="cf-wizard-<%= parent_field.id %>"><%= h(parent_field.name) %></a>
 </li>
-<template id="cf-wizard-<%= parent_cf.id %>">
+<template id="cf-wizard-<%= parent_field.id %>">
   <form class="cf-wizard-form"
-        data-parent-id="<%= parent_cf.id %>"
+        action="<%= depending_custom_fields_save_path %>"
+        method="post"
+        data-parent-id="<%= parent_field.id %>"
         data-issue-ids="<%= issue_ids.join(',') %>">
     <% issue_ids.each do |id| %>
       <input type="hidden" name="ids[]" value="<%= id %>" />
@@ -61,4 +37,4 @@
     </div>
   </form>
 </template>
-
+<% end %>

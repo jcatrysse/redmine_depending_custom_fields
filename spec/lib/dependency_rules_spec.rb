@@ -568,8 +568,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
   end
 
   # WP-06 adds parent_state and allowed_for with 0.0.16's semantics; WP-10
-  # reads the effective parent (no state without one) and WP-15 (carries?)
-  # changes them again.
+  # reads the effective parent (no state without one) and WP-15 gives no
+  # state for an object the field does not carry (carries?).
   describe '.parent_state' do
     let(:project) { dcf_create_project }
     let(:parent) { dcf_list_field(values: %w[A B C]) }
@@ -619,7 +619,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect([state.parent, state.available, state.values, state.baseline]).to eq([parent, false, [], []])
       expect(dcf_count_queries { described_class.parent_state(child, issue) }).to eq(0)
       expect(described_class).to have_received(:find_parent).with(parent.id).once
-      expect(described_class.parent_state(child, project).available).to be(false)
+      # Flipped by WP-15 (carries?): a Project passed for an issue field gave
+      # an unavailable state (available false); it gives no state now.
+      expect(described_class.parent_state(child, project)).to be_nil
     end
 
     it 'is nil for a dangling parent, memoized' do
@@ -700,8 +702,22 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(CustomField).not_to have_received(:find_by)
     end
 
-    it 'asks an object without custom field values like 0.0.16 (NoMethodError)' do
-      expect { described_class.parent_state(child, Object.new) }.to raise_error(NoMethodError)
+    # Flipped by WP-15 (carries?): was "asks an object without custom field
+    # values like 0.0.16 (NoMethodError)".
+    it 'is nil for an object without custom field values (Flipped by WP-15)' do
+      expect(described_class.parent_state(child, Object.new)).to be_nil
+    end
+
+    # WP-15: the carries? guard runs before the parent pointer is read.
+    it 'reads no format_store and runs no query for an object the field does not carry' do
+      [project, Object.new].each do |object|
+        fresh = CustomField.find(child.id)
+        result = :unset
+        loads = dcf_count_yaml_loads do
+          expect(dcf_count_queries { result = described_class.parent_state(fresh, object) }).to eq(0)
+        end
+        expect([result, loads]).to eq([nil, 0]), object.class.name
+      end
     end
   end
 

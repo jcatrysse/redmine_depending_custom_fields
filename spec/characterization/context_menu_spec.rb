@@ -192,16 +192,21 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
   end
 
   describe 'failure handling' do
-    # The test cache store is a null store, so every fetch rebuilds the
-    # mapping. The patch filters before the view renders, so the first build of
-    # the request is the patch's; later builds (wizard hook) succeed.
-    it 'rescues and logs a failure inside the filtering and renders the menu unfiltered' do
+    # Flipped by WP-15: was "rescues and logs a failure inside the filtering
+    # and renders the menu unfiltered" with the failure injected into the
+    # first MappingBuilder.build of the request (the patch's), expecting more
+    # than one build and the warning '... RuntimeError - mapping boom'. Since
+    # WP-15 the patch and the hook use the selection graph instead of the
+    # cached mapping, so the failure goes into the first SelectionGraph.new
+    # (the patch's); the hook's call to dcf_selection_graph builds the graph
+    # again (second SelectionGraph.new) and reuses it.
+    it 'rescues and logs a failure inside the filtering and renders the menu unfiltered (Flipped by WP-15)' do
       builds = 0
-      allow(RedmineDependingCustomFields::MappingBuilder).to receive(:build).and_wrap_original do |original|
+      allow(RedmineDependingCustomFields::SelectionGraph).to receive(:new).and_wrap_original do |original, *args|
         builds += 1
-        raise 'mapping boom' if builds == 1
+        raise 'graph boom' if builds == 1
 
-        original.call
+        original.call(*args)
       end
       allow(Rails.logger).to receive(:warn).and_call_original
 
@@ -209,12 +214,13 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
 
       expect(builds).to be > 1
       expect(Rails.logger).to have_received(:warn)
-        .with('[DCF] context menu filtering failed: RuntimeError - mapping boom').once
+        .with('[DCF] context menu filtering failed: RuntimeError - graph boom').once
       # Nothing was filtered: the depending fields and the group header stay.
       expect(core_folder(menu, parent)).not_to be_nil
       expect(core_folder(menu, child)).not_to be_nil
       expect(folder_links(core_folder(menu, user_field)).map(&:last).grep(/__group_active__/)).not_to be_empty
-      # The hook builds its own mapping, so the wizard still renders.
+      # The hook's call to dcf_selection_graph builds the graph again and
+      # reuses it, so the wizard still renders.
       expect(wizard_levels(menu, parent)).to eq([[parent.id], [child.id], [grandchild.id]])
     end
   end

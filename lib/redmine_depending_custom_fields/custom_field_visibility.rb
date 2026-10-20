@@ -2,6 +2,10 @@
 # given user. The logic mirrors Redmine's own checks but falls back to
 # `true` when required associations are missing.
 #
+# Deprecated in 0.1.0: the plugin no longer calls it (the context menu
+# wizard uses core visible_by? and fails closed since WP-15). Kept unchanged
+# at least throughout 0.1.x, removable no earlier than 0.2.0.
+#
 # Example:
 #   if CustomFieldVisibility.visible_to_user?(cf, project, current_user)
 #     # show field

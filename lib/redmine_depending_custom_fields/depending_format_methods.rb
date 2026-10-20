@@ -50,9 +50,11 @@ module RedmineDependingCustomFields
 
     # nil (new and edit forms, admin views) and an Array of objects (bulk
     # edit) give the full core list, and so does one object without a parent
-    # state (no effective parent, WP-10). Otherwise every option is kept and
-    # the ones its parent value does not allow are hidden, so a stored legacy
-    # value stays visible.
+    # state: no effective parent (WP-10), or an object the field does not
+    # belong to, such as the Project core menus and query filters pass for an
+    # issue field (WP-15; they read only label and value). Otherwise every
+    # option is kept and the ones its parent value does not allow are hidden,
+    # so a stored legacy value stays visible.
     def possible_values_options(custom_field, object = nil)
       single = object.is_a?(Array) ? object.first : object
       base = super(custom_field, single)

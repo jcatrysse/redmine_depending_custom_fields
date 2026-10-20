@@ -36,6 +36,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Status.** Fixed in 0.0.16 (own commit, UD-03): the save assigns through `Issue#safe_attributes=`. An independent review approved it and added SD-13 (same class of defect in the import patch) and a UX item for WP-15 (the wizard still offers fields that are read-only for the user; their values are ignored).
 
+**WP-15 (UX item done).** The wizard offers only fields in `issue.editable_custom_fields(user)` for every selected issue. Below a parent that is read-only, hidden or not available for the user on any selected issue nothing is offered (fail closed, decided on the owner's mandate of 2026-10-19): such a child is not shown with a read-only parent, and it stays hidden from the core submenus. Pinned by `spec/requests/context_menu_spec.rb`. The save gates (login, issue visibility, editability) are pinned there too.
+
 **Severity.** security (medium)
 
 **Evidence.** app/controllers/context_menu_wizard_controller.rb:31-32 assigns issue.custom_field_values = values directly; the check at :22-27 only asks safe_attribute?('custom_field_values'). Core filters assignments to editable_custom_field_values(user) only inside Issue#safe_attributes= (core-5.1 app/models/issue.rb:625-626, core-7.0 :647-648). A user with edit_issues can therefore write workflow read-only and role-invisible fields, without a journal. Confirmed independently by the server, frontend, limits and quality designs (SP-07).

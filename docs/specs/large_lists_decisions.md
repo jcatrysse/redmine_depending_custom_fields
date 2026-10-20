@@ -254,6 +254,8 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch are deleted outright, with CHANGELOG notes.
 
+**WP-15.** ParentMenuBuilder is deleted without a shim ("Removed: ParentMenuBuilder." in the CHANGELOG, completed to the canonical Removed line by WP-18). MappingBuilder and the dispatch stay until WP-18. The wizard sub-decision taken in WP-15 on the same mandate (nothing offered below a field the user cannot edit) is recorded under SD-01.
+
 **Question.** Delete MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch outright (D5) instead of uncached deprecated shims?
 
 **Recommendation.** Delete with CHANGELOG notes (nothing in or outside the plugin uses them).

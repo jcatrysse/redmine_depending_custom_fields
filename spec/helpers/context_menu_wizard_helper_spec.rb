@@ -7,27 +7,10 @@ RSpec.describe ContextMenuWizardHelper do
     end.new
   end
 
-  describe '#intersect_allowed_values' do
-    let(:cf) { build_custom_field }
-    let(:issue1) { instance_double(Issue) }
-    let(:issue2) { instance_double(Issue) }
-
-    it 'returns intersection of allowed values across issues' do
-      allow(cf).to receive(:possible_values_options).with(issue1).and_return([['A', 'a'], ['B', 'b']])
-      allow(cf).to receive(:possible_values_options).with(issue2).and_return([['B', 'b'], ['C', 'c']])
-
-      result = helper_object.intersect_allowed_values(cf, [issue1, issue2])
-      expect(result).to eq(['b'])
-    end
-
-    it 'ignores option group entries when intersecting values' do
-      allow(cf).to receive(:possible_values_options).with(issue1)
-        .and_return([[I18n.t(:status_active), '__group_active__', {class: 'option-group'}], ['U1', '1']])
-      allow(cf).to receive(:possible_values_options).with(issue2)
-        .and_return([[I18n.t(:status_active), '__group_active__', {class: 'option-group'}], ['U2', '1']])
-      result = helper_object.intersect_allowed_values(cf, [issue1, issue2])
-      expect(result).to eq(['1'])
-    end
+  # WP-15: intersect_allowed_values is deleted (no caller since the SD-14
+  # fix); its two examples are removed.
+  it 'no longer offers intersect_allowed_values' do
+    expect(ContextMenuWizardHelper.instance_methods).not_to include(:intersect_allowed_values)
   end
 
   describe '#render_custom_field' do

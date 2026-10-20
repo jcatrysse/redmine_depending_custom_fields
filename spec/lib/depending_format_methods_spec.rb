@@ -604,19 +604,17 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect([first, second]).to eq([1, 0])
         end
 
-        it 'raises for an object without custom fields when the parent exists, and returns the core list when it does not' do
-          expect { fmt.possible_values_options(child, Object.new) }.to raise_error(NoMethodError)
+        # Flipped by WP-15 (carries?): was "raises for an object without custom
+        # fields when the parent exists, and returns the core list when it does
+        # not" (NoMethodError for an existing parent).
+        it 'returns the core list for an object without custom fields (Flipped by WP-15)' do
+          expect(fmt.possible_values_options(child, Object.new)).to eq(core_base(child))
           field = write_store(child, 'parent_custom_field_id' => CustomField.maximum(:id).to_i + 1_000)
           expect(fmt.possible_values_options(field, Object.new)).to eq(core_base(child))
         end
 
-        it 'gives the context menu wizard helper today\'s intersection' do
-          helper = Object.new.extend(ContextMenuWizardHelper)
-          on_a = kit_issue(project, parent => 'A')
-          on_b = kit_issue(project, parent => 'B')
-          expect(helper.intersect_allowed_values(child, [on_a])).to eq([kit_key(child, 'a1'), kit_key(child, 'a2'), hidden])
-          expect(helper.intersect_allowed_values(child, [on_a, on_b])).to eq([hidden])
-        end
+        # WP-15: "gives the context menu wizard helper today's intersection" is
+        # removed with ContextMenuWizardHelper#intersect_allowed_values.
       end
     end
   end

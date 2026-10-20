@@ -4,7 +4,7 @@ RedmineApp::Application.routes.draw do
   match 'depending_custom_fields', :to => 'depending_custom_fields_api#create', :via => :post, :format => 'json'
   match 'depending_custom_fields/:id', :to => 'depending_custom_fields_api#update', :via => :put, :format => 'json'
   match 'depending_custom_fields/:id', :to => 'depending_custom_fields_api#destroy', :via => :delete, :format => 'json'
-  match 'depending_custom_fields/save',    to: 'context_menu_wizard#save',    via: :post
+  match 'depending_custom_fields/save', to: 'context_menu_wizard#save', via: :post, as: 'depending_custom_fields_save'
 
   # Project-level custom field configuration (HTML only; no API auth).
   scope 'projects/:project_id' do
@@ -44,6 +44,6 @@ RedmineApp::Application.routes.draw do
   end
 
   # Admin-only global audit view (read-only). Separate controller guarded by
-  # require_admin — NOT the project permission.
+  # require_admin, NOT the project permission.
   get 'dcf_config_audit', to: 'dcf_config_audit#index', as: 'dcf_config_audit'
 end
