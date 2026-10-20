@@ -1,6 +1,6 @@
 # Large lists: decision register
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-38.
+> Points: 1 to 9. Owner area: delivery (cross-area). Work packages: all. Decisions: UD-01 to UD-39.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 
 ## Contents
 
-1. Owner decisions UD-01 to UD-38
+1. Owner decisions UD-01 to UD-39
 2. Deviations from the default decisions D1 to D10
 3. Area design decisions
 4. Which decisions block which release
@@ -55,6 +55,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-36 | Resolved | 0.1.0 (M1) | WP-05, WP-10 | Parent select on the admin form: never offer the field itself, even when it is the stored (self) parent? |
 | UD-37 | Resolved | 0.1.0 (M2) | WP-16, WP-17, WP-18 | May a minimal carrier for a role-invisible child reveal, per parent value, whether the hidden value is allowed, or is the server message the only feedback? |
 | UD-38 | Resolved | 0.1.0 (M1) | WP-06, WP-11, WP-13, WP-14 | On MySQL/MariaDB, spec/lib/depending_format_methods_spec.rb:395 (WP-06) saves the S1 list for real and can never pass on a TEXT column: exclude that one example where the column cannot hold S1, or run the MariaDB acceptance only after widen_core_columns? |
+| UD-39 | Resolved | 0.1.0 (M2) | WP-16, WP-18 | On My account and the registration form, count a depending user field's parent as visible for the client data when core renders that parent as a control on the same form (instead of the base rule visible or admin)? |
 
 ### UD-01
 
@@ -152,7 +153,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 - New issues, new projects, copies and moves: core resets a value the author cannot edit to the field default on a new issue or a copy, a new project gets the default of every field the user cannot see (the new project form and REST POST `/projects.json`; the UI project copy is admin-only, where core validates every field), and a tracker or project move gives a non-editable child that was not available its default. A stale default the parent value does not allow (an unavailable parent allows nothing) refuses the new issue, the new project, the copy or the move, and project copy skips such an issue (logged; `Project#copy` returns false, the UI redirects without a notice). Stale defaults exist only in legacy rows or direct database writes: since 9d3df09 `before_custom_field_save` clears `default_value` whenever the parent resolves.
 - 0.1.0 (M1) only: the legacy issue-form script clears an editable dependent field whose stored value its parent does not allow; when a field the user cannot edit depends on it, the form save is refused. The 0.1.0 (M2) runtime keeps such values (WP-17).
 - Other objects (time entries, versions, users, groups, documents, enumerations): core validates every value and puts the D1 'is invalid' under the child's own name, also for a role-invisible child, so there the child is named. WP-09b leaves this unchanged (out of its scope: the task patched only the objects whose core validation skips non-editable values). Pinned by the time entry example of `spec/requests/dcf_issue_flows_spec.rb` and the version example of `spec/requests/dcf_non_editable_children_spec.rb`.
-- Feedback before submit for children without a form control is open decision UD-37.
+- Feedback before submit for children without a form control (UD-37, resolved): a visible read-only child gets the `data-dcf-locked-*` carrier (delivered by WP-16, read by the WP-17 runtime); a role-invisible child leaves nothing on the page, and the server message stays the only feedback for it.
 
 **Question.** Never reject an unchanged dependent field that the current user cannot edit when its parent changes?
 
@@ -602,6 +603,20 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Work packages.** WP-06, WP-11, WP-13, WP-14
 
+### UD-39
+
+**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Raised by the WP-16 review. On My account and the registration form a depending user field's parent counts as visible for the client data when core renders it as a control on that form; the admin user form keeps the base rule. WP-18 implements it.
+
+**Question.** Core shows a user custom field on My account when it is editable and on the registration form when it is editable or required, whatever its visibility. For user forms `ClientData` decides parent visibility by the base rule (`visible?` or admin, QA-23; the roles of a user field play no part), so a depending user field whose parent is hidden from non-admins (visible false) but shown on that form gets only the every-field attributes, while its parent is a control on the same page. Today the legacy global mapping still filters that child; after WP-18 removes the global it stays unfiltered next to its own parent (the server still validates it). Count such a parent as visible on those two forms?
+
+**Recommendation.** Yes. In form context for a `User` record, count the parent as visible when core renders it as a control on that form: `parent.editable?` on the user's own My account, `parent.editable? || parent.is_required?` on registration (a new user). The page already shows both fields and their values; the map adds only their links, which the legacy global shows today. The admin user form keeps the base rule.
+
+**Alternatives.** Keep the base rule; then the 0.1.0 (M2) CHANGELOG line of PC-26 and UN-54 also names this case (on My account and the registration form, a user field whose parent is hidden from non-admins is not filtered in the browser either).
+
+**Impact.** `ClientData.parent_visible?` for user records (WP-18, which regenerates the `my_account` fixture and turns the WP-16 pins in `spec/requests/issue_form_contract_spec.rb`, 'emits no parent data on My account ...' and 'emits no parent data on the registration form ...', into the decided rule), or the PC-26 and UN-54 wording. No data effect.
+
+**Work packages.** WP-16, WP-18
+
 ## 2. Deviations from the default decisions
 
 The area designs started from ten default decisions. This table shows where the final plan follows them, refines them or deviates from them, and why.
@@ -788,7 +803,7 @@ Release structure after UD-01 (resolved): 0.0.16 (patch release) and one release
 
 - **0.0.16**: all needed decisions are resolved (UD-01, UD-02, UD-03, UD-29, UD-30, UD-31, UD-32, UD-33, UD-34).
 - **0.1.0, milestone M1**: UD-04, UD-05, UD-06, UD-07, UD-08, UD-25, UD-26, UD-27, UD-28, UD-35, UD-36, UD-38 (resolved). UD-07 was confirmed after the WP-09 observation: the rules lead on every object (plugin rule WP-09b for issues and projects).
-- **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14, UD-37 (resolved by Claude on the owner's mandate of 2026-10-19, to be confirmed).
+- **0.1.0, milestone M2**: UD-09, UD-10, UD-11, UD-12, UD-13, UD-14, UD-37, UD-39 (resolved by Claude on the owner's mandate of 2026-10-19, to be confirmed; UD-39 was raised by WP-16 and is implemented in WP-18).
 - **0.1.0, milestone M3**: UD-15, UD-16, UD-17, UD-18, UD-19, UD-20, UD-21, UD-22, UD-23, UD-24 (resolved by Claude on the owner's mandate of 2026-10-19, to be confirmed).
 
 The open decisions only need an answer before the milestone that implements them starts.

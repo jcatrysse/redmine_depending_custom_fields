@@ -113,7 +113,7 @@ Owner: the server area. It is binding for frontend, limits and quality, and it i
   - the ancestor chain, walked through FieldIndex with a visited set, contains no cycle. A chain that reaches a cycle anywhere counts as cyclic.
   - Server validation (section 8) and the client use the same definition. Fields without an effective parent are unconstrained on both sides.
 - **managed field**: a depending field with an effective parent that is visible to the current user.
-  - Form context: `parent.visible_by?(scope_project(customized), user)`.
+  - Form context: `parent.visible_by?(scope_project(customized), user)`, and also for the source issue of a copy (its values and baseline reach the page, UD-06) and for the stored project of a persisted record moved in memory (updateIssueFrom; WP-16).
   - Bulk context: true for every distinct `scope_project(object)` of the selected objects.
   - `scope_project(x)` is `x.respond_to?(:project) ? x.project : nil` (Project#project exists in 5.1 and 7.0). User, Group and other non-project types give nil, so the base rule `visible? || user.admin?` applies.
   - Any exception in the visibility check counts as not visible (fail closed).
@@ -143,6 +143,7 @@ Option-level and sibling markup:
 |---|---|---|
 | `<input type="hidden" name="<tag_name>" value="" data-dcf-blank="1">` (no id), immediately before `span.check_box_group` | managed, `form` context, single-value child, `edit_tag_style == 'check_box'` | Lets a required radio child post `''` when no radio is checked. Last-wins param parsing is verified on Rack 2.2.24, AP 7.2.4 and AP 8.1.4 (frontend finding 4). A checked radio comes later in the form and wins. |
 | `<option value="__none__" data-dcf-required-none="1">(none)</option>`, placed right after "(no change)" | managed, `bulk` context, **required** child (core omits `__none__` for required, F6) | D2 for required descendants. **Client rule:** this option is enabled and selectable only while the parent selection yields no allowed values (bulk kind `none`, or the allowed set is empty). Otherwise it stays hidden and disabled and is never chosen as a fallback. **Server:** posting it for a required child while the parent offers options fails per issue with "cannot be blank" (core plus the CustomFieldPatch bypass), so nothing is cleared silently. |
+| `<span hidden="hidden" data-dcf-locked-parent="<parent id>" data-dcf-locked-stored='["A"]' data-dcf-locked-allowed-by='[["B","D"]]'></span>` (no id, no name, no text), rendered from `view_issues_form_details_bottom` (inside `#all_attributes`) and `view_projects_form` by `Hooks::ReadOnlyCarrierHook` (WP-16, UD-37) | one per depending child that the user sees but cannot edit (workflow read-only: in `visible_custom_field_values`, not in `editable_custom_field_values`), on a persisted record whose custom fields the user may edit (`safe_attribute?('custom_field_values')`, the guard of core's form), holding a stored value, whose effective parent the user can see and edit on the form and that is available on the record. Never for a role-invisible child. None on project forms in Redmine 5.1 to 7.0 (every visible project field is editable). | Lets the runtime (WP-17) predict the WP-09b refusal of a parent change: `locked-stored` is the stored parent baseline (`ParentState#baseline`), `locked-allowed-by` one entry per stored child value with the parent keys that allow it (sanitized mapping, not pruned). A change to the values V is refused when V differs from `locked-stored` as a set and some entry holds none of V. Strings only; the names are outside the C1 set and never start with `data-dcf-parent`. |
 
 Semantics:
 - **Map encoding.** The map is `Sanitizer.sanitize_dependencies(cf.value_dependencies)`. It is **not pruned**: server validation uses the stored mapping, and client and server must agree for parent values that still exist on issues. Orphan entries are rare and are removed by the admin editor's D6 save. Defaults likewise come from `sanitize_default_dependencies`.
@@ -605,6 +606,8 @@ module ClientData
   end
 end
 ```
+
+Delivered (WP-16): the parent instance comes from the lookup or the memoized `DependencyRules.parent_record`, not `find_parent`; parent values are normalized (`[]` for a blank parent); `stored.child` is `[]` while the parent is unavailable; the warning logs the field id and the exception class only; a stored mapping that is not a Hash fails open; `sentinel?` waits for WP-19. See the WP-16 Delivered block of large_lists_work_packages.md.
 
 Details:
 - `parent_visible?` applies the 2.1 rule and rescues StandardError, giving false.

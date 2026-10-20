@@ -131,6 +131,7 @@ The revised area designs still disagreed on these shared contracts; one choice i
 | DependencyRules.parent_of (gap 2) | Memoized raw parent lookup, nil for blank, dangling, wrong type or family, or self. Client emission uses `effective_parent_id`. | server | WP-05, WP-16, WP-27 |
 | value_options (gap 3) | Returns `[key, label, active]` tuples; wire format for the editor via `DependencyEditorConfig.wire_values`. | server, editor | WP-05, WP-24, WP-27, WP-28 |
 | i18n maps (gap 5) | `ClientConfig::I18N` (meta tag) and `DependencyEditorConfig::I18N` (editor); the parity spec iterates both. | server, editor | WP-02, WP-18, WP-24 |
+| Read-only carrier (UD-37) | One `span[hidden]` per depending child the user sees but cannot edit, with `data-dcf-locked-parent`, `data-dcf-locked-stored` and `data-dcf-locked-allowed-by` (strings, no id, no name); nothing for a role-invisible child. The runtime may warn, never blocks. | server (WP-16), frontend consumes | WP-16, WP-17, WP-18 |
 | MutationObserver (gap 13) | All mutations of one observer callback are coalesced; added roots are initialised synchronously in that callback (no timer debounce), so there is no unfiltered window after an AJAX re-render. | frontend | WP-17 |
 
 ## 4. Perceptible changes

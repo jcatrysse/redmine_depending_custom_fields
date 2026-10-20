@@ -146,7 +146,7 @@ Parent attributes and the sentinel are emitted only on an active child. Client e
 - `parent` is not nil. `parent_of(cf)` (WP-05) is the memoized raw lookup: it returns the parent record, or nil for a blank, dangling, wrong-type or wrong-family id, or for a self-parent, so rendering and validation agree. A dangling id or a self-parent gives no parent attributes (the every-field attributes are still emitted);
 - the ancestor chain of `cf` is acyclic: members of a stored cycle and fields whose chain reaches a cycle have no effective parent (UD-08);
 - the parent is visible to `User.current`:
-  - form context: `parent.visible_by?(customized.try(:project), User.current)`;
+  - form context: `parent.visible_by?(customized.try(:project), User.current)`, and also for the project of a copy's source issue and the stored project of an issue moved in memory (WP-16);
   - bulk: `objects.map(&:project).uniq.all? { |p| parent.visible_by?(p, User.current) }`, or `parent.visible_by?(nil, User.current)` without objects;
   - any exception is rescued and counts as not visible, so the check fails closed.
 
@@ -175,7 +175,15 @@ Rails JSON-encodes Hash and Array data values and HTML-escapes them. The caller'
 
 The client compares every key and value as `String(x)`. Unknown keys and values without an option are ignored.
 
-A dependent field the user cannot edit (read-only by workflow, or role-invisible) is never rendered as a control (core iterates `editable_custom_field_values` on the issue form and `visible_custom_field_values` on the project form), so it emits no `data-dcf-*` attribute at all. The server judges it when the parent changes (WP-09b, UD-07); a separate carrier for such children is open decision UD-37 (section 11, section 14 item 9).
+A dependent field the user cannot edit (read-only by workflow, or role-invisible) is never rendered as a control (core iterates `editable_custom_field_values` on the issue form and `visible_custom_field_values` on the project form), so it emits no field attribute. The server judges it when the parent changes (WP-09b, UD-07). UD-37 (resolved on the owner's mandate of 2026-10-19): a role-invisible child leaves nothing on the page; a visible read-only child gets one carrier in the form scope (WP-16):
+
+| Attribute (on `span[hidden]`, no id, no name, no text) | Value | Read by the runtime |
+|---|---|---|
+| `data-dcf-locked-parent` | effective parent id | yes: the parent control `<prefix>[custom_field_values][<id>]` in the scope |
+| `data-dcf-locked-stored` | JSON array of strings: the stored parent baseline | yes |
+| `data-dcf-locked-allowed-by` | JSON array, one entry per stored child value: the parent keys that allow it | yes: a change to the values V is refused when V differs from `locked-stored` as a set and some entry holds none of V; the runtime may warn, never disables options or blocks submit (WP-17) |
+
+Emitted only on persisted records, for a child holding a stored value whose effective parent the user can see and edit on the form and that is available on the record; never on project forms in Redmine 5.1 to 7.0 (section 11, section 14 item 9).
 
 Why the map is not pruned:
 - server validation reads exactly `Sanitizer.sanitize_dependencies`;
@@ -666,7 +674,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - Hint labels with markup characters: `textContent` only.
 - The parent label cannot be resolved: generic texts.
 - The meta tag is missing or invalid: English fallbacks.
-- A child the user cannot edit (read-only by workflow, or role-invisible) is never rendered as an input: core iterates `editable_custom_field_values` (issue form) or `visible_custom_field_values` (project form), so it has no data-dcf-* and no `data-dcf-stored`. The server refuses a parent change that would leave it with a disallowed value (WP-09b, UD-07); the browser cannot predict that refusal. A carrier for visible read-only children and the privacy rule for role-invisible ones are open inputs to WP-16 (see the WP-16 note in large_lists_work_packages.md) and open owner decision UD-37 (0.1.0 (M2)).
+- A child the user cannot edit (read-only by workflow, or role-invisible) is never rendered as an input: core iterates `editable_custom_field_values` (issue form) or `visible_custom_field_values` (project form), so it has no field attributes and no `data-dcf-stored`. The server refuses a parent change that would leave it with a disallowed value (WP-09b, UD-07). UD-37 (resolved): a visible read-only child gets the `data-dcf-locked-*` carrier of section 3.3 (WP-16), so the runtime can predict that refusal and warn; a role-invisible child leaves nothing on the page, and the server message stays the only feedback for it.
 
 ## 12. Test plan
 
@@ -784,7 +792,7 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
 6. **Wizard:** named route action (WP-15); `render_custom_field` with value `nil` (UD-11); implicit labels; request spec that Save without a choice changes nothing (WP-18).
 7. **Head hook and `ClientConfig`** as in 3.6 (WP-18): `<meta name="dcf-i18n">` written with `tag.meta(name: META_NAME, content: payload.to_json)`. The hook spec renders the meta in all four locales and asserts that every `ClientConfig::I18N` value resolves without "translation missing".
 8. **Drop** `spec/fixtures/dcf_client_contract.json` in favour of 12.1 (WP-16).
-9. **Children the user cannot edit (WP-09b, UD-07; pending UD-37):** they have no control and no `data-dcf-*` (3.3), and the server refuses a parent change that would leave them with a disallowed value. If UD-37 allows it, the carrier for visible read-only children comes from `view_issues_form_details_bottom` (issue form) or `view_projects_form` (project form) in the form scope: the parent id, the stored parent baseline and, per non-tolerated stored value, the parent keys that allow it. A role-invisible child never appears in the page (no id, name, value or mapping) unless UD-37 decides otherwise.
+9. **Children the user cannot edit (WP-09b, UD-07; UD-37 resolved):** they have no control and no field attributes (3.3), and the server refuses a parent change that would leave them with a disallowed value. The carrier for visible read-only children comes from `view_issues_form_details_bottom` (issue form) or `view_projects_form` (project form) in the form scope (delivered by WP-16, attributes in 3.3): the parent id, the stored parent baseline and, per stored value, the parent keys that allow it. A role-invisible child never appears in the page (no id, name, value, mapping or per-parent-value flag).
 
 ## 15. Positions on cross issues owned by other areas (recorded for the consolidated plan; no frontend runtime change)
 

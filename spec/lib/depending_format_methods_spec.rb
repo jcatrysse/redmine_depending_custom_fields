@@ -67,15 +67,20 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
   end
 
   describe 'structure' do
-    shared = [:after_custom_field_save, :before_custom_field_save, :normalized_store_pairs, :possible_values_options,
-              :storage_preview, :validate_custom_field, :validate_custom_value, :value_from_keyword]
+    # WP-16: the module adds edit_tag and bulk_edit_tag (the data contract);
+    # super still reaches core List for both formats.
+    shared = [:after_custom_field_save, :before_custom_field_save, :bulk_edit_tag, :edit_tag, :normalized_store_pairs,
+              :possible_values_options, :storage_preview, :validate_custom_field, :validate_custom_value,
+              :value_from_keyword]
     formats = {
       RedmineDependingCustomFields::DependingListFormat => {
         core: Redmine::FieldFormat::ListFormat,
         super_owners: { possible_values_options: Redmine::FieldFormat::ListFormat,
                         validate_custom_value: Redmine::FieldFormat::ListFormat,
                         validate_custom_field: Redmine::FieldFormat::ListFormat,
-                        before_custom_field_save: Redmine::FieldFormat::Base },
+                        before_custom_field_save: Redmine::FieldFormat::Base,
+                        edit_tag: Redmine::FieldFormat::List,
+                        bulk_edit_tag: Redmine::FieldFormat::List },
         options_owner: Redmine::FieldFormat::ListFormat,
         body: [:label, :query_filter_values],
         label: :label_depending_list
@@ -88,7 +93,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
                         validate_custom_value: Redmine::FieldFormat::RecordList,
                         validate_custom_field: Redmine::FieldFormat::Base,
                         before_custom_field_save: Redmine::FieldFormat::Base,
-                        possible_custom_value_options: Redmine::FieldFormat::RecordList },
+                        possible_custom_value_options: Redmine::FieldFormat::RecordList,
+                        edit_tag: Redmine::FieldFormat::List,
+                        bulk_edit_tag: Redmine::FieldFormat::List },
         options_owner: RedmineDependingCustomFields::DependingEnumerationFormat,
         body: [:label, :possible_custom_value_options, :query_filter_values],
         label: :label_depending_enumeration
@@ -122,9 +129,13 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(klass.instance.method(:query_filter_values).parameters).to eq([[:req, :custom_field], [:opt, :query]])
         end
 
-        it 'leaves the edit tags and customized_class_names to core, and the edit form options to core for the list' do
-          expect(klass.instance_method(:edit_tag).owner).to eq(Redmine::FieldFormat::List)
-          expect(klass.instance_method(:bulk_edit_tag).owner).to eq(Redmine::FieldFormat::List)
+        # WP-16: the edit tags moved from core List to the module (they add the
+        # data-dcf-* attributes and call super); was owner List for both.
+        it 'takes the edit tags from the module, leaves customized_class_names and the list edit form options to core' do
+          expect(klass.instance_method(:edit_tag).owner).to eq(described_class)
+          expect(klass.instance_method(:bulk_edit_tag).owner).to eq(described_class)
+          expect(klass.instance.method(:edit_tag).super_method.owner).to eq(Redmine::FieldFormat::List)
+          expect(klass.instance.method(:bulk_edit_tag).super_method.owner).to eq(Redmine::FieldFormat::List)
           expect(klass.instance_method(:possible_custom_value_options).owner).to eq(spec[:options_owner])
           expect(klass.method(:customized_class_names).owner).not_to eq(klass.singleton_class)
         end
@@ -135,7 +146,8 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       end
     end
 
-    it 'has exactly the eight shared public methods and only dcf_ private helpers' do
+    # WP-16: ten shared methods (edit_tag and bulk_edit_tag added; was eight).
+    it 'has exactly the ten shared public methods and only dcf_ private helpers' do
       expect(described_class.public_instance_methods(false).sort).to eq(shared)
       expect(described_class.private_instance_methods(false).map(&:to_s)).to all(start_with('dcf_'))
     end
@@ -1276,6 +1288,184 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         CustomField.find(child.id).update!(name: "#{child.name} renamed")
         expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
       end
+    end
+  end
+
+  # WP-16: edit_tag and bulk_edit_tag add the data-dcf-* attributes of
+  # ClientData to the element core passes options to and call core List with
+  # the merged options, so the markup is core's plus those attributes.
+  describe '#edit_tag and #bulk_edit_tag (data contract)' do
+    let(:client) { RedmineDependingCustomFields::ClientData }
+    let(:view) { ActionView::Base.empty.tap { |v| v.extend(CustomFieldsHelper) } }
+
+    def dcf_attribute_names(node)
+      node.attribute_nodes.map(&:name).grep(/\Adata-dcf-/)
+    end
+
+    # Every element without its data-dcf-* attributes, as canonical HTML.
+    def without_dcf(html)
+      doc = Nokogiri::HTML.fragment(html)
+      doc.traverse { |n| dcf_attribute_names(n).each { |name| n.remove_attribute(name) } if n.element? }
+      doc.to_html
+    end
+
+    def labelled(issue, field)
+      view.custom_field_tag_with_label(:issue, value_of(issue, field)).to_str
+    end
+
+    def stubbed
+      allow(client).to receive(:attributes_for).and_return({})
+      yield
+    ensure
+      allow(client).to receive(:attributes_for).and_call_original
+    end
+
+    def styled(kind, style, multiple: false, required: false)
+      parent, child = build_kit(kind, multiple: multiple)
+      child.update!(edit_tag_style: style, is_required: required)
+      [parent, CustomField.find(child.id)]
+    end
+
+    [:list, :enumeration].each do |kind|
+      context "for a depending #{kind}" do
+        it 'puts the attributes on the select of the drop-down style and keeps label for= on a single select' do
+          parent, child = styled(kind, '')
+          issue = kit_issue(project, parent => 'A', child => 'a1')
+          html = labelled(issue, child)
+          doc = Nokogiri::HTML.fragment(html)
+          select = doc.at_css('select')
+
+          expect(select['data-dcf-field']).to eq(child.id.to_s)
+          expect(select['data-dcf-parent']).to eq(parent.id.to_s)
+          expect(select['data-dcf-context']).to eq('form')
+          expect(doc.css('[data-dcf-field]').size).to eq(1)
+          expect(html.scan(/ id="(.+?)"/).size).to eq(1)
+          expect(doc.at_css('label')['for']).to eq(select['id'])
+        end
+
+        it 'puts the attributes on span.check_box_group for radios and check boxes, never on an input' do
+          [[false, 'radio'], [true, 'checkbox']].each do |multiple, type|
+            parent, child = styled(kind, 'check_box', multiple: multiple)
+            issue = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
+            doc = Nokogiri::HTML.fragment(labelled(issue, child))
+
+            expect(doc.css('span.check_box_group[data-dcf-field]').size).to eq(1), type
+            expect(doc.css("input[type=#{type}]").size).to be > 1
+            expect(doc.css('input').map { |input| dcf_attribute_names(input) }.flatten).to eq([]), type
+            expect(doc.css('input[data-dcf-blank]')).to be_empty
+            expect(doc.at_css('label')['for']).to be_nil
+          end
+        end
+
+        it 'only adds data-dcf-* attributes: ids, label for= and every other byte stay core output' do
+          variants = [['', false, false], ['', true, false], ['', false, true], ['check_box', false, false],
+                      ['check_box', true, false], ['check_box', false, true]]
+          variants.each do |style, multiple, required|
+            parent, child = styled(kind, style, multiple: multiple, required: required)
+            issue = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
+            real = labelled(issue, child)
+            bare = stubbed { labelled(Issue.find(issue.id), child) }
+
+            label = [style, multiple, required].inspect
+            expect(Nokogiri::HTML.fragment(real).css('[data-dcf-field]').size).to eq(1), label
+            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(bare).to_html), label
+            expect(real.scan(/ id="(.+?)"/)).to eq(bare.scan(/ id="(.+?)"/)), label
+          end
+        end
+
+        it 'renders bulk tags as core List#bulk_edit_tag plus the bulk attributes, without (none) for a required child' do
+          [false, true].each do |required|
+            parent, child = styled(kind, 'check_box', required: required)
+            issues = [kit_issue(project, parent => 'A', child => 'a1')]
+            real = view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str
+            bare = stubbed { view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str }
+            select = Nokogiri::HTML.fragment(real).at_css('select')
+
+            expect(select['data-dcf-context']).to eq('bulk')
+            expect(select['data-dcf-parent']).to eq(parent.id.to_s)
+            expect(select['data-dcf-parent-values']).to be_nil
+            expect(select['data-dcf-stored']).to be_nil
+            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(bare).to_html)
+            expect(select.css('option').map { |o| o['value'] }.include?('__none__')).to eq(!required)
+          end
+        end
+      end
+    end
+
+    it 'never changes the caller options and keeps the caller data keys' do
+      parent, child = build_kit(:list)
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      value = value_of(issue, child)
+      caller_data = { foo: 1 }.freeze
+      options = { class: 'x', data: caller_data }.freeze
+      html = child.format.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", value, options)
+      select = Nokogiri::HTML.fragment(html).at_css('select')
+
+      expect(select['data-foo']).to eq('1')
+      expect(select['data-dcf-field']).to eq(child.id.to_s)
+      expect(options).to eq(class: 'x', data: { foo: 1 })
+      expect(caller_data).to eq(foo: 1)
+      [{ data: nil }, {}].each do |opts|
+        html = child.format.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", value, opts)
+        expect(Nokogiri::HTML.fragment(html).at_css('select')['data-dcf-field']).to eq(child.id.to_s)
+      end
+      html = child.format.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", value)
+      expect(Nokogiri::HTML.fragment(html).at_css('select')['data-dcf-field']).to eq(child.id.to_s)
+    end
+
+    it 'renders the field without any data-dcf-* attribute when ClientData fails (fail open)' do
+      parent, child = build_kit(:list)
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      allow(rules).to receive(:mapping).and_raise(RuntimeError)
+      allow(Rails.logger).to receive(:warn)
+      html = labelled(issue, child)
+      doc = Nokogiri::HTML.fragment(html)
+
+      expect(doc.at_css('select')).not_to be_nil
+      expect(html).not_to include('data-dcf-')
+      expect(doc.at_css('label')['for']).to eq(doc.at_css('select')['id'])
+      expect(Rails.logger).to have_received(:warn).with(/\[DCF\].*RuntimeError/)
+    end
+
+    # G5: every interpolation is escaped once; the decoded attributes parse
+    # back to the source data.
+    it 'escapes keys, values and the parent name exactly once and keeps the JSON parseable' do
+      tricky = ['<b>"x"&', '[x]', 'a]', 'semi;colon', '"><script>alert(1)</script>', '</script>', "O'Brien",
+                "Ünïcødé ñ", ' id="x"', "tab\tin"]
+      parent = dcf_list_field(values: tricky, name: 'x" id="evil <b>&')
+      child = dcf_list_field(format: 'depending_list', values: tricky, parent: parent)
+      mapping = tricky.to_h { |value| [value, tricky.reverse] }
+      child.update_column(:format_store, child.format_store.merge('value_dependencies' => mapping,
+                                                                 'default_value_dependencies' => { tricky.first => tricky.last }))
+      issue = kit_issue(project, parent => tricky.first, child => tricky.last)
+      html = labelled(issue, CustomField.find(child.id))
+      select = Nokogiri::HTML.fragment(html).at_css('select')
+
+      expect(JSON.parse(select['data-dcf-map'])).to eq(mapping)
+      expect(JSON.parse(select['data-dcf-defaults'])).to eq(tricky.first => tricky.last)
+      expect(JSON.parse(select['data-dcf-parent-values'])).to eq([tricky.first])
+      expect(JSON.parse(select['data-dcf-stored'])).to eq('child' => [tricky.last], 'parent' => [tricky.first])
+      expect(select['data-dcf-parent-label']).to eq(parent.name)
+      expect(html).not_to include('&amp;quot;')
+      expect(html).not_to include('&amp;amp;')
+      expect(html).not_to include('&amp;lt;')
+      expect(html).not_to include('<script>')
+      expect(html).not_to include('<b>')
+      expect(html.scan(/ id="(.+?)"/).size).to eq(1)
+      expect(Nokogiri::HTML.fragment(html).at_css('label')['for']).to eq(select['id'])
+      html.scan(/ data-dcf-[a-z-]+="([^"]*)"/).flatten.each { |raw| expect(raw).not_to include('<') }
+    end
+
+    it 'escapes the parent name derived from an unusual tag name exactly once' do
+      parent, child = build_kit(:list)
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      prefix = 'x"<y> &z'
+      html = child.format.edit_tag(view, 'tag', "#{prefix}[custom_field_values][#{child.id}]", value_of(issue, child))
+      select = Nokogiri::HTML.fragment(html).at_css('select')
+
+      expect(select['data-dcf-parent-name']).to eq("#{prefix}[custom_field_values][#{parent.id}]")
+      expect(html).to include("data-dcf-parent-name=\"x&quot;&lt;y&gt; &amp;z[custom_field_values][#{parent.id}]\"")
+      expect(html).not_to include('&amp;quot;')
     end
   end
 

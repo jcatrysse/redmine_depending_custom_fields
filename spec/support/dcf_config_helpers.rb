@@ -142,8 +142,10 @@ module DcfConfigHelpers
   # as an explicit Hash (braces): validate: is a keyword. Pass a block to set
   # attributes that are not mass-assignable. validate: false mirrors the
   # existing builders for records whose validations need unrelated setup.
+  # WP-16: a class without a range of its own uses its base class range, so
+  # User (base class Principal) gets the User range.
   def dcf_fixture_record(klass, attributes = {}, validate: true)
-    base_name = klass.base_class.name
+    base_name = DCF_FIXTURE_ID_BASES.key?(klass.name) ? klass.name : klass.base_class.name
     base = DCF_FIXTURE_ID_BASES.fetch(base_name) { raise ArgumentError, "no fixture id range for #{base_name}" }
     @dcf_fixture_counters ||= Hash.new(0)
     record = klass.new

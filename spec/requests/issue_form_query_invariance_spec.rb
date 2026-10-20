@@ -6,6 +6,8 @@ require_relative '../rails_helper'
 # queries for 1 depending child of 1 parent and for 5 children of 5 distinct
 # parents, all available on the issue. The parent value is read from the
 # issue's loaded custom field values, so no per-parent lookup is added.
+# WP-16: the edit form reads the parent too now (ClientData, the data-dcf-*
+# attributes); the counts stay invariant (spec/requests/issue_form_contract_spec.rb).
 # WP-10 adds stored chains: 1 vs 5 children of a depending parent whose own
 # parent is or is not on the tracker.
 #
@@ -162,8 +164,8 @@ RSpec.describe 'Issue form query invariance', type: :request do
   # Core runs one enumerations query per enumeration field, so both worlds
   # hold 5 parents and 5 children and differ only in how many children
   # depend on a parent (1 or 5). Since WP-08 the enumeration edit form builds
-  # its options without the issue, as the list form does, so only the update
-  # example reads the parent values.
+  # its options without the issue, as the list form does; since WP-16 the
+  # edit form reads the parent values for the data-dcf-* attributes.
   describe 'enumeration children, 1 managed child vs 5 managed children of distinct parents' do
     it 'renders the edit form with the same number of queries' do
       one = build_world(family: :enumeration, managed: 1, total: 5, child_value: :blank)

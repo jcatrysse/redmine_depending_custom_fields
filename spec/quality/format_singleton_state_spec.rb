@@ -13,10 +13,12 @@ RSpec.describe 'Format singleton state' do
 
   lib_dir = File.expand_path('../../lib/redmine_depending_custom_fields', __dir__)
   # WP-09b: the non-editable check is module_function too, and its Issue and
-  # Project patches keep nothing on the records.
+  # Project patches keep nothing on the records. WP-16 adds ClientData
+  # (module_function) and the read-only carrier hook (a singleton listener).
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
                dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
-               patches/issue_validation_patch.rb patches/project_validation_patch.rb]
+               patches/issue_validation_patch.rb patches/project_validation_patch.rb
+               client_data.rb hooks/read_only_carrier_hook.rb]
             .map { |name| File.join(lib_dir, name) }
 
   # Names of the instance, class and global variables the source assigns
@@ -107,6 +109,10 @@ RSpec.describe 'Format singleton state' do
       fmt.before_custom_field_save(child)
       fmt.after_custom_field_save(child)
       fmt.query_filter_values(child, IssueQuery.new(name: '_', project: project))
+      view = ActionView::Base.empty
+      fmt.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", cfv)
+      fmt.bulk_edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", child, [issue], '')
+      RedmineDependingCustomFields::ClientData.locked_children(issue)
     end
 
     # Absolute checks, independent of what earlier examples of the process
@@ -134,6 +140,7 @@ RSpec.describe 'Format singleton state' do
       expect(RedmineDependingCustomFields::DependingFormatMethods.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::DependencyRules.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::NonEditableDependencies.instance_variables).to eq([])
+      expect(RedmineDependingCustomFields::ClientData.instance_variables).to eq([])
     end
 
     [:list, :enumeration].each do |kind|

@@ -1,0 +1,29 @@
+{
+  "9100002": {
+    "parent_id": "9100001",
+    "map": {
+      "[x]": [
+        "a]",
+        "say \"hi\""
+      ],
+      "semi;colon": [
+        "<b>&\"",
+        "\"><script>alert(x)</script>"
+      ],
+      "Ünïcødé ñ": [
+        "tab\tin",
+        "- dash",
+        "</script>",
+        "\"><script>alert(x)</script>"
+      ],
+      "<b>&\"": [
+        "[x]"
+      ]
+    },
+    "defaults": {
+      "[x]": "a]",
+      "<b>&\"": "[x]"
+    },
+    "hide_when_disabled": null
+  }
+}

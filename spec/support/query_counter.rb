@@ -6,11 +6,16 @@
 module DcfQueryCounter
   IGNORED = /\A(?:SCHEMA|CACHE|TRANSACTION)\z/.freeze
 
-  # Counts the YAML deserializations of serialized store columns (format_store).
+  # Counts the YAML deserializations of serialized store columns (format_store)
+  # and records their inputs while a payload log is set.
   module YamlLoadSpy
     def load(yaml)
       counter = Thread.current[:dcf_yaml_loads]
       counter[0] += 1 if counter
+      # WP-16: records the YAML payloads for the SP-20d check of
+      # spec/requests/issue_form_contract_spec.rb.
+      log = Thread.current[:dcf_yaml_payloads]
+      log << yaml if log
       super
     end
   end
@@ -34,6 +39,20 @@ module DcfQueryCounter
     Thread.current[:dcf_yaml_loads][0]
   ensure
     Thread.current[:dcf_yaml_loads] = previous
+  end
+
+  # WP-16: records the YAML payloads for the SP-20d check of
+  # spec/requests/issue_form_contract_spec.rb. The YAML strings
+  # ActiveRecord::Store::IndifferentCoder#load received in the block, blank
+  # inputs (Rails 7.1+ also passes them) left out.
+  def dcf_yaml_payloads
+    previous = Thread.current[:dcf_yaml_payloads]
+    log = []
+    Thread.current[:dcf_yaml_payloads] = log
+    yield
+    log.reject { |yaml| yaml.to_s.strip.empty? }
+  ensure
+    Thread.current[:dcf_yaml_payloads] = previous
   end
 
   # Extra queries the plugin adds: queries(with) - queries(without).

@@ -542,11 +542,16 @@ module RedmineDependingCustomFields
       Array(raw).map(&:to_s)
     end
 
+    # The record of the parent id +pid+ of +cf+ from find_parent, memoized on
+    # +cf+ (nil included): the first hop effective_parent_id fetches when the
+    # lookup lacks it, shared with parent_state and no_options?. Public for
+    # ClientData (WP-16), so a parent the object does not carry costs no
+    # second query.
     def parent_record(cf, pid)
       cf.dcf_memo(:parent_record, pid) { find_parent(pid) }
     end
 
-    private_class_method :list_values, :enumerations_of, :key_set, :string_values, :parent_record, :stored_value,
+    private_class_method :list_values, :enumerations_of, :key_set, :string_values, :stored_value,
                          :read_parent_state, :legacy_parent_state
   end
 end

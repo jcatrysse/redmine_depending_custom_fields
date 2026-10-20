@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'dependency_rules'
+require_relative 'client_data'
 
 module RedmineDependingCustomFields
   # The methods DependingListFormat and DependingEnumerationFormat share
@@ -124,6 +125,23 @@ module RedmineDependingCustomFields
       keywords = custom_field.multiple? ? keyword.split(/[;,]/).map(&:strip).reject(&:blank?) : [keyword.strip]
       matched = keywords.filter_map { |kw| index[kw.downcase(:fold)] }
       custom_field.multiple? ? matched.presence : matched.first
+    end
+
+    # WP-16: core's tag plus the data-dcf-* attributes of ClientData (server
+    # design 2.2) on the select or the check box group; the caller's options
+    # are not changed. Without data (ClientData failed or the field has
+    # none), core gets the caller's options as they are.
+    def edit_tag(view, tag_id, tag_name, custom_value, options = {})
+      data = ClientData.attributes_for(custom_value.custom_field, context: :form, customized: custom_value.customized,
+                                                                  custom_value: custom_value, tag_name: tag_name)
+      super(view, tag_id, tag_name, custom_value, ClientData.merge_options(options, data))
+    end
+
+    # Bulk edit, time-entry bulk edit and the context-menu wizard: core's
+    # select plus the bulk attributes for the selected +objects+.
+    def bulk_edit_tag(view, tag_id, tag_name, custom_field, objects, value, options = {})
+      data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
+      super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
     end
 
     def after_custom_field_save(_custom_field)

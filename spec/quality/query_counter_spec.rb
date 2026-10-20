@@ -18,6 +18,19 @@ RSpec.describe DcfQueryCounter do
     expect(loads).to be >= 1
   end
 
+  # WP-16: the payload log behind the SP-20d check of
+  # spec/requests/issue_form_contract_spec.rb.
+  it 'records the YAML payloads of a serialized store column, blank inputs left out' do
+    parent = dcf_list_field(values: %w[A B])
+    child = dcf_list_field(format: 'depending_list', values: %w[a1], parent: parent)
+    child = dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1] })
+    payloads = dcf_yaml_payloads { CustomField.find(child.id).format_store }
+    expect(payloads.size).to eq(1)
+    expect(payloads.first).to include('value_dependencies')
+    expect(dcf_yaml_payloads { CustomField.find(parent.id).format_store }).to all(be_present)
+    expect(dcf_yaml_payloads { nil }).to eq([])
+  end
+
   it 'reports the difference between two blocks' do
     overhead = dcf_plugin_overhead(with: -> { 2.times { User.where(id: 1).to_a } }, without: -> { User.where(id: 1).to_a })
     expect(overhead).to eq(1)

@@ -8,6 +8,7 @@ require_relative 'lib/redmine_depending_custom_fields/patches/project_validation
 require_relative 'lib/redmine_depending_custom_fields/patches/projects_helper_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 require_relative 'lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook'
+require_relative 'lib/redmine_depending_custom_fields/hooks/read_only_carrier_hook'
 
 Redmine::Plugin.register :redmine_depending_custom_fields do
   name 'Redmine Depending Custom Fields'

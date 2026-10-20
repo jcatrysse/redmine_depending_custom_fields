@@ -1,0 +1,16 @@
+{
+  "9100002": {
+    "parent_id": "9100001",
+    "map": {
+      "Alpha": [
+        "Ant",
+        "Ape"
+      ],
+      "Beta": [
+        "Bee"
+      ]
+    },
+    "defaults": {},
+    "hide_when_disabled": null
+  }
+}
