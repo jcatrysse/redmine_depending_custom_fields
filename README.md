@@ -19,40 +19,131 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Key/value lists can depend on enumerations or depending key/value lists of the same object type
    - `Parent` and `Child` relationships between fields
    - Relation between `Parent` and `Child` values is configurable in a matrix
-   - Child fields include a blank option to deselect and are disabled until a
-     parent value is chosen. Descendant fields update automatically when parents
-     are cleared and only show the allowed options
-   - Fields can optionally be hidden when they have no valid options to choose
-     from
+   - Dependent fields are never disabled. The values the parent value does not
+     allow are hidden and cannot be chosen (options, radio buttons and check
+     boxes, never the field itself), so while the parent has no value only the
+     blank choice, if the field has one, is left, apart from a stored value
+     (see below). A hint under the field explains why, for example "Select a
+     value for Hardware first." or "No values are available for the selected
+     Hardware.", and hints are announced to screen readers
+   - Dependent fields, and all fields below them, update automatically when a
+     parent value changes or is cleared
+   - Per-parent default values are filled in on new records that are no copy
+     and when the parent value changes; they are not filled into empty fields
+     of a saved record or of a copy when its form opens
+   - The value you last picked for each parent value comes back when you
+     switch the parent back, also after the form refreshes (for example after
+     a tracker or status change)
+   - A stored value that the parent value no longer allows stays selected and
+     marked while the parent value is unchanged (see
+     [Stored values](#stored-values))
+   - A dependent field whose parent is read-only on the form or not available
+     for the tracker is filtered by the stored parent value (no value when the
+     parent is not available)
+   - A dependent field whose parent you cannot see is not filtered in the
+     browser, and the page holds no dependency mapping of that parent; the
+     server still validates the field
+   - "Hide when no valid options" hides the field together with its label
+     while the parent offers no values (the parent has no value or its value
+     allows nothing), also when the parent is read-only or not available. This
+     happens only on single-record forms: never while a stored value that does
+     not match the parent is shown, and never in bulk edit or the context
+     menu wizard
+   - Required radio-style dependent fields can be cleared (see
+     [Required radio-style fields](#required-radio-style-fields))
+   - Without JavaScript every value is offered (all active values for
+     Key/Value list (depending) fields); the server still rejects values the
+     parent value does not allow
    - Works on all objects that support custom fields such as issues, projects,
      time entries, versions and users
 3. `Bulk edit`
-   - New custom field types can be used when editing multiple issues at once
-   - Allowed values are calculated across all selected issues so only valid options remain available
-   - Javascript behaviour ensures only allowed values are selectable when parent fields change
+   - The depending formats can be used when editing multiple issues or time
+     entries at once; the [Context menu wizard](#context-menu-wizard) follows
+     the same rules
+   - The values offered follow the parent value chosen in the bulk edit form,
+     not the values stored on the selected issues. While the parent field is
+     on "(No change)", or is not in the form (for example when it is not
+     common to the selected issues), a dependent field offers all its values
+   - Once a parent value is chosen, only the values it allows can be chosen in
+     its dependent fields: the others are hidden and disabled, and
+     "(No change)" stays available
+   - A per-parent default value is preselected and marked, with the hint "Set
+     to the default for the selected Hardware. Choose (No change) to keep the
+     current values." A value you picked for a parent value comes back when you
+     choose that parent value again, and setting the parent back to
+     "(No change)" restores the previous choice of its dependent fields.
+     Multi-value fields have no "(No change)" entry: with nothing selected they
+     stay unchanged
+   - "(none)" (in English the option reads "none") clears a field that is not
+     required. Required dependent fields whose parent field you can see offer
+     "(none)" too, but only while the parent selection allows no value (the
+     parent is "(none)" or its value has no linked values); at other times it
+     is hidden and disabled
+   - Setting a parent field to "(none)", or to a value that allows no values,
+     sets its dependent fields and all fields below them to "(none)", with the
+     hint "Cleared because the current choice for Hardware allows no values for
+     this field." This is the only case in which a dependent field is cleared
+     automatically. The browser does the clearing: without JavaScript a
+     dependent field left on "(No change)" that holds a value is refused for
+     that issue
    - The server rejects a new value the parent value does not allow, also via
      API or email; a value already stored is accepted while its parent value
      is unchanged (see [Validation](#validation))
-   - "None" can be chosen to clear a value while bulk editing
-   - Selecting "None" for a parent field automatically clears all of its
-     dependent fields
-   - Choosing a value for a parent field hides the "No change" option on all of
-     its descendants so invalid values can't be kept
+   - The server checks every issue against its own parent value. An issue
+     whose dependent field keeps a value (left on "(No change)") that the new
+     parent value does not allow is not saved; the other issues are saved, and
+     the issues that failed are listed with the message above the bulk edit
+     form, for example "Model is invalid: #12". Without JavaScript, choosing
+     "(none)" on a required dependent field while the parent value allows
+     values is refused for each such issue with "cannot be blank"
 
 ## Context menu wizard
 
 Open the context menu on an issue list (right-click or the menu button) to
-access the wizard. Users who have the **Edit issues** permission will see a menu
-entry for each parent custom field that is valid for all selected issues.
-Choosing one of these entries expands the menu in place and shows cascading
-select boxes with a save button. Child fields are hidden from the normal menu so
-dependencies cannot be broken. The selected value is stored for every chosen
-issue once you click **Save**, except in the fields you may not edit on that
-issue (read-only by workflow or hidden for your role): their values are
-ignored, as in Redmine's bulk edit. Each issue is saved on its own. An issue
-that cannot be saved, for example because a dependent field you cannot edit
-holds a value the new parent value does not allow, keeps its values; the
-other issues are saved and the wizard shows the error messages.
+access the wizard. It needs the **Edit issues** permission in the project of
+every selected issue, so a closed project gets no wizard. The menu shows one
+wizard entry for each top-level parent field (a field other fields depend on
+that does not depend on another field itself) that you may edit on every
+selected issue: available for its tracker and project, visible for your role
+and not read-only by workflow.
+
+Choosing an entry opens the wizard next to the menu, at the entry. It shows
+that field and the dependent fields below it, one column per level, each
+labelled with its field name, and a **Save** button. Only fields you may edit
+on every selected issue are offered: a field that is read-only or hidden for
+you on one of them is not shown, and neither are the dependent fields below
+it, even those you may edit. Every field, the top-level one included, opens on
+"(No change)" (a multi-value field, which has no "(No change)" entry, opens
+with nothing selected). Saving without choosing a value changes nothing, and
+only the fields you set are saved. The wizard fields follow the bulk edit
+rules (see `Bulk edit` under [Features](#features)): a parent value filters
+the fields below it, a per-parent default is preselected with a hint, and
+"(none)" or a value that allows no values clears the fields below it. The
+hints appear under the field inside the wizard. The server also ignores a
+posted value for a field you may not edit on an issue, as Redmine's bulk edit
+does.
+
+Each issue is saved on its own, and after a successful save the page reloads.
+An issue that cannot be saved, for example because a dependent field you
+cannot edit holds a value the new parent value does not allow, keeps its
+values while the other issues are saved. The wizard then shows the server's
+error messages in an alert and stays open; the page is not reloaded, so
+reload it to see the saved changes. Any other failure, for example an expired
+session or a network error, shows "The change could not be saved." (with the
+HTTP status when there is one) and also keeps the wizard open.
+
+The normal submenus of the context menu leave out only the dependent fields
+that are available for the selected issues, together with their parent
+fields. A parent field whose dependent fields are not available for the
+selected issues keeps its submenu with its full list. A dependent field is
+shown as a plain list when its parent field was deleted, when it depends on
+itself or on a field of another type or of a format it cannot depend on, or
+when it is part of or below a circular dependency. A left-out field that the
+wizard does not offer, for example because its parent is not available or not
+editable on every selected issue, can be changed on the issue form or in bulk
+edit. The context menu of time entries is unchanged: it shows depending
+fields with their full list and has no wizard; the server validates the
+values.
 
 ## Validation
 
@@ -155,6 +246,19 @@ On time entries, versions and other objects the plugin adds no such check:
 Redmine itself validates every custom field value there, so such a parent
 change was already refused. Redmine's error there names the dependent field,
 also one that is hidden for your role.
+
+### Required radio-style fields
+
+A single-value dependent field shown as radio buttons whose parent field you
+can see is always posted by the forms in the browser, as a drop-down is: an
+empty hidden input in front of the radio buttons posts a blank value when no
+radio button is chosen, so the field can be cleared, also when it is
+required. When such a field is required and blank while its parent value
+allows values, every save of the issue form therefore needs a value for it,
+with or without JavaScript, and a save that only adds a note is no exception.
+(Up to 0.0.16 such a save went through when it posted no other custom field.)
+Pick a value, or ask someone who may edit the parent field to choose a parent
+value that allows no values.
 
 ## Circular dependencies
 
@@ -450,7 +554,9 @@ filtered in the browser; the server still validates it.
 ### Data attributes
 
 The server writes these attributes on the `<select>` or the
-`span.check_box_group` of each depending field. Values are JSON where shown.
+`span.check_box_group` of each depending field, except `data-dcf-blank` and
+`data-dcf-required-none`, which mark an extra hidden input and an extra option
+(last two rows). Values are JSON where shown.
 
 | Attribute | Value | When |
 |---|---|---|
@@ -466,6 +572,8 @@ The server writes these attributes on the `<select>` or the
 | `data-dcf-parent-values` | the parent's current values on the record, `[]` when blank or not available | managed fields in form context |
 | `data-dcf-parent-label` | the parent field name | managed fields in form context |
 | `data-dcf-stored` | `{"child": [...], "parent": [...]}`, the stored values the server keeps while the parent is unchanged | managed fields in form context on saved records and copies |
+| `data-dcf-blank` | `1` | an id-less `<input type="hidden" name="<field name>" value="">` right before a managed single-value radio group (form context, required or not) and right before the `<select>` of a managed required drop-down with a default value (core renders it without a blank option); it posts '' when no radio button or option is chosen, so the field can be cleared, and a chosen value comes later and wins; the runtime never reads or changes it |
+| `data-dcf-required-none` | `1` | the `<option value="__none__">` with core's `label_none` text ("none" in English) that bulk edit of issues and time entries and the wizard add for required managed fields, right after "(No change)" (first for a multi-value field); the runtime enables it only while the parent selection allows no value (the parent is "(none)" or its value has no linked values) and keeps it hidden and disabled otherwise; posted while the parent value allows values, it is refused per record with "cannot be blank" |
 
 A dependent field you can see but cannot edit has no control; when its
 stored value matters for a parent change, the form gets one hidden carrier
@@ -487,8 +595,8 @@ The runtime sets `data-dcf-state` on each managed control:
 - `legacy`: a stored value the parent value does not allow is selected (also
   after a user pick that keeps it);
 - `none`: bulk edit or the wizard with the parent on "(none)";
-- `unfiltered`: bulk edit or the wizard with the parent on "(No change)", or
-  no usable mapping.
+- `unfiltered`: bulk edit or the wizard with the parent on "(No change)" or
+  not in the form, or no usable mapping.
 
 After every evaluation that changes something it dispatches `dcf:updated`
 (bubbles) on the control, with `detail` `{fieldId, state, values, changed}`;
