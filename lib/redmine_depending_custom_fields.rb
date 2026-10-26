@@ -9,6 +9,7 @@ require_relative 'redmine_depending_custom_fields/custom_field_visibility'
 require_relative 'redmine_depending_custom_fields/field_index'
 require_relative 'redmine_depending_custom_fields/dependency_rules'
 require_relative 'redmine_depending_custom_fields/storage_limits'
+require_relative 'redmine_depending_custom_fields/dependency_payload'
 
 module RedmineDependingCustomFields
   FIELD_FORMAT_EXTENDED_USER = 'extended_user'

@@ -16,13 +16,16 @@ RSpec.describe 'Format singleton state' do
   # Project patches keep nothing on the records. WP-16 adds ClientData
   # (module_function) and the read-only carrier hook (a singleton listener).
   # WP-18 adds ClientConfig (module_function) and the head hook (a singleton
-  # listener).
+  # listener). WP-21 adds DependencyPayload (module_function); only its
+  # Invalid exception sets instance variables.
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
                dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
                patches/issue_validation_patch.rb patches/project_validation_patch.rb
                client_data.rb hooks/read_only_carrier_hook.rb
-               client_config.rb hooks/view_layouts_base_html_head_hook.rb]
+               client_config.rb hooks/view_layouts_base_html_head_hook.rb
+               dependency_payload.rb]
             .map { |name| File.join(lib_dir, name) }
+  allowed_writes = { 'dependency_payload.rb' => %w[@reason @bytes] }
 
   # Names of the instance, class and global variables the source assigns
   # (=, op-assign, multiple assignment, rescue =>, inside blocks), plus the
@@ -80,9 +83,11 @@ RSpec.describe 'Format singleton state' do
     end
 
     scanned.each do |path|
-      it "#{File.basename(path)} assigns no instance, class or global variable" do
+      allowed = allowed_writes.fetch(File.basename(path), [])
+      except = allowed.empty? ? '' : " but #{allowed.join(' and ')}"
+      it "#{File.basename(path)} assigns no instance, class or global variable#{except}" do
         source = File.read(path, encoding: 'UTF-8')
-        expect(state_writes(source)).to eq([])
+        expect(state_writes(source)).to eq(allowed)
         expect(source).not_to match(/Thread\.current|CurrentAttributes|Rails\.cache\.(?:fetch|read|write)/)
       end
     end
@@ -154,6 +159,9 @@ RSpec.describe 'Format singleton state' do
       expect(RedmineDependingCustomFields::DependencyRules.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::NonEditableDependencies.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::ClientData.instance_variables).to eq([])
+      RedmineDependingCustomFields::DependencyPayload.parse('{"value_dependencies":{"a/b":["c"]}}')
+      RedmineDependingCustomFields::DependencyPayload.digest({ 'a' => ['b'] }, nil)
+      expect(RedmineDependingCustomFields::DependencyPayload.instance_variables).to eq([])
       I18n.with_locale(:de) { RedmineDependingCustomFields::ClientConfig.payload }
       listener = RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook.instance
       listener.view_layouts_base_html_head({})
