@@ -11,6 +11,7 @@ const { JSDOM } = require('jsdom');
 const D = require('./support/dom');
 const E = require('./support/entries');
 const F = require('./support/fixtures');
+const fire = require('./support/fire');
 
 afterEach(D.closeAll);
 
@@ -92,8 +93,9 @@ function plain(html) {
 }
 
 // Frontend design 5.6 to 5.8: the runtime writes only these attributes (and
-// adds hint elements); everything else stays as rendered.
-const WRITTEN = new Set(['data-dcf-state', 'class', 'aria-describedby', 'disabled', 'hidden', 'style']);
+// adds hint elements); everything else stays as rendered. No inline style:
+// no fixture has one, and the runtime only clears a server display:none.
+const WRITTEN = new Set(['data-dcf-state', 'class', 'aria-describedby', 'disabled', 'hidden']);
 const RUNTIME_CLASSES = new Set(['depending-child', 'dcf-auto-applied', 'dcf-legacy-option', 'dcf-hidden']);
 function writtenOnly(before, after) {
   const clone = after.body.cloneNode(true);
@@ -138,6 +140,15 @@ Object.keys(EXPECTED).forEach((scenario) => {
       assert.equal(doc.querySelectorAll('[data-dcf-state], em.dcf-hint, .dcf-live').length, 0);
       Array.from(doc.forms).forEach((f, k) => assert.deepEqual(E.entries(f), E.entries(before.forms[k])));
       assert.deepEqual(pg.updates, []);
+      // WP-17 resume: also after a change of every select on the page.
+      doc.querySelectorAll('select').forEach((s) => {
+        const values = Array.from(s.options).map((o) => o.value);
+        fire.choose(pg.window, s, s.multiple ? [values[values.length - 1]] : values[values.length - 1]);
+      });
+      assert.equal(doc.body.innerHTML, before.body.innerHTML, 'untouched after changes');
+      assert.equal(doc.querySelectorAll('[data-dcf-state], em.dcf-hint, .dcf-live').length, 0);
+      assert.deepEqual(pg.updates, []);
+      assert.deepEqual(pg.errors, []);
       return;
     }
     if (want.wizard) {

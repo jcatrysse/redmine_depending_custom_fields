@@ -9,8 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require('jsdom');
 
-// WP-17: the legacy script was renamed; the new runtime took its old name.
-const SCRIPT = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'javascripts', 'depending_custom_fields_legacy.js'), 'utf8');
+const SCRIPT = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'javascripts', 'depending_custom_fields_legacy.js'), 'utf8'); // renamed by WP-17
 const MAPPING = { 2: { parent_id: '1', map: { A: ['a1', 'a2'], B: ['b1'] }, defaults: {}, hide_when_disabled: false } };
 
 function select(prefix, fieldId, options, extra) {

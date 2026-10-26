@@ -93,11 +93,21 @@ test('load guard: a second evaluation keeps the object and binds no second liste
 test('start(): one native change listener plus a jQuery delegate for isTrigger events only (X4)', async () => {
   const pg = await load('list_single');
   const log = eventLog(pg);
+  // WP-17 review round 2: count evaluations (a second handling of the same
+  // event is a no-op without any event, so dcf:updated cannot see it).
+  const rules = pg.window.DependingCustomFields.rules;
+  const parentState = rules.parentState;
+  let evaluations = 0;
+  rules.parentState = function () { evaluations += 1; return parentState.apply(this, arguments); };
   fire.choose(pg.window, parentOf(pg), 'Beta');
   assert.equal(log.filter((l) => l === 'updated:9100002').length, 1, 'a native change is processed once');
+  assert.equal(evaluations, 1, 'one evaluation for one native change');
   log.length = 0;
+  evaluations = 0;
   fire.jq(pg.window, parentOf(pg), 'Alpha');
   assert.deepEqual(log.filter((l) => l.startsWith('updated')), ['updated:9100002'], 'a jQuery trigger is processed once');
+  assert.equal(evaluations, 1, 'one evaluation for one jQuery trigger');
+  rules.parentState = parentState;
   assert.deepEqual(D.selected(child(pg)), ['Ant']);
   const plain = await load('list_single', { jquery: false });
   fire.choose(plain.window, parentOf(plain), 'Beta');
@@ -198,7 +208,19 @@ test('UD-37 carrier: never changed, no parent option disabled, no text added, su
 });
 
 test('X6 the observer is childList only and filtered: attribute and style changes and plain rows cause no init', async () => {
-  const pg = await load('list_single');
+  const observed = [];
+  const pg = await load('list_single', {
+    before(w) {
+      const observe = w.MutationObserver.prototype.observe;
+      w.MutationObserver.prototype.observe = function (target, options) {
+        observed.push([target, options]);
+        return observe.apply(this, arguments);
+      };
+    }
+  });
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0][0], pg.document.body);
+  assert.deepEqual(JSON.parse(JSON.stringify(observed[0][1])), { childList: true, subtree: true });
   const api = pg.window.DependingCustomFields;
   const original = api.init;
   const calls = [];
@@ -283,8 +305,28 @@ test('init re-evaluates a control whose parent changed without an event', async 
 });
 
 test('head mode: the runtime in <head> filters the page at DOMContentLoaded and observes later fields', async () => {
-  const pg = await load('list_single', { head: true });
+  const bound = [];
+  const observed = [];
+  const pg = await load('list_single', {
+    head: true,
+    before(w) {
+      const add = w.document.addEventListener;
+      w.document.addEventListener = function (type, fn, capture) {
+        if (type === 'change' && !capture) bound.push(w.document.readyState);
+        return add.apply(this, arguments);
+      };
+      const observe = w.MutationObserver.prototype.observe;
+      w.MutationObserver.prototype.observe = function (target) {
+        observed.push([w.document.readyState, target]);
+        return observe.apply(this, arguments);
+      };
+    }
+  });
   assert.equal(D.state(child(pg)), 'ok');
+  // WP-17 review round 2: start() waits for DOMContentLoaded while loading.
+  assert.ok(bound.length >= 1);
+  assert.deepEqual(Array.from(new Set(bound)), ['interactive'], 'the change listeners are bound at DOMContentLoaded');
+  assert.deepEqual(observed.map(([rs, target]) => [rs, target === pg.document.body]), [['interactive', true]]);
   const p = pg.document.createElement('div');
   p.innerHTML = F.read('legacy_value').replace(/9100002/g, '9100005');
   pg.document.body.appendChild(p);
@@ -375,7 +417,7 @@ test('i18n: the 10 English fallbacks equal the en texts of the registry and en.y
   assert.equal(t('saveFailed'), saveFailed);
 });
 
-test('own events: a listener that re-dispatches each runtime change is processed like a user change and the page settles', async () => {
+test('own events: a listener that re-dispatches each runtime change (same values) is no pick and the page settles as without it', async () => {
   const run = async (redispatch) => {
     const pg = await load('chain_of_three');
     if (redispatch) {
@@ -449,6 +491,13 @@ test('an option pre-hidden by the server (hidden plus inline display:none) is re
   const bee = Array.from(child(pg).options).find((o) => o.value === 'Bee');
   fire.choose(pg.window, parentOf(pg), 'Beta');
   assert.deepEqual([bee.disabled, bee.hidden, bee.style.display], [false, false, '']);
+  // WP-17 review round 2: the runtime never writes an inline style itself.
+  const ant = Array.from(child(pg).options).find((o) => o.value === 'Ant');
+  assert.deepEqual([ant.hidden, ant.disabled], [true, true]);
+  assert.deepEqual(Array.from(child(pg).options).filter((o) => o.hasAttribute('style')).map((o) => o.value), ['Bee']);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  assert.deepEqual(Array.from(child(pg).options).filter((o) => o.hasAttribute('style')).map((o) => o.value), ['Bee']);
+  assert.equal(pg.document.querySelectorAll('[style]').length, 1);
 });
 
 // Hand-written: a required single select without a blank option. Core omits
@@ -568,10 +617,219 @@ test('static source checks: no HTML from strings, no legacy mechanisms, ES2017 r
   ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval(', 'new Function', 'localStorage', 'sessionStorage',
     'DependingCustomFieldData', 'ContextMenuWizardConfig', 'ajaxComplete', 'depending_cf_', 'dataset', 'data-hidden-for',
     'valueMap', 'data-depending', 'preventDefault', 'console.', '.flat(', 'flatMap', 'fromEntries', 'matchAll', 'replaceAll',
-    'globalThis', 'structuredClone', 'replaceChildren', 'CSS.escape', '.at(', '?.', '??']
+    'globalThis', 'structuredClone', 'replaceChildren', 'CSS.escape', '.at(', '?.', '??',
+    // WP-17 resume: more ES2018+ built-ins (acorn checks syntax only) and core globals.
+    '.finally(', 'trimStart', 'trimEnd', 'Object.hasOwn', 'findLast', 'toSorted', 'toReversed', 'allSettled',
+    'queueMicrotask', 'Symbol.asyncIterator', 'for await', '$(', 'updateIssueFrom', 'replaceIssueFormWith',
+    'warnLeavingUnsaved', 'createSVGIcon', 'document.cookie', 'data-dcf-parent^=', 'data-dcf-parent*=', 'data-dcf-parent$=',
+    'data-dcf-parent|=', 'data-dcf-parent~=']
     .forEach((needle) => assert.equal(src.includes(needle), false, needle));
   assert.equal(/setTimeout\(\s*['"`]/.test(src), false, 'string timers');
   assert.equal(/catch\s*\{/.test(src), false, 'optional catch binding');
   assert.equal(/[\u2013\u2014]/.test(src), false, 'dash characters');
   assert.equal(/\bnormalizes\b/.test(src), false);
+});
+
+// WP-17 resume: the gates and environment the suites rely on.
+test('npm run check gate: acorn ecmaVersion 2017 rejects ES2018+ syntax', () => {
+  const acorn = require('acorn');
+  ['a?.b', 'a ?? b', '({...a})', 'try {} catch {}', '/(?<=a)b/', 'async function f() { for await (const x of y); }', 'a ||= b']
+    .forEach((code) => assert.throws(() => acorn.parse(code, { ecmaVersion: 2017, sourceType: 'script' }), SyntaxError, code));
+  assert.doesNotThrow(() => acorn.parse(D.RUNTIME, { ecmaVersion: 2017, sourceType: 'script' }));
+});
+
+test('the jsdom suites run the locked jQuery 3.7.1', async () => {
+  const pg = await load('list_single');
+  assert.equal(pg.window.jQuery.fn.jquery, '3.7.1');
+});
+
+test('own events with jQuery: a listener answering each native change with a jQuery trigger settles on a DOM cycle', async () => {
+  const cyc = await load(CYCLE);
+  const $ = cyc.window.jQuery;
+  $(cyc.document).on('change', 'select', function (e) { if (!e.isTrigger) $(this).trigger('change'); });
+  const u = cyc.updates.length;
+  fire.choose(cyc.window, D.control(cyc.document, '1'), 'a2');
+  assert.ok(cyc.updates.length - u < 10);
+  assert.deepEqual([D.selected(D.control(cyc.document, '1')), D.selected(D.control(cyc.document, '2'))], [['a2'], ['']]);
+  assert.deepEqual(cyc.errors, []);
+});
+
+test('a control removed by a dcf:updated listener of an earlier control gets no event', async () => {
+  const pg = await load('chain_of_three');
+  const leaf = child(pg, '9100003');
+  pg.document.addEventListener('dcf:updated', (e) => {
+    if (e.detail.fieldId === '9100002' && leaf.isConnected) leaf.closest('p').remove();
+  });
+  const log = eventLog(pg);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual(log, [`change:${PARENT}`, `change:${CHILD}`, 'updated:9100002']);
+  assert.deepEqual(pg.errors, []);
+});
+
+test('without a body at start the observer watches the document element', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { runScripts: 'outside-only' });
+  const w = dom.window;
+  await new Promise((resolve) => w.addEventListener('DOMContentLoaded', () => resolve(), { once: true }));
+  w.document.body.remove();
+  assert.equal(w.document.body, null);
+  assert.notEqual(w.document.readyState, 'loading');
+  w.eval(D.RUNTIME);
+  const body = w.document.createElement('body');
+  body.innerHTML = F.read('list_single');
+  w.document.documentElement.appendChild(body);
+  await D.microtask();
+  assert.equal(D.state(D.control(w.document, '9100002')), 'ok');
+  w.close();
+});
+
+test('data-dcf-map: absent or invalid leaves the child unfiltered; ids above MAX_SAFE_INTEGER compare as strings', async () => {
+  for (const raw of [null, '{', '[1]', '"x"']) {
+    const pg = await load(F.tweak('list_single', (doc) => {
+      const s = F.named(doc, CHILD);
+      if (raw === null) s.removeAttribute('data-dcf-map');
+      else s.setAttribute('data-dcf-map', raw);
+    }));
+    assert.deepEqual([D.state(child(pg)), D.disabled(child(pg))], ['unfiltered', []], String(raw));
+  }
+  const big = '9007199254740993';
+  const html = '<form><p><select name="issue[custom_field_values][1]"><option value="7" selected>7</option></select></p>' +
+    '<p><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
+    `data-dcf-map="{&quot;7&quot;:[&quot;${big}&quot;,12]}"><option value=""></option><option value="${big}">big</option><option value="12">12</option><option value="13">13</option></select></p></form>`;
+  const pg = await load(html);
+  assert.deepEqual(D.enabled(D.control(pg.document, '2')), ['', big, '12']);
+});
+
+test('meta texts with markup characters are written as text, never as markup', async () => {
+  const meta = { selectParent: '<img src=x onerror=alert(1)> %{parent} &amp; $&', liveMessage: '<b>%{field}</b>: %{message}' };
+  const pg = await load('list_single', { meta });
+  fire.choose(pg.window, parentOf(pg), '');
+  const hint = D.hint(child(pg));
+  assert.equal(hint.textContent, '<img src=x onerror=alert(1)> Parent field &amp; $&');
+  assert.equal(hint.children.length, 0);
+  pg.clock.tick(400);
+  const live = pg.document.getElementById('dcf-live');
+  assert.equal(live.textContent, '<b>Child field</b>: <img src=x onerror=alert(1)> Parent field &amp; $&');
+  assert.equal(live.children.length, 0);
+  assert.equal(pg.document.querySelectorAll('img, b').length, 0);
+});
+
+test('X9 a page without managed fields: nothing written, no live region, no error, with or without the meta', async () => {
+  for (const opts of [{}, { meta: { selectParent: 'x' } }, { jquery: false }]) {
+    for (const body of ['<p>x</p>', F.read('role_invisible_parent')]) {
+      const pg = await load(body, opts);
+      const before = F.tweak(body, () => {});
+      pg.document.querySelectorAll('select').forEach((s) => fire.choose(pg.window, s, s.options[0].value));
+      pg.clock.tick(1000);
+      assert.equal(pg.document.body.innerHTML, before);
+      assert.equal(pg.document.getElementById('dcf-live'), null);
+      assert.deepEqual([pg.errors, pg.updates, pg.clock.pending()], [[], [], 0]);
+    }
+  }
+});
+
+test('without jQuery the runtime ends in the same state (F1, F2, B2): native changes cascade', async () => {
+  const run = async (scenario, steps, jquery) => {
+    const pg = await load(scenario, { jquery });
+    steps.forEach((v) => fire.choose(pg.window, parentOf(pg), v));
+    return pg.document.body.innerHTML;
+  };
+  for (const [scenario, steps] of [['new_issue', ['', 'Alpha', 'Beta']], ['bulk_single', ['Beta', 'Alpha', '__none__', '']]]) {
+    assert.equal(await run(scenario, steps, false), await run(scenario, steps, true), scenario);
+  }
+});
+
+// FD-14: the runtime's own change events are never picks. A listener that
+// changes another control without an event of its own before the runtime
+// dispatches that control's change stays unseen (it needs its own event).
+test('own events are ignored (WeakSet): a control changed silently before its own change is dispatched is no pick', async () => {
+  const html = F.tweak('list_single', (doc) => {
+    const p = F.named(doc, CHILD).closest('p');
+    const copy = p.cloneNode(true);
+    const s = copy.querySelector('select');
+    s.setAttribute('name', 'issue[custom_field_values][9100003]');
+    s.setAttribute('data-dcf-field', '9100003');
+    s.removeAttribute('id');
+    s.setAttribute('data-dcf-defaults', JSON.stringify({ Beta: 'Bee' }));
+    s.setAttribute('data-dcf-stored', JSON.stringify({ child: [], parent: ['Alpha'] }));
+    F.selectValues(s, ['']);
+    p.after(copy);
+  });
+  const pg = await load(html);
+  const c2 = child(pg, '9100003');
+  let armed = true;
+  child(pg).addEventListener('change', () => { if (armed) { armed = false; c2.value = ''; } });
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual([D.selected(child(pg)), D.selected(c2)], [[''], ['']], 'the listener cleared c2 after the runtime set Bee');
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual(D.selected(c2), ['Bee'], 'memory holds the runtime value, not the silent change');
+});
+
+// WP-17 review round 2: a change event is checked against the values the
+// dependents were last evaluated against, so a pick after a silent change
+// that init(document) acted on cascades again (it was dropped as a
+// re-dispatch, leaving the leaf filtered for the silent value).
+test('a pick of the old value after a silent change and init(document) cascades to the dependents again', async () => {
+  for (const mode of ['native', 'jquery']) {
+    const pg = await load('chain_of_three');
+    const middle = child(pg, '9100002');
+    const leaf = child(pg, '9100003');
+    middle.value = 'Ape';
+    pg.window.DependingCustomFields.init(pg.document);
+    assert.deepEqual([D.enabled(leaf), D.selected(leaf), D.state(leaf)], [[''], [''], 'empty'], mode);
+    if (mode === 'native') fire.choose(pg.window, middle, 'Ant');
+    else fire.jq(pg.window, middle, 'Ant');
+    assert.deepEqual([D.enabled(leaf), D.selected(leaf), D.state(leaf)], [['', 'Cub', 'Calf'], ['Cub'], 'ok'], mode);
+    assert.deepEqual(pg.errors, []);
+  }
+  // The observer path: a silent change, the leaf re-rendered, then the pick.
+  const pg = await load('chain_of_three');
+  const middle = child(pg, '9100002');
+  middle.value = 'Ape';
+  const p = child(pg, '9100003').closest('p');
+  p.replaceWith(p.cloneNode(true));
+  await D.microtask();
+  const leaf = child(pg, '9100003');
+  assert.equal(D.state(leaf), 'empty');
+  fire.choose(pg.window, middle, 'Ant');
+  assert.deepEqual([D.enabled(leaf), D.state(leaf)], [['', 'Cub', 'Calf'], 'ok']);
+  // A re-dispatch with the values the runtime left still starts no cascade.
+  const u = pg.updates.length;
+  fire.change(pg.window, middle);
+  assert.equal(pg.updates.length, u);
+});
+
+// Accepted limit (WP-18 README): options a third party adds to a child stay
+// as added until the next change of its parent; init is a no-op meanwhile.
+test('pinned limit: an option added to a child after an evaluation is filtered at the next parent change only', async () => {
+  const pg = await load('chain_of_three');
+  const leaf = child(pg, '9100003');
+  const extra = pg.document.createElement('option');
+  extra.value = 'Colt2';
+  extra.textContent = 'Colt2';
+  leaf.appendChild(extra);
+  pg.window.DependingCustomFields.init(pg.document.forms[0]);
+  pg.window.DependingCustomFields.init(pg.document);
+  await D.microtask();
+  assert.deepEqual(D.enabled(leaf), ['', 'Cub', 'Calf', 'Colt2']);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual(D.enabled(leaf), ['']);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual([D.enabled(leaf), D.selected(leaf)], [['', 'Cub', 'Calf'], ['Cub']]);
+});
+
+// WP-17 review round 2: the pick check and the cascade check are separate,
+// so an init call in a change listener that runs before the runtime's (it
+// re-evaluates the dependents first) does not swallow the user's pick.
+test('a third-party init inside an earlier change listener keeps the user pick remembered', async () => {
+  const pg = await load('chain_of_three');
+  const middle = child(pg, '9100002');
+  const leaf = child(pg, '9100003');
+  middle.addEventListener('change', () => pg.window.DependingCustomFields.init(pg.document));
+  fire.choose(pg.window, middle, 'Ape');
+  assert.deepEqual([D.selected(leaf), D.state(leaf)], [[''], 'empty']);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual(D.selected(middle), ['Ape'], 'the pick under Alpha comes back');
+  assert.deepEqual(pg.errors, []);
 });

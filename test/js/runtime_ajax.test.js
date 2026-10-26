@@ -227,3 +227,140 @@ test('F13b pinned: a page opened with the parent unavailable does not get the va
   fire.choose(pg.window, c, 'Bee');
   assert.deepEqual(E.list(pg.document.forms[0], CHILD), [`${CHILD}=Bee`]);
 });
+
+// WP-17 resume: the initial evaluation follows the parent-change rule for
+// memory: a remembered pick whose options are gone is ignored, so a plain new
+// record gets its per-parent default (it stayed '' before).
+test('F15 a remembered pick without an option after a re-render is ignored: a new record gets the default', async () => {
+  const pg = await load('new_issue');
+  fire.choose(pg.window, child(pg), 'Ant');
+  pg.window.updateIssueFrom('/issues/new.js', parentOf(pg));
+  const rerender = F.tweak('new_issue', (doc) => {
+    const s = F.named(doc, CHILD);
+    F.selectValues(s, ['']);
+    s.querySelector('option[value="Ant"]').remove();
+  });
+  pg.window.replaceIssueFormWith(coreForm(attributes(rerender)));
+  await D.microtask();
+  assert.deepEqual([D.selected(child(pg)), D.state(child(pg))], [['Ape'], 'ok']);
+  // An explicit clear is still a pick: it comes back as ''.
+  const cleared = await load('new_issue');
+  fire.choose(cleared.window, child(cleared), '');
+  cleared.window.updateIssueFrom('/issues/new.js', parentOf(cleared));
+  cleared.window.replaceIssueFormWith(coreForm(attributes(F.tweak('new_issue', (doc) => F.selectValues(F.named(doc, CHILD), [''])))));
+  await D.microtask();
+  assert.deepEqual(D.selected(child(cleared)), ['']);
+});
+
+// Core copies every multi select (arrays compared with !=) and leaves a single
+// select at selectedIndex -1 when the copied value has no option (jQuery val).
+test('F15 core copy quirks: a copied multi value stays legacy; a copied value without an option leaves a clean blank', async () => {
+  const pg = await load('legacy_value_multi');
+  pg.window.updateIssueFrom('/issues/1/edit.js', parentOf(pg));
+  const rerender = F.tweak('legacy_value_multi', (doc) => F.selectValues(F.named(doc, `${CHILD}[]`), []));
+  pg.window.replaceIssueFormWith(coreForm(attributes(rerender)));
+  await D.microtask();
+  const m = child(pg);
+  assert.deepEqual([D.selected(m), D.state(m)], [['Ant', 'Bee'], 'legacy']);
+  assert.deepEqual(E.list(pg.document.forms[0], CHILD), [`${CHILD}[]=Ant`, `${CHILD}[]=Bee`, `${CHILD}[]=`]);
+
+  const single = await load('list_single');
+  single.window.updateIssueFrom('/issues/1/edit.js', parentOf(single));
+  fire.choose(single.window, child(single), 'Ape');
+  const without = F.tweak('list_single', (doc) => F.named(doc, CHILD).querySelector('option[value="Ape"]').remove());
+  const changes = single.changes.length;
+  single.window.replaceIssueFormWith(coreForm(attributes(without)));
+  await D.microtask();
+  const c = child(single);
+  assert.deepEqual([D.selected(c), D.state(c)], [[''], 'ok'], 'no default at load for a persisted record');
+  assert.ok(Array.from(c.options).every((o) => !(o.selected && o.disabled)));
+  assert.deepEqual(E.list(single.document.forms[0], CHILD), [`${CHILD}=`]);
+  assert.deepEqual(single.changes.slice(changes), [CHILD], 'the blank option is selected with one change event');
+});
+
+// The final state after one observer callback does not depend on the order of
+// its roots (a BFS follows every value changed in a root).
+test('gap 13: a chain inserted as three roots in reverse order ends as when inserted as one root', async () => {
+  const variants = {
+    persisted: F.tweak('chain_of_three', (doc) => F.selectValues(F.named(doc, CHILD), ['Bee'])),
+    fresh: F.tweak('chain_of_three', (doc) => {
+      F.selectValues(F.named(doc, CHILD), ['Bee']);
+      doc.querySelectorAll('[data-dcf-stored]').forEach((el) => el.removeAttribute('data-dcf-stored'));
+    })
+  };
+  const snapshot = (pg) => ['9100002', '9100003'].map((id) => {
+    const c = D.control(pg.document, id);
+    return [D.selected(c), D.state(c), D.hintText(c)];
+  });
+  for (const [label, html] of Object.entries(variants)) {
+    const outcomes = [];
+    for (const order of [null, [2, 1, 0]]) {
+      const pg = await load('<form id="issue-form"><div id="all_attributes"></div></form>');
+      const tmp = pg.document.createElement('div');
+      tmp.innerHTML = html;
+      const ps = Array.from(tmp.querySelectorAll('#all_attributes > p'));
+      const target = pg.document.getElementById('all_attributes');
+      const roots = (order ? order.map((k) => [ps[k]]) : [ps]).map((group) => {
+        const root = pg.document.createElement('div');
+        group.forEach((p) => root.appendChild(p));
+        return root;
+      });
+      roots.forEach((root) => target.appendChild(root));
+      await D.microtask();
+      assert.equal(pg.inits.length, roots.filter((r) => r.querySelector('[data-dcf-parent]')).length, label);
+      outcomes.push(snapshot(pg));
+      assert.deepEqual(pg.errors, []);
+    }
+    assert.deepEqual(outcomes[1], outcomes[0], label);
+  }
+});
+
+// WP-17 review round 2: a root that re-renders a managed parent with another
+// value sends the dependents outside the root through the cascade, also when
+// the new element's own evaluation changed nothing (it was res.changed only).
+test('gap 13: a re-rendered middle field with another value re-filters the leaf outside its root', async () => {
+  const pg = await load('chain_of_three');
+  const leaf = D.control(pg.document, '9100003');
+  assert.deepEqual([D.selected(leaf), D.state(leaf)], [['Cub'], 'ok']);
+  const html = F.tweak('chain_of_three', (doc) => F.selectValues(F.named(doc, CHILD), ['Ape']));
+  const tmp = pg.document.createElement('div');
+  tmp.innerHTML = html;
+  const fresh = D.control(tmp, '9100002').closest('p');
+  const old = D.control(pg.document, '9100002').closest('p');
+  old.replaceWith(fresh);
+  await D.microtask();
+  assert.deepEqual(pg.inits, [fresh]);
+  assert.deepEqual([D.selected(D.control(pg.document, '9100002')), D.state(D.control(pg.document, '9100002'))], [['Ape'], 'ok']);
+  assert.deepEqual([D.selected(leaf), D.state(leaf), D.enabled(leaf)], [[''], 'empty', ['']]);
+  assert.deepEqual(E.list(pg.document.forms[0], 'issue[custom_field_values][9100003]'), ['issue[custom_field_values][9100003]=']);
+  // The same through a direct init(root) call, before the observer runs.
+  const direct = await load('chain_of_three');
+  const tmp2 = direct.document.createElement('div');
+  tmp2.innerHTML = html;
+  const fresh2 = D.control(tmp2, '9100002').closest('p');
+  D.control(direct.document, '9100002').closest('p').replaceWith(fresh2);
+  direct.window.DependingCustomFields.init(fresh2);
+  const leaf2 = D.control(direct.document, '9100003');
+  assert.deepEqual([D.selected(leaf2), D.state(leaf2)], [[''], 'empty']);
+  await D.microtask();
+  assert.deepEqual([D.selected(leaf2), D.state(leaf2)], [[''], 'empty']);
+});
+
+test('gap 13: a leaf inserted before its parent is re-filtered when the parent arrives in a later task', async () => {
+  const pg = await load('<form id="issue-form"><div id="all_attributes"></div></form>');
+  const html = F.tweak('chain_of_three', (doc) => F.selectValues(F.named(doc, CHILD), ['Ape']));
+  const tmp = pg.document.createElement('div');
+  tmp.innerHTML = html;
+  const ps = Array.from(tmp.querySelectorAll('#all_attributes > p'));
+  const target = pg.document.getElementById('all_attributes');
+  target.appendChild(ps[2]);
+  await D.microtask();
+  const leaf = D.control(pg.document, '9100003');
+  assert.deepEqual([D.selected(leaf), D.state(leaf)], [['Cub'], 'ok'], 'static parent values while the middle is absent');
+  target.insertBefore(ps[1], ps[2]);
+  target.insertBefore(ps[0], ps[1]);
+  await D.microtask();
+  assert.deepEqual([D.selected(D.control(pg.document, '9100002')), D.state(D.control(pg.document, '9100002'))], [['Ape'], 'ok']);
+  assert.deepEqual([D.selected(leaf), D.state(leaf), D.enabled(leaf)], [[''], 'empty', ['']]);
+  assert.deepEqual(pg.errors, []);
+});

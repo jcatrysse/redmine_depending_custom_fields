@@ -240,6 +240,12 @@ test('decide (form, initial): keeps usable values, drops the rest, no defaults f
   assert.deepEqual(R.decide(base({ defaults, kind: 'static', values: ['A'] })).values, ['']);
   // AJAX re-render: memory beats defaults.
   assert.deepEqual(R.decide(base({ defaults, memory: new Map([[R.parentKey(['A']), ['a1']]]) })).values, ['a1']);
+  // WP-17 resume: as on a parent change, a remembered pick filtered down to
+  // nothing is ignored (the default applies); an empty pick is kept.
+  assert.deepEqual(R.decide(base({ defaults, memory: new Map([[R.parentKey(['A']), ['zz']]]) })).values, ['a2']);
+  assert.deepEqual(R.decide(base({ defaults, memory: new Map([[R.parentKey(['A']), []]]) })).values, ['']);
+  assert.deepEqual(R.decide(base({ defaults, memory: new Map([[R.parentKey(['A']), ['zz']]]),
+    stored: { parent: ['A'], child: [] } })).values, ['']);
 });
 
 test('decide (form, initial): stored legacy value kept and marked, a posted one dropped (F6, F6c)', () => {
@@ -290,6 +296,11 @@ test('decide (form): values need an option, a single child keeps one, states, hi
   assert.deepEqual([empty.state, empty.hint, empty.hideField], ['empty', 'empty', true]);
   const legacyEmpty = R.decide(base({ allowed: new Set(), hide: true, current: ['b1'], stored: { parent: ['A'], child: ['b1'] } }));
   assert.deepEqual([legacyEmpty.state, legacyEmpty.hideField], ['legacy', false]);
+  // WP-17 review round 2: legacy comes before waiting (frontend 5.4), also
+  // under a blank parent whose baseline is blank too.
+  const blankLegacy = R.decide(base({ kind: 'empty', values: [], key: R.parentKey([]), allowed: new Set(), hide: true,
+    current: ['b1'], stored: { parent: [], child: ['b1'] } }));
+  assert.deepEqual([blankLegacy.values, blankLegacy.state, blankLegacy.hint, blankLegacy.hideField], [['b1'], 'legacy', 'legacy', false]);
   const ok = R.decide(base({ current: ['a1'] }));
   assert.deepEqual([ok.state, ok.hint, ok.hideField, ok.rememberKey, ok.auto], ['ok', null, false, R.parentKey(['A']), false]);
   assert.deepEqual(Object.keys(ok).sort(),
@@ -321,6 +332,14 @@ test('decide (bulk, links): remembered pick, carry, default with hint, else (no 
   assert.deepEqual([none.values, none.auto, none.hint], [[''], false, null]);
   const multi = R.decide(changed({ multiple: true, hasBlank: false, optionValues: new Set(['__none__', 'a1', 'a2', 'b1']) }));
   assert.deepEqual(multi.values, []);
+  // WP-17 review round 2: only a value picked under (no change) is carried
+  // (frontend 5.5); under a concrete parent (also a superset) the default
+  // applies again with its hint, so an applied default is never carried unmarked.
+  const wider = { prevValues: ['A'], values: ['A', 'B'], key: R.parentKey(['A', 'B']), allowed: new Set(['a1', 'a2', 'b1']), current: ['a1'] };
+  const again = R.decide(changed(Object.assign({ defaults: new Map([['A', ['a1']]]) }, wider)));
+  assert.deepEqual([again.values, again.auto, again.hint], [['a1'], true, 'bulkDefault']);
+  const noCarry = R.decide(changed(wider));
+  assert.deepEqual([noCarry.values, noCarry.auto, noCarry.hint], [[''], false, null]);
 });
 
 test('decide (bulk, nothing allowed): __none__ with bulkCleared, else (no change) with the empty hint', () => {
@@ -356,12 +375,24 @@ test('optionEnabled: a data-dcf-required-none option only while nothing is allow
   const remembered = R.decide(bulk(Object.assign({ initial: false, parentChanged: true,
     memory: new Map([[R.parentKey(['A']), ['__none__']]]) }, opts)));
   assert.deepEqual(remembered.values, ['']);
+  // WP-17 review round 2: a remembered pick filtered down to nothing is
+  // ignored and the default applies; the required (none) is never a fallback.
+  const rememberedDefault = R.decide(bulk(Object.assign({ initial: false, parentChanged: true,
+    memory: new Map([[R.parentKey(['A']), ['__none__']]]), defaults: new Map([['A', ['a1']]]) }, opts)));
+  assert.deepEqual([rememberedDefault.values, rememberedDefault.auto, rememberedDefault.hint], [['a1'], true, 'bulkDefault']);
   const nothing = R.decide(bulk(Object.assign({ allowed: new Set(), initial: false, parentChanged: true }, opts)));
   assert.equal(R.optionEnabled(nothing.filter, '__none__', true), true);
   assert.deepEqual(nothing.values, ['__none__']);
-  // In form context '' is always enabled and a plain __none__ option never.
+  // In form context '' is always enabled and __none__ is an ordinary value
+  // (WP-17 resume: it was never enabled before), enabled only when allowed.
   const form = R.decide(base({})).filter;
   assert.equal(R.optionEnabled(form, ''), true);
+  assert.equal(R.optionEnabled(form, '__none__'), false);
+  const allowedNone = R.decide(base({ allowed: new Set(['a1', '__none__']), optionValues: new Set(['', 'a1', '__none__']) })).filter;
+  assert.equal(R.optionEnabled(allowedNone, '__none__'), true);
+  const eligibleNone = R.decide(base({ current: ['__none__'], optionValues: new Set(['', 'a1', '__none__']),
+    stored: { parent: ['A'], child: ['__none__'] } }));
+  assert.deepEqual([eligibleNone.values, eligibleNone.state, R.optionEnabled(eligibleNone.filter, '__none__')], [['__none__'], 'legacy', true]);
 });
 
 test('orderByDepth: parents first, stable, terminates on cycles and self-parents', () => {
@@ -393,6 +424,25 @@ test('lockedRefused (UD-37 hook point): the read_only_child_carrier fixture', ()
   assert.equal(R.lockedRefused(stored, allowedBy, ['']), true);
   assert.equal(R.lockedRefused(['A'], [['B', 'D'], ['C']], ['B']), true);
   assert.equal(R.lockedRefused(['A'], [['B', 'D'], ['C']], ['B', 'C']), false);
+  // Scalar entries count as one-element lists, an empty entry is never held,
+  // order, duplicates and blanks of V do not count, a non-array gives false.
+  assert.equal(R.lockedRefused(['A'], ['B'], ['B']), false);
+  assert.equal(R.lockedRefused(['A'], [[]], ['B']), true);
+  assert.equal(R.lockedRefused(['A', 'B'], [['C']], ['B', 'A', 'A', '']), false);
+  assert.equal(R.lockedRefused(['A'], null, ['B']), false);
+  assert.equal(R.lockedRefused(['A'], 'B', ['C']), false);
+});
+
+test('UD-05: no client unavailable flag; a read-only blank parent with a stored value keeps it as legacy', () => {
+  const ps = R.parentState('form', false, [], []);
+  assert.deepEqual([ps.kind, ps.values], ['static', []]);
+  const d = R.decide(base({ kind: ps.kind, values: ps.values, key: ps.key, allowed: new Set(), current: ['X'],
+    optionValues: new Set(['', 'X']), stored: { child: ['X'], parent: [] } }));
+  assert.deepEqual([d.values, d.state], [['X'], 'legacy']);
+  // The server emits stored child [] for an unavailable parent: dropped.
+  const gone = R.decide(base({ kind: ps.kind, values: ps.values, key: ps.key, allowed: new Set(), current: ['X'],
+    optionValues: new Set(['', 'X']), stored: { child: [], parent: [] } }));
+  assert.deepEqual([gone.values, gone.state], [[''], 'empty']);
 });
 
 // Quality G6: wall clock only with 10x headroom. One warm-up pass, then the

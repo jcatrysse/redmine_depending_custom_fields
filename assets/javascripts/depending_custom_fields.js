@@ -207,8 +207,9 @@
           if (remembered.length && !values.length) remembered = undefined;
         }
         if (remembered === undefined) {
-          var carry = i.prevValues.length === 0 || isSuperset(i.values, i.prevValues);
-          values = carry ? concrete('bulk', current) : [];
+          // Only a value picked under (no change) is carried (frontend 5.5),
+          // so a default applied under a concrete parent is never carried unmarked.
+          values = i.prevValues.length === 0 ? concrete('bulk', current) : [];
           if (!values.length) {
             values = defaultsFor(i.defaults, i.values, allowed);
             out.auto = values.filter(has).length > 0;
@@ -244,11 +245,18 @@
       var values = null;
       if (i.initial) {
         values = current.filter(usable);
-        // An empty child takes memory (AJAX re-render); a plain new record
-        // with no usable value left takes the per-parent defaults.
+        // An empty child takes memory (AJAX re-render; a pick filtered down
+        // to nothing is ignored); a plain new record with no usable value
+        // left takes the per-parent defaults.
         var remembered0 = current.length ? undefined : i.memory.get(i.key);
-        if (remembered0 !== undefined) values = remembered0.filter(usable);
-        else if (!values.length && !i.stored && i.kind === 'values') values = defaultsFor(i.defaults, i.values, allowed);
+        if (remembered0 !== undefined) {
+          var restored0 = remembered0.filter(usable);
+          if (remembered0.length && !restored0.length) remembered0 = undefined;
+          else values = restored0;
+        }
+        if (remembered0 === undefined && !values.length && !i.stored && i.kind === 'values') {
+          values = defaultsFor(i.defaults, i.values, allowed);
+        }
       } else {
         var remembered = i.memory.get(i.key);
         if (remembered !== undefined) {
@@ -277,8 +285,9 @@
       out.values = values;
       out.eligible = eligible;
       out.legacy = new Set(values.filter(function (v) { return eligible.has(v); }));
-      out.filter = { allowed: allowed, eligible: eligible, blankEnabled: true, noneEnabled: false,
-                     requiredNoneEnabled: false };
+      // In form context __none__ is an ordinary value (core maps it in bulk only).
+      out.filter = { allowed: allowed, eligible: eligible, blankEnabled: true,
+                     noneEnabled: allowed.has(NONE) || eligible.has(NONE), requiredNoneEnabled: false };
       out.state = formState(i.kind, allowed.size, out.legacy.size);
       out.hint = out.state === 'ok' ? null : out.state;
       out.hideField = !!i.hide && !allowed.size && !out.legacy.size;
@@ -455,7 +464,8 @@
           hide: form && raw[6] === '1',
           staticValues: form ? R.normalizeList(jsonAttr(raw[7])) : null,
           parentLabel: form ? (raw[8] || '') : '',
-          stored: form ? R.normalizeStored(jsonAttr(raw[9])) : null
+          // A present but invalid baseline still marks a stored record (UD-12).
+          stored: form && raw[9] !== null ? (R.normalizeStored(jsonAttr(raw[9])) || { child: [], parent: null }) : null
         };
       }
       configs.set(ctl, { raw: raw, cfg: cfg });
@@ -511,7 +521,8 @@
       if (isSelect(ctl)) return Array.prototype.slice.call(ctl.options);
       return choiceInputs(ctl);
     }
-    function isRequiredNone(o) { return o.value === R.NONE && o.getAttribute('data-dcf-required-none') === '1'; }
+    // v: the option value, read once per evaluation.
+    function isRequiredNone(o, v) { return v === R.NONE && o.getAttribute('data-dcf-required-none') === '1'; }
 
     function setHidden(el, hidden) {
       if (el.hidden !== hidden) el.hidden = hidden;
@@ -526,30 +537,32 @@
     // are hidden and disabled. A single select gets the target option, else
     // the enabled '' option, else no selection.
     // options: a snapshot taken before any write (a live collection would be
-    // rebuilt after every attribute change).
-    function apply(ctl, d, options) {
+    // rebuilt after every attribute change); values: their values, in order.
+    function apply(ctl, d, options, values) {
       var target = new Set(d.values);
-      var enabled = function (o) { return R.optionEnabled(d.filter, o.value, isRequiredNone(o)) || target.has(o.value); };
+      var enabled = function (o, v) {
+        return R.optionEnabled(d.filter, v, isRequiredNone(o, v)) || target.has(v);
+      };
       if (isSelect(ctl)) {
-        options.forEach(function (o) {
-          var on = enabled(o);
+        options.forEach(function (o, k) {
+          var on = enabled(o, values[k]);
           if (o.disabled !== !on) o.disabled = !on;
           setHidden(o, !on);
-          setClass(o, 'dcf-legacy-option', d.eligible.has(o.value));
+          setClass(o, 'dcf-legacy-option', d.eligible.has(values[k]));
         });
         if (ctl.multiple) {
-          options.forEach(function (o) {
-            var s = target.has(o.value) && !o.disabled;
+          options.forEach(function (o, k) {
+            var s = target.has(values[k]) && !o.disabled;
             if (o.selected !== s) o.selected = s;
           });
         } else {
           var want = d.values.length ? d.values[0] : R.BLANK;
           var pick = null;
           var blank = null;
-          options.forEach(function (o) {
+          options.forEach(function (o, k) {
             if (o.disabled) return;
-            if (!pick && o.value === want) pick = o;
-            if (!blank && o.value === R.BLANK) blank = o;
+            if (!pick && values[k] === want) pick = o;
+            if (!blank && values[k] === R.BLANK) blank = o;
           });
           pick = pick || blank;
           if (pick) {
@@ -559,13 +572,13 @@
           }
         }
       } else {
-        options.forEach(function (input) {
-          var on = enabled(input);
+        options.forEach(function (input, k) {
+          var on = enabled(input, values[k]);
           var label = input.closest('label') || input;
           if (input.disabled !== !on) input.disabled = !on;
           setHidden(label, !on);
-          setClass(label, 'dcf-legacy-option', d.eligible.has(input.value));
-          var c = target.has(input.value) && on;
+          setClass(label, 'dcf-legacy-option', d.eligible.has(values[k]));
+          var c = target.has(values[k]) && on;
           if (input.checked !== c) input.checked = c;
         });
       }
@@ -584,18 +597,28 @@
       else el.removeAttribute('aria-describedby');
     }
 
-    function optionLabel(ctl, value) {
-      var found = optionsOf(ctl).filter(function (o) { return o.value === value; })[0];
-      if (!found) return value;
-      return textOf(isSelect(ctl) ? found : (found.closest('label') || found)) || value;
+    // %{values}: the labels of the first 3 values, then ', ...'; one pass
+    // over the options, stopped once the 3 labels are found.
+    function valueLabels(ctl, values) {
+      var wanted = values.slice(0, 3);
+      var want = new Set(wanted);
+      var found = new Map();
+      var opts = want.size ? optionsOf(ctl) : [];
+      for (var k = 0; k < opts.length && found.size < want.size; k += 1) {
+        var v = opts[k].value;
+        if (want.has(v) && !found.has(v)) {
+          found.set(v, textOf(isSelect(ctl) ? opts[k] : (opts[k].closest('label') || opts[k])) || v);
+        }
+      }
+      return wanted.map(function (v) { return found.has(v) ? found.get(v) : v; }).join(', ') +
+        (values.length > 3 ? ', ...' : '');
     }
 
     // legacyValues: the selected legacy values, in order.
     function hintText(ctl, cfg, hint, legacyValues, parentEl) {
       if (!hint) return '';
       var parent = (parentEl ? labelText(parentEl) : '') || cfg.parentLabel;
-      var names = legacyValues.map(function (v) { return optionLabel(ctl, v); });
-      var shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ', ...' : '');
+      var shown = hint === 'legacy' ? valueLabels(ctl, legacyValues) : '';
       switch (hint) {
         case 'waiting': return parent ? t('selectParent', { parent: parent }) : t('noOptionsGeneric');
         case 'empty': return parentEl && parent ? t('noOptions', { parent: parent }) : t('noOptionsGeneric');
@@ -638,10 +661,11 @@
       describedTargets(ctl).forEach(function (el) { setDescribedBy(el, st.hint.id, false); });
     }
 
-    // The visible hint text of a control, or null.
+    // The visible hint text of a control, or null; null too inside a hidden
+    // element (a p hidden by hide_when_disabled, the server or a theme).
     function shownHint(ctl) {
       var st = states.get(ctl);
-      return st && st.hint && !st.hint.hidden ? st.hint.textContent : null;
+      return st && st.hint && !st.hint.hidden && !ctl.closest('[hidden]') ? st.hint.textContent : null;
     }
 
     // D3: only the field's own p, only when it holds no control of another
@@ -674,22 +698,26 @@
       var initial = !st;
       var scope = scopeOf(ctl);
       var parent = findParent(scope, cfg.parentName);
+      // A managed parent's dependents follow its current values from here on
+      // (the re-dispatch check of recordPick).
+      var pctl = parent ? childOf(parent.el) : null;
+      var pst = pctl ? states.get(pctl) : null;
+      if (pst) pst.followed = parent.values;
       var ps = R.parentState(cfg.ctx, !!parent, parent ? parent.values : [], cfg.staticValues, !!cfg.map);
       var sig = ps.kind + '|' + ps.key;
       if (!initial && sig === st.sig) return null;
       if (initial) {
-        st = { sig: null, key: null, kind: null, values: [], hint: null, autoHint: false, form: null };
+        st = { sig: null, key: null, kind: null, values: [], applied: [], followed: [], hint: null, autoHint: false,
+               form: null };
         states.set(ctl, st);
         ctl.classList.add('depending-child');
       }
       var before = readValues(ctl);
       var options = optionsOf(ctl);
-      var optionValues = new Set();
-      var noneRequired = false;
-      options.forEach(function (o) {
-        optionValues.add(o.value);
-        if (isRequiredNone(o)) noneRequired = true;
-      });
+      // Each option value is read once per evaluation; apply reuses them.
+      var optionVals = options.map(function (o) { return o.value; });
+      var optionValues = new Set(optionVals);
+      var noneRequired = options.some(function (o, k) { return isRequiredNone(o, optionVals[k]); });
       var allowed = ps.kind === 'values' || ps.kind === 'static' ? R.allowedFor(cfg.map, ps.values) :
         (ps.kind === 'empty' || ps.kind === 'none' ? new Set() : null);
       var mem = memoryFor(scope, cfg);
@@ -699,7 +727,7 @@
         hasBlank: optionValues.has(R.BLANK), hasNone: optionValues.has(R.NONE), noneRequired: noneRequired,
         optionValues: optionValues, defaults: cfg.defaults, memory: mem, hide: cfg.hide, stored: cfg.stored
       });
-      apply(ctl, d, options);
+      apply(ctl, d, options, optionVals);
       var legacyValues = d.values.filter(function (v) { return d.legacy.has(v); });
       var text = hintText(ctl, cfg, d.hint, legacyValues, parent && parent.el);
       var announce = setHint(ctl, st, text, d.hint === 'legacy');
@@ -715,6 +743,8 @@
       // What a user pick needs to recompute the legacy state (recordPick).
       st.form = cfg.ctx === 'form' && d.filter ? { kind: ps.kind, allowedSize: allowed.size, eligible: d.eligible } : null;
       var after = readValues(ctl);
+      st.applied = after;
+      st.followed = after;
       if (d.rememberKey !== null) {
         mem.set(d.rememberKey, cfg.ctx === 'form' ? after.filter(function (v) { return !R.isBlank(v); }) : after.slice());
       }
@@ -756,7 +786,8 @@
         }
         r.ctl.dispatchEvent(new window.CustomEvent('dcf:updated', {
           bubbles: true,
-          detail: { fieldId: r.fieldId, state: r.state, values: r.values, changed: r.changed }
+          // A copy: a listener never reaches the runtime's own state.
+          detail: { fieldId: r.fieldId, state: r.state, values: r.values.slice(), changed: r.changed }
         }));
       });
     }
@@ -793,7 +824,7 @@
     function announce(results) {
       var queued = false;
       results.forEach(function (r) {
-        if (r.announce) {
+        if (r.announce && shownHint(r.ctl) === r.announce) {
           live.pending.delete(r.ctl);
           live.pending.set(r.ctl, r.announce);
           queued = true;
@@ -814,11 +845,17 @@
     // A user or third-party change of the child: its pick is remembered, the
     // bulk hints go, and in form context state and hint follow the selected
     // legacy values (frontend 5.4); no value changes and no re-evaluation.
+    // Values equal to the ones the runtime or the last pick left are no pick;
+    // false then: its dependents follow them too, so the event is a
+    // re-dispatch and starts no cascade.
     function recordPick(ctl) {
       var cfg = config(ctl);
       var st = states.get(ctl);
-      if (!cfg || !st) return;
+      if (!cfg || !st) return true;
       var values = readValues(ctl);
+      if (sameList(values, st.applied)) return !sameList(values, st.followed);
+      st.applied = values;
+      st.followed = values;
       if (st.kind !== 'none' && !(cfg.ctx === 'form' && st.kind === 'unfiltered')) {
         var kept = cfg.ctx === 'form' ? values.filter(function (v) { return !R.isBlank(v); }) : values;
         memoryFor(scopeOf(ctl), cfg).set(st.key, kept);
@@ -828,13 +865,14 @@
         setClass(ctl, 'dcf-auto-applied', false);
         hideHint(ctl, st);
       }
-      if (!st.form) return;
+      if (!st.form) return true;
       var legacy = values.filter(function (v) { return st.form.eligible.has(v); });
       var state = R.formState(st.form.kind, st.form.allowedSize, legacy.length);
       var hint = state === 'ok' ? null : state;
       var parent = findParent(scopeOf(ctl), cfg.parentName);
       setHint(ctl, st, hintText(ctl, cfg, hint, legacy, parent && parent.el), hint === 'legacy');
       if (ctl.getAttribute('data-dcf-state') !== state) ctl.setAttribute('data-dcf-state', state);
+      return true;
     }
 
     function childOf(target) {
@@ -849,7 +887,8 @@
       var parsed = R.parseFieldName(target.name);
       if (!parsed) return;
       var ctl = childOf(target);
-      if (ctl) recordPick(ctl);
+      // A re-dispatch: no pick, and its dependents already follow the values.
+      if (ctl && !recordPick(ctl)) return;
       // WP-18 hook point (UD-37): span[data-dcf-locked-parent] carriers of this
       // field can be checked here with rules.lockedRefused (needs a new key).
       var scope = scopeOf(target);
@@ -900,12 +939,14 @@
           var res = evaluate(n.ctl);
           if (!res) return;
           results.push(res);
-          if (res.changed) {
+          // Dependents outside the root follow every evaluation in it: a new
+          // element can render another value than the one they last saw.
+          // A document root holds them all.
+          if (root.nodeType !== 9) {
             var cfg = config(n.ctl);
             queue = queue.concat(dependentsOf(scope, cfg.prefix, cfg.fieldId));
           }
         });
-        // Dependents outside this root follow a value changed here.
         spread(scope, queue, visited, results);
       });
       dispatchAll(results);

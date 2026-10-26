@@ -277,6 +277,53 @@ test('F6e the legacy state and hint follow the user pick: replaced gives the bas
   invariants(empty);
 });
 
+// WP-17 review round 2: a legacy value under a blank parent whose baseline
+// is blank too (legacy before waiting, frontend 5.4).
+test('F6f a stored value under a blank stored parent stays legacy with the legacy hint, not waiting', async () => {
+  const pg = await load(F.tweak('list_single', (doc) => {
+    F.selectValues(F.named(doc, PARENT), ['']);
+    const s = F.named(doc, CHILD);
+    s.setAttribute('data-dcf-stored', JSON.stringify({ child: ['Bee'], parent: [] }));
+    F.selectValues(s, ['Bee']);
+  }));
+  const c = child(pg);
+  assert.deepEqual([D.selected(c), D.state(c)], [['Bee'], 'legacy']);
+  assert.equal(D.hintText(c), 'Stored values that do not match the selected Parent field are kept until you change Parent field: Bee.');
+  assert.deepEqual(childEntries(pg), [`${CHILD}=Bee`]);
+  fire.choose(pg.window, c, '');
+  assert.deepEqual([D.state(c), D.hintText(c)], ['waiting', 'Select a value for Parent field first.']);
+  invariants(pg);
+});
+
+// WP-17 review round 2: a legacy value in a check box group: the wrapping
+// label is marked and kept visible, the hint names the label text.
+test('F6g a legacy value in a check box group: label marked and visible, hint with its label, posted once', async () => {
+  const LEGACY = 'Stored values that do not match the selected Parent field are kept until you change Parent field: Bee label.';
+  const pg = await load(F.tweak('multi_checkbox', (doc) => {
+    const group = doc.querySelector('[data-dcf-field="9100002"]');
+    group.setAttribute('data-dcf-stored', JSON.stringify({ child: ['Ant', 'Bee'], parent: ['Alpha'] }));
+    F.checkValues(group, ['Ant', 'Bee']);
+    const bee = group.querySelector('input[value="Bee"]');
+    bee.parentNode.replaceChild(doc.createTextNode(' Bee label'), bee.nextSibling);
+  }));
+  const c = child(pg);
+  const bee = D.choices(c).find((i) => i.value === 'Bee');
+  const label = bee.closest('label');
+  assert.equal(D.state(c), 'legacy');
+  assert.deepEqual([bee.disabled, bee.checked, label.hidden], [false, true, false]);
+  assert.ok(label.classList.contains('dcf-legacy-option'));
+  assert.equal(bee.classList.contains('dcf-legacy-option'), false);
+  assert.equal(D.hintText(c), LEGACY);
+  assert.deepEqual(childEntries(pg), [`${CHILD}[]=Ant`, `${CHILD}[]=Bee`, `${CHILD}[]=`]);
+  fire.choose(pg.window, c, ['Ant']);
+  assert.deepEqual([D.state(c), D.hintText(c), bee.disabled, label.hidden], ['ok', null, false, false]);
+  assert.ok(label.classList.contains('dcf-legacy-option'), 'still eligible, still marked');
+  fire.choose(pg.window, c, ['Ant', 'Bee']);
+  assert.deepEqual([D.state(c), D.hintText(c)], ['legacy', LEGACY]);
+  D.choices(c).forEach((i) => assert.equal(i.getAttribute('aria-describedby'), D.hint(c).id));
+  invariants(pg);
+});
+
 test('F7 a cleared multi select posts core hidden name[]= once; no mirror input', async () => {
   const pg = await load('list_multi_select');
   const named = () => Array.from(pg.document.querySelectorAll('[name]')).filter((el) => el.name === `${CHILD}[]`).length;
@@ -681,6 +728,16 @@ test('X10 live region: nothing during init; created empty at the first message, 
   assert.equal(pg.document.querySelectorAll('.dcf-live').length, 1);
 });
 
+// WP-17 review round 2: one message per dependent whose hint appeared or
+// changed, in tree order, joined with a single space.
+test('X10 live region: a cascade with two dependents announces both messages', async () => {
+  const pg = await load('chain_of_three');
+  fire.choose(pg.window, parentOf(pg), '');
+  pg.clock.tick(400);
+  assert.equal(pg.document.getElementById('dcf-live').textContent,
+    'Middle field: Select a value for Root field first. Leaf field: Select a value for Middle field first.');
+});
+
 test('X10 live region: a hint hidden again within 400 ms is not announced', async () => {
   const pg = await load('list_single');
   fire.choose(pg.window, parentOf(pg), 'Gamma');
@@ -714,4 +771,198 @@ test('X10 live region: a change that leaves the hint text unchanged announces no
   pg.clock.tick(400);
   assert.equal(D.hintText(child(pg)), 'No values are available for the selected Parent field.');
   assert.equal(live.textContent, '');
+});
+
+// WP-17 resume: the rows and gaps below were implicit or open before.
+test('F14 parent invisible to the role: no parent attributes, the child stays untouched, also after every other change', async () => {
+  const html = F.read('role_invisible_parent');
+  const before = F.tweak(html, () => {});
+  const pg = await load(html);
+  assert.equal(pg.document.body.innerHTML, before);
+  pg.document.querySelectorAll('select').forEach((s) => {
+    const values = Array.from(s.options).map((o) => o.value);
+    fire.choose(pg.window, s, values[values.length - 1]);
+  });
+  assert.equal(pg.document.body.innerHTML, before);
+  assert.equal(pg.document.querySelector('[data-dcf-state], em.dcf-hint, #dcf-live, .depending-child'), null);
+  assert.deepEqual(pg.updates, []);
+  assert.deepEqual(D.enabled(child(pg)), ['', 'Ant', 'Ape', 'Bee']);
+  invariants(pg);
+});
+
+// In form context only blanks are special; core maps '__none__' in bulk only.
+test('form context: a literal __none__ list value is an ordinary value, enabled when allowed and posted', async () => {
+  const pg = await load(F.tweak('list_single', (doc) => {
+    const s = F.named(doc, CHILD);
+    s.setAttribute('data-dcf-map', JSON.stringify({ Alpha: ['Ant', '__none__'], Beta: ['Bee'] }));
+    s.insertAdjacentHTML('beforeend', '<option value="__none__">none</option>');
+  }));
+  const c = child(pg);
+  assert.deepEqual(D.enabled(c), ['', 'Ant', '__none__']);
+  fire.choose(pg.window, c, '__none__');
+  assert.deepEqual([D.selected(c), D.state(c)], [['__none__'], 'ok']);
+  assert.deepEqual(childEntries(pg), [`${CHILD}=__none__`]);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual([D.selected(c), D.enabled(c)], [[''], ['', 'Bee']]);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual(D.selected(c), ['__none__'], 'the pick comes back');
+  invariants(pg);
+});
+
+// A malformed baseline must never make an existing record look new (UD-12).
+test('a present but invalid data-dcf-stored is a baseline with nothing eligible: no default at load, nothing kept as legacy', async () => {
+  for (const raw of ['{', '[]', '"x"', '']) {
+    const empty = await load(F.tweak('list_single', (doc) => {
+      const s = F.named(doc, CHILD);
+      F.selectValues(s, ['']);
+      s.setAttribute('data-dcf-stored', raw);
+    }));
+    assert.deepEqual([D.selected(child(empty)), D.state(child(empty)), empty.changes], [[''], 'ok', []], raw);
+    const bee = await load(F.tweak('list_single', (doc) => {
+      const s = F.named(doc, CHILD);
+      F.selectValues(s, ['Bee']);
+      s.setAttribute('data-dcf-stored', raw);
+    }));
+    assert.deepEqual([D.selected(child(bee)), D.state(child(bee))], [[''], 'ok'], raw);
+    assert.ok(D.disabled(child(bee)).includes('Bee'), raw);
+    fire.choose(bee.window, parentOf(bee), 'Beta');
+    fire.choose(bee.window, parentOf(bee), 'Alpha');
+    assert.deepEqual(D.selected(child(bee)), [''], `${raw}: memory, not the default`);
+    invariants(bee);
+  }
+});
+
+test('UD-12 at load: defaults only without data-dcf-stored and with a parent control (kind values), never in bulk', async () => {
+  const variant = (stored, current, readOnly) => F.tweak('list_single', (doc) => {
+    const s = F.named(doc, CHILD);
+    F.selectValues(s, [current]);
+    if (stored) s.setAttribute('data-dcf-stored', JSON.stringify({ child: [], parent: ['Alpha'] }));
+    else s.removeAttribute('data-dcf-stored');
+    if (readOnly) F.named(doc, PARENT).closest('p').remove();
+  });
+  const cases = [
+    [false, '', false, ['Ape'], 1], [false, 'Bee', false, ['Ape'], 1], [true, '', false, [''], 0], [true, 'Bee', false, [''], 1],
+    [false, '', true, [''], 0], [false, 'Bee', true, [''], 1], [true, '', true, [''], 0], [true, 'Bee', true, [''], 1]
+  ];
+  for (const [stored, current, readOnly, want, changes] of cases) {
+    const pg = await load(variant(stored, current, readOnly));
+    const label = JSON.stringify({ stored, current, readOnly });
+    assert.deepEqual([D.selected(child(pg)), pg.changes.length], [want, changes], label);
+    invariants(pg);
+  }
+  const bulkPg = await load(F.tweak('bulk_single', (doc) => F.selectValues(F.named(doc, PARENT), ['Alpha'])));
+  assert.deepEqual([D.selected(child(bulkPg)), bulkPg.changes], [[''], []], 'bulk keeps the rendered value at load');
+});
+
+test('X10 live region: a field the runtime just hid (hide_when_disabled) is not announced', async () => {
+  const pg = await load('hide_when_disabled');
+  const c = child(pg);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  pg.clock.tick(400);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  assert.equal(c.closest('p').hidden, true);
+  pg.clock.tick(400);
+  const live = pg.document.getElementById('dcf-live');
+  assert.equal(live ? live.textContent : '', '');
+  assert.equal(pg.clock.pending(), 0);
+  // A visible field in the same cascade is still announced.
+  const two = await load(F.tweak('hide_when_disabled', (doc) => {
+    const p = F.named(doc, CHILD).closest('p');
+    const copy = p.cloneNode(true);
+    const s = copy.querySelector('select');
+    s.removeAttribute('data-dcf-hide');
+    s.setAttribute('name', 'issue[custom_field_values][9100003]');
+    s.setAttribute('data-dcf-field', '9100003');
+    s.removeAttribute('id');
+    copy.querySelector('label').removeAttribute('for');
+    copy.querySelector('label span').textContent = 'Other field';
+    p.after(copy);
+  }));
+  fire.choose(two.window, parentOf(two), 'Alpha');
+  fire.choose(two.window, parentOf(two), 'Gamma');
+  two.clock.tick(400);
+  assert.equal(two.document.getElementById('dcf-live').textContent, 'Other field: No values are available for the selected Parent field.');
+});
+
+test('X10 live region: a message that comes back with the same text is written again (a new text node)', async () => {
+  const pg = await load('list_single');
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  pg.clock.tick(400);
+  const live = pg.document.getElementById('dcf-live');
+  const text = live.textContent;
+  assert.equal(text, 'Child field: No values are available for the selected Parent field.');
+  const records = [];
+  const mo = new pg.window.MutationObserver((r) => records.push(...r));
+  mo.observe(live, { childList: true, characterData: true, subtree: true });
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  pg.clock.tick(400);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  pg.clock.tick(400);
+  await D.microtask();
+  mo.disconnect();
+  assert.equal(live.textContent, text);
+  assert.ok(records.some((r) => r.type === 'childList' && r.addedNodes.length === 1), 'the identical text is written again');
+});
+
+test('two forms with the same field ids stay independent (scope per form)', async () => {
+  const pg = await load(F.read('list_single') + F.read('list_single').replace('id="issue-form"', 'id="other"'));
+  const [f1, f2] = Array.from(pg.document.forms);
+  const c1 = D.control(f1, '9100002');
+  const c2 = D.control(f2, '9100002');
+  fire.choose(pg.window, D.byName(f1, PARENT), 'Beta');
+  assert.deepEqual([D.enabled(c1), D.enabled(c2)], [['', 'Bee'], ['', 'Ant', 'Ape']]);
+  assert.deepEqual(D.selected(c2), ['Ant']);
+  fire.choose(pg.window, c2, 'Ape');
+  fire.choose(pg.window, D.byName(f1, PARENT), 'Alpha');
+  assert.deepEqual([D.selected(c1), D.selected(c2)], [['Ant'], ['Ape']], 'memory is per form');
+  invariants(pg);
+});
+
+// Hint labels are resolved for the first 3 legacy values only, in one pass
+// over the options, so many legacy values over a long list stay cheap.
+test('legacy hint labels over 25,000 options cost one pass, not one per legacy value', async () => {
+  const values = Array.from({ length: 25000 }, (_, i) => `v${i}`);
+  const legacy = values.slice(20000, 20200);
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const html = '<form><p><label>P</label><select name="issue[custom_field_values][1]"><option value="A" selected>A</option><option value="B">B</option></select></p>' +
+    `<p><select multiple name="issue[custom_field_values][2][]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ` +
+    `data-dcf-map="${esc(JSON.stringify({ A: values.slice(0, 5000) }))}" data-dcf-stored="${esc(JSON.stringify({ child: legacy, parent: ['A'] }))}">` +
+    `${values.map((v) => `<option value="${v}"${legacy.includes(v) ? ' selected' : ''}>${v}</option>`).join('')}</select></p></form>`;
+  let reads = 0;
+  const pg = await load(html, {
+    before(w) {
+      const desc = Object.getOwnPropertyDescriptor(w.HTMLOptionElement.prototype, 'value');
+      Object.defineProperty(w.HTMLOptionElement.prototype, 'value', {
+        configurable: true,
+        get() { reads += 1; return desc.get.call(this); },
+        set(v) { desc.set.call(this, v); }
+      });
+    }
+  });
+  const c = D.control(pg.document, '2');
+  assert.equal(D.state(c), 'legacy');
+  assert.equal(D.hintText(c), 'Stored values that do not match the selected P are kept until you change P: v20000, v20001, v20002, ....');
+  assert.ok(reads < 25000 * 2, `option value reads ${reads}`);
+  // WP-17 review round 2: one evaluation reads each option value once (it
+  // read them three times before: option set, required (none), apply).
+  reads = 0;
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'B');
+  assert.equal(D.state(c), 'empty');
+  assert.ok(reads < 25000 + 1000, `option value reads in one evaluation ${reads}`);
+});
+
+test('a parent hidden by its own hide_when_disabled is blank, so its child waits and hides too', async () => {
+  const pg = await load(F.tweak('chain_of_three', (doc) => {
+    F.named(doc, CHILD).setAttribute('data-dcf-hide', '1');
+    F.named(doc, 'issue[custom_field_values][9100003]').setAttribute('data-dcf-hide', '1');
+  }));
+  const middle = child(pg, '9100002');
+  const leaf = child(pg, '9100003');
+  fire.choose(pg.window, parentOf(pg), '');
+  assert.deepEqual([D.state(middle), middle.closest('p').hidden, D.selected(middle)], ['waiting', true, ['']]);
+  assert.deepEqual([D.state(leaf), leaf.closest('p').hidden, D.selected(leaf)], ['waiting', true, ['']]);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual([middle.closest('p').hidden, D.selected(middle)], [false, ['Ant']]);
+  assert.deepEqual([leaf.closest('p').hidden, D.selected(leaf)], [false, ['Cub']]);
+  invariants(pg);
 });

@@ -73,3 +73,36 @@ function clientValid(row, c, values) {
     if (row.valid) assert.deepEqual(posted, Array.from(new Set(row.child.filter((v) => !R.isBlank(v)))));
   });
 });
+
+// WP-17 resume: the parent-change path never posts what the server refuses
+// either. The page is opened on the stored state (parent_was, child_was), the
+// parent changes to row.parent and back; after each step every posted value is
+// allowed for the current parent or, while it equals parent_was, in child_was.
+(CASES.d1 || []).filter((row) => row.parent_available !== false).forEach((row) => {
+  test(`d1 parent change: ${row.id}`, () => {
+    const map = R.normalizeMap(row.map);
+    const stored = R.normalizeStored({ child: row.child_was, parent: row.parent_was });
+    const options = new Set([''].concat(row.child, row.child_was, Object.keys(row.map).flatMap((k) => [].concat(row.map[k]).map(String))));
+    const memory = new Map();
+    let prev = null;
+    let current = row.child_was.length ? row.child_was : [''];
+    [row.parent_was, row.parent, row.parent_was].forEach((parent, step) => {
+      const ps = R.parentState('form', true, parent, null);
+      // An unchanged parent state is a no-op in the runtime (sig).
+      if (prev && prev.kind === ps.kind && prev.key === ps.key) return;
+      const allowed = R.allowedFor(map, ps.values);
+      const d = R.decide({
+        ctx: 'form', kind: ps.kind, key: ps.key, values: ps.values, prevValues: prev ? prev.values : [], allowed,
+        current, initial: step === 0, parentChanged: step > 0, multiple: row.multiple, hasBlank: true, hasNone: false,
+        noneRequired: false, optionValues: options, defaults: new Map(), memory, hide: false, stored
+      });
+      const posted = d.values.filter((v) => !R.isBlank(v));
+      const unchanged = R.sameSet(ps.values, row.parent_was);
+      const was = new Set(row.child_was.map(String));
+      posted.forEach((v) => assert.ok(allowed.has(v) || (unchanged && was.has(v)), `step ${step}: ${v} under ${JSON.stringify(parent)}`));
+      if (d.rememberKey !== null) memory.set(d.rememberKey, posted);
+      prev = ps;
+      current = d.values;
+    });
+  });
+});

@@ -124,9 +124,21 @@ test('B2e a parent value without links: child (none) with the cleared hint, (no 
   // WP-17 review: dcf-auto-applied marks the bulk default only, not a clear.
   assert.equal(c.classList.contains('dcf-auto-applied'), false);
   assert.deepEqual(childEntries(pg), [`${CHILD}=__none__`]);
-  // A user change of the child still hides the cleared hint.
-  fire.choose(pg.window, c, '__none__');
-  assert.equal(D.hintText(c), null);
+  // WP-17 resume: a change event that leaves the value the runtime set is no
+  // user pick (it hid the hint before); a real change hides it (B2e multi).
+  fire.change(pg.window, c);
+  assert.equal(D.hintText(c), 'Cleared because the current choice for Parent field allows no values for this field.');
+  invariants(pg);
+});
+
+test('B2e multi: a real user change of the child hides the cleared hint', async () => {
+  const pg = await load('bulk_multi');
+  const c = child(pg);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  assert.deepEqual([D.selected(c), D.hintText(c)],
+    [['__none__'], 'Cleared because the current choice for Parent field allows no values for this field.']);
+  fire.choose(pg.window, c, []);
+  assert.deepEqual([D.selected(c), D.hintText(c), childEntries(pg)], [[], null, []]);
   invariants(pg);
 });
 
@@ -155,10 +167,11 @@ test('B3 parent (none): child __none__, (no change) disabled, the cascade contin
   });
   assert.deepEqual(E.list(pg.document.forms[0], 'issue[custom_field_values]'),
     [`${PARENT}=__none__`, `${CHILD}=__none__`, `${name('issue', 9100003)}=__none__`]);
-  // A user change of the child hides its cleared hint, also under (none).
+  // WP-17 resume: a change event without a value change keeps the cleared
+  // hint (it hid it before); only __none__ is enabled, so no real change.
   assert.equal(D.hintText(middle), 'Cleared because the current choice for Root field allows no values for this field.');
-  fire.choose(pg.window, middle, '__none__');
-  assert.equal(D.hintText(middle), null);
+  fire.change(pg.window, middle);
+  assert.equal(D.hintText(middle), 'Cleared because the current choice for Root field allows no values for this field.');
   invariants(pg);
 });
 
@@ -368,5 +381,121 @@ test('wizard template: inert until cloned, then bulk context scoped to its form 
   fire.choose(pg.window, middle, 'Bee');
   assert.deepEqual(D.selected(leaf), [''], 'Bee has no default for the leaf');
   assert.deepEqual(D.enabled(leaf), ['', '__none__', 'Colt']);
+  invariants(pg);
+});
+
+// WP-17 resume: a third-party listener that answers each runtime change with
+// another change (native, or a jQuery trigger) is no user pick: the bulk
+// default keeps its hint and mark and is not remembered (frontend 5.5).
+test('bulk re-dispatch: a listener that re-dispatches runtime changes keeps the auto hint, the mark and memory', async () => {
+  const DEFAULT = 'Set to the default for the selected Parent field. Choose (No change) to keep the current values.';
+  const run = async (mode) => {
+    const pg = await load('bulk_single');
+    if (mode === 'native') {
+      const mine = new WeakSet();
+      pg.document.addEventListener('change', (e) => {
+        if (mine.has(e) || e.target.name !== CHILD) return;
+        const ev = new pg.window.Event('change', { bubbles: true });
+        mine.add(ev);
+        e.target.dispatchEvent(ev);
+      });
+    } else if (mode === 'jquery') {
+      const $ = pg.window.jQuery;
+      $(pg.document).on('change', 'select', function (e) { if (!e.isTrigger) $(this).trigger('change'); });
+    }
+    const c = child(pg);
+    const seen = [];
+    fire.choose(pg.window, parentOf(pg), 'Alpha');
+    seen.push([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)]);
+    fire.choose(pg.window, parentOf(pg), 'Beta');
+    fire.choose(pg.window, parentOf(pg), 'Alpha');
+    seen.push([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)]);
+    fire.choose(pg.window, parentOf(pg), 'Gamma');
+    seen.push([D.selected(c), D.hintText(c)]);
+    fire.choose(pg.window, c, '__none__');
+    fire.choose(pg.window, parentOf(pg), 'Beta');
+    fire.choose(pg.window, c, 'Bee');
+    seen.push([D.selected(c), D.hintText(c)]);
+    invariants(pg);
+    return { seen, html: pg.document.body.innerHTML };
+  };
+  const plain = await run(null);
+  assert.deepEqual(plain.seen.slice(0, 2), [[['Ape'], true, DEFAULT], [['Ape'], true, DEFAULT]]);
+  for (const mode of ['native', 'jquery']) {
+    const noisy = await run(mode);
+    assert.deepEqual(noisy.seen, plain.seen, mode);
+    assert.equal(noisy.html, plain.html, mode);
+  }
+});
+
+// WP-18 makes context_menu_wizard.js call init(container) right after the
+// clone; the observer pass that follows must then be a no-op.
+test('wizard: init(container) right after cloning, then the observer pass writes and dispatches nothing', async () => {
+  const pg = await load(F.read('wizard_template'));
+  const container = pg.document.createElement('div');
+  container.id = 'cf-wizard-container';
+  container.className = 'context-menu cf-wizard';
+  pg.document.body.appendChild(container);
+  container.appendChild(pg.document.querySelector('template').content.cloneNode(true));
+  pg.window.DependingCustomFields.init(container);
+  const form = container.querySelector('form');
+  assert.equal(D.state(D.control(form, '9100002')), 'unfiltered');
+  const u = pg.updates.length;
+  const records = [];
+  const mo = new pg.window.MutationObserver((r) => records.push(...r));
+  mo.observe(container, { attributes: true, childList: true, subtree: true });
+  await D.microtask();
+  await D.microtask();
+  mo.disconnect();
+  assert.deepEqual([pg.updates.length - u, records.length], [0, 0]);
+  invariants(pg);
+});
+
+// WP-17 review round 2: frontend 5.5 carries only a value picked under
+// "(no change)"; a default the runtime applied under a concrete parent is
+// applied again (auto, hint, mark) when a multi parent adds a value, never
+// carried unmarked (the form carry rule was copied before).
+test('B2d multi parent: adding a parent value keeps the default marked; a value under a concrete parent is not carried', async () => {
+  const DEFAULT = 'Set to the default for the selected Parent field. Choose (No change) to keep the current values.';
+  const html = F.tweak('bulk_single', (doc) => {
+    const p = F.named(doc, PARENT);
+    p.setAttribute('name', `${PARENT}[]`);
+    p.setAttribute('multiple', 'multiple');
+    p.querySelector('option[value=""]').remove();
+  });
+  const pg = await load(html);
+  const c = child(pg);
+  const parent = parentOf(pg);
+  assert.equal(D.state(c), 'unfiltered');
+  fire.choose(pg.window, parent, ['Alpha']);
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)], [['Ape'], true, DEFAULT]);
+  fire.choose(pg.window, parent, ['Alpha', 'Beta']);
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)], [['Ape'], true, DEFAULT]);
+  assert.deepEqual(D.enabled(c), ['', '__none__', 'Ant', 'Ape', 'Bee']);
+  // A user pick under [Alpha] comes back for [Alpha] only.
+  fire.choose(pg.window, parent, ['Alpha']);
+  fire.choose(pg.window, c, 'Ant');
+  assert.deepEqual([c.classList.contains('dcf-auto-applied'), D.hintText(c)], [false, null]);
+  fire.choose(pg.window, parent, ['Alpha', 'Gamma']);
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)], [['Ape'], true, DEFAULT]);
+  fire.choose(pg.window, parent, ['Alpha']);
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied')], [['Ant'], false]);
+  invariants(pg);
+});
+
+// WP-17 review round 2: listeners get a copy of the values, so a listener
+// that mutates e.detail.values cannot turn a later re-dispatch into a pick.
+test('dcf:updated detail.values is a copy: mutating it keeps the bulk hint and mark on a later re-dispatch', async () => {
+  const DEFAULT = 'Set to the default for the selected Parent field. Choose (No change) to keep the current values.';
+  const pg = await load('bulk_single');
+  pg.document.addEventListener('dcf:updated', (e) => { e.detail.values.push('x'); });
+  const c = child(pg);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual([D.selected(c), D.hintText(c)], [['Ape'], DEFAULT]);
+  fire.change(pg.window, c);
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied'), D.hintText(c)], [['Ape'], true, DEFAULT]);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual([D.selected(c), c.classList.contains('dcf-auto-applied')], [['Ape'], true], 'no pick remembered');
   invariants(pg);
 });

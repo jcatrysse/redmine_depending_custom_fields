@@ -45,7 +45,7 @@ RSpec.describe RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook 
   # the new runtime took the old name and no page loads it until WP-18.
   it 'includes the renamed legacy script, resolved by the asset pipeline, and not the new runtime' do
     html = hook.view_layouts_base_html_head
-    srcs = Nokogiri::HTML.fragment(html).css('script[src]').map { |s| s['src'] }
+    srcs = Nokogiri::HTML.fragment(html).css('script[src]').pluck('src')
     legacy = srcs.grep(/depending_custom_fields_legacy/)
     expect(legacy.size).to eq(1)
     # A digest (6.x/7.0) or an asset id (5.1) is only added for a file that exists.
