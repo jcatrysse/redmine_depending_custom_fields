@@ -596,6 +596,127 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     end
   end
 
+  # WP-19: whether edit_tag prepends the id-less data-dcf-blank sentinel. It
+  # reads only the attributes_for Hash and the field (no query), never adds
+  # a key to that Hash and gives false on any error (fail open).
+  describe '.sentinel? (WP-19)' do
+    # [style, multiple, required]: multi check boxes, and drop-downs core
+    # renders with a '' option or as multi selects.
+    def drop_downs_and_multi
+      [['check_box', true, false], ['check_box', true, true], ['', false, false], ['', false, true], ['', true, true]]
+    end
+
+    def styled_child(kind, style, multiple: false, required: false)
+      parent, child = build_kit(kind, multiple: multiple)
+      child.update!(edit_tag_style: style, is_required: required)
+      [parent, CustomField.find(child.id)]
+    end
+
+    [:list, :enumeration].each do |kind|
+      context "for a depending #{kind}" do
+        it 'is true for a managed single radio group in form context, required or not' do
+          [false, true].each do |required|
+            parent, child = styled_child(kind, 'check_box', required: required)
+            issue = kit_issue(project, parent => 'A', child => 'a1')
+            data = form_data(issue, child)
+
+            expect(client.sentinel?(child, data)).to be(true), required.to_s
+            expect(data).not_to have_key(:dcf_blank)
+          end
+        end
+
+        it 'is false in bulk context, for multi fields and for drop-downs core renders with a blank option' do
+          parent, radio = styled_child(kind, 'check_box')
+          issue = kit_issue(project, parent => 'A', radio => 'a1')
+          expect(client.sentinel?(radio, bulk_data([issue], radio))).to be(false)
+
+          drop_downs_and_multi.each do |style, multiple, required|
+            parent, child = styled_child(kind, style, multiple: multiple, required: required)
+            record = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
+            label = [style, multiple, required].inspect
+            expect(client.sentinel?(child, form_data(record, child))).to be(false), label
+            expect(client.sentinel?(child, bulk_data([record], child))).to be(false), label
+          end
+        end
+
+        # The WP-17 open input: core omits the '' option of a required single
+        # select with a default value (saved before the clear-on-save rule).
+        it 'is true for a managed required single select whose default value makes core omit the blank option' do
+          parent, child = styled_child(kind, '', required: true)
+          child.update_column(:default_value, kit_key(child, 'a1'))
+          child = CustomField.find(child.id)
+          issue = kit_issue(project, parent => 'A', child => 'a1')
+
+          expect(client.sentinel?(child, form_data(issue, child))).to be(true)
+          expect(client.sentinel?(child, bulk_data([issue], child))).to be(false)
+          child.is_required = false
+          expect(client.sentinel?(child, form_data(issue, child))).to be(false)
+        end
+
+        it 'is false for every field without parent data (fail open, unmanaged)' do
+          parent, child = styled_child(kind, 'check_box')
+          issue = kit_issue(project, parent => 'A', child => 'a1')
+          data = form_data(issue, child)
+
+          expect(client.sentinel?(child, {})).to be(false)
+          expect(client.sentinel?(child, data.except(:dcf_parent))).to be(false)
+          expect(client.sentinel?(child, every_field(child))).to be(false)
+          expect(client.sentinel?(child, data.merge(dcf_context: :form))).to be(false)
+          expect(client.sentinel?(child, data.merge(dcf_context: 'bulk'))).to be(false)
+
+          restrict(parent)
+          issue = Issue.find(issue.id)
+          expect(client.sentinel?(child, form_data(issue, child, user: member))).to be(false)
+          expect(client.sentinel?(child, form_data(Issue.find(issue.id), child, user: dcf_admin))).to be(true)
+        end
+      end
+    end
+
+    # The style is written like the stored pointers: a save would resolve a
+    # dangling pointer to nil.
+    def stored_style(field, style)
+      store = CustomField.find(field.id).format_store.to_hash.merge('edit_tag_style' => style)
+      CustomField.where(id: field.id).update_all(['format_store = ?', CustomField.type_for_attribute('format_store').serialize(store)])
+      CustomField.find(field.id)
+    end
+
+    it 'is false for radio cycle members, self-parents and dangling parents' do
+      x, y = build_cycle(:list)
+      own = dcf_list_field(format: 'depending_list', values: %w[s1])
+      own = dcf_store_parent(own, own)
+      dangling = dcf_store_parent(dcf_list_field(format: 'depending_list', values: %w[d1]),
+                                  CustomField.maximum(:id).to_i + 1_000)
+      fields = [x, y, own, dangling].map { |field| stored_style(field, 'check_box') }
+      issue = kit_issue(project, fields.index_with([]))
+
+      fields.each do |field|
+        expect(field.edit_tag_style).to eq('check_box')
+        expect(client.sentinel?(field, form_data(issue, field))).to be(false), field.name
+      end
+    end
+
+    it 'gives false instead of raising, logs the class only, runs no query and keeps no state' do
+      parent, child = build_kit(:list)
+      child.update!(edit_tag_style: 'check_box')
+      child = CustomField.find(child.id)
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      data = form_data(issue, child)
+      broken = CustomField.find(child.id)
+      allow(broken).to receive(:edit_tag_style).and_raise(RuntimeError, 'SELECT secret')
+      allow(Rails.logger).to receive(:warn)
+
+      expect(dcf_count_queries { expect(client.sentinel?(child, data)).to be(true) }).to eq(0)
+      expect(client.sentinel?(broken, data)).to be(false)
+      expect(client.sentinel?(child, nil)).to be(false)
+      expect(client.instance_variables).to eq([])
+      expect(Rails.logger).to have_received(:warn)
+        .with("[DCF] blank sentinel skipped for custom field ##{broken.id}: RuntimeError").once
+      expect(Rails.logger).to have_received(:warn)
+        .with("[DCF] blank sentinel skipped for custom field ##{child.id}: NoMethodError").once
+      expect(Rails.logger).not_to have_received(:warn).with(a_string_including('SELECT secret'))
+    end
+  end
+
   describe '.merge_options' do
     let(:data) { { dcf_field: 7, dcf_context: 'form' } }
 

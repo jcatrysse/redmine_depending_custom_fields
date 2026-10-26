@@ -200,10 +200,12 @@
 * Changed: Without JavaScript, Key/Value list (depending) fields show all active values; the server still rejects invalid combinations.
 * Changed: A required dependent field that is part of or below a circular configuration, depends on itself or depends on a field of another type or format now needs a value like any required field, also in the REST API, email and imports (up to 0.0.16 a blank value was accepted while the stored parent allowed nothing for it).
 * Fixed: Stored values that do not match an unchanged parent stay selected, marked and saved instead of being removed silently on the next save; switching the parent back restores them.
+* Fixed: Required radio-style dependent fields can be cleared.
 * Fixed: No more browser errors with circular configurations.
 * Fixed: The wizard reports server errors and stays open.
 * Fixed: The dependency mapping is no longer embedded in every page, including the login page.
 * Fixed: The context-menu wizard offers only fields you may edit on every selected issue; a field that is read-only for you on one of them is no longer shown (its value was not saved), and neither are the dependent fields below it.
+* Added: In bulk edit and the wizard, required dependent fields offer '(none)' while the parent selection allows no value.
 * Added: Hints are announced to screen readers.
 * Deprecated: DependingCustomFields.setup and requestSetup (aliases of DependingCustomFields.init) and CustomFieldVisibility; kept at least throughout 0.1.x, removable no earlier than 0.2.0.
 * Removed: window.DependingCustomFieldData, window.ContextMenuWizardConfig, MappingBuilder, ParentMenuBuilder, the after_custom_field_save dispatch, data-depending-* attributes, depending_cf_N ids, the hidden mirror inputs and the data-field-id attribute.

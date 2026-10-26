@@ -11,8 +11,11 @@ require 'timeout'
 # region, a stored value the parent does not allow kept through a
 # notes-only save and restored on A to B to A, bulk edit (UD-09),
 # updateIssueFrom re-init, the wizard save (UD-11), the WP-09b case and the
-# UD-37 warning. Screenshots go to tmp/capybara/dcf/wp-18/.
-RSpec.describe 'Depending fields in the browser (WP-18)', type: :system do
+# UD-37 warning. Screenshots go to tmp/capybara/dcf/wp-18/. WP-19 adds a
+# required radio child cleared through the blank sentinel and the marked
+# (none) of a required child in bulk edit (UD-10); their screenshots go to
+# tmp/capybara/dcf/wp-19/.
+RSpec.describe 'Depending fields in the browser (WP-18, WP-19)', type: :system do
   fixtures :users
 
   let(:version) { "#{Redmine::VERSION::MAJOR}.#{Redmine::VERSION::MINOR}" }
@@ -22,8 +25,8 @@ RSpec.describe 'Depending fields in the browser (WP-18)', type: :system do
     record
   end
 
-  def shot(name)
-    dir = Rails.root.join('tmp', 'capybara', 'dcf', 'wp-18')
+  def shot(name, wp: 'wp-18')
+    dir = Rails.root.join('tmp', 'capybara', 'dcf', wp)
     FileUtils.mkdir_p(dir)
     path = dir.join("#{name}-#{version}.png").to_s
     page.driver.browser.save_screenshot(path)
@@ -291,5 +294,62 @@ RSpec.describe 'Depending fields in the browser (WP-18)', type: :system do
     expect(page).to have_css('#flash_notice')
     expect([issue.reload.custom_field_value(middle), issue.custom_field_value(low)]).to eq(%w[p2 l1])
     expect(issue.journals.last.notes).to eq('Note with a kept value')
+  end
+
+  # WP-19: before the sentinel nothing was posted when no radio was checked,
+  # so the stored Ant stayed and the save was refused as 'is invalid'.
+  it 'clears a required radio child when the new parent value allows nothing (WP-19)' do
+    parent, child = pair(style: 'check_box')
+    child.update!(is_required: true)
+    issue = dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant')
+    parent_id = "issue_custom_field_values_#{parent.id}"
+    group = "span.check_box_group[data-dcf-field='#{child.id}']"
+    radios = "#{group} input[type=radio]"
+
+    dcf_login
+    visit "/issues/#{issue.id}/edit"
+    expect(page).to have_css("#{group}[data-dcf-state='ok']", visible: :all)
+    expect(js("document.querySelector(#{group.to_json}).previousElementSibling.getAttribute('data-dcf-blank')")).to eq('1')
+    expect(js("document.querySelectorAll('input[data-dcf-blank]').length")).to eq(1)
+    select_value(parent_id, 'Gamma')
+    expect(js("Array.prototype.filter.call(document.querySelectorAll(#{radios.to_json}), function (i) { return i.checked; }).length"))
+      .to eq(0)
+    expect(js("Array.prototype.every.call(document.querySelectorAll(#{radios.to_json}), function (i) { return i.closest('label').hidden; })"))
+      .to be(true)
+    expect(js("document.querySelector('input[data-dcf-blank]').value")).to eq('')
+    shot('issue-form-required-radio-cleared', wp: 'wp-19')
+
+    find('#issue-form input[name=commit]').click
+    expect(page).to have_css('#flash_notice')
+    expect(issue.reload.custom_field_value(parent)).to eq('Gamma')
+    expect(issue.custom_field_value(child)).to be_blank
+  end
+
+  it 'offers the marked (none) of a required child in bulk edit only while the parent allows nothing (WP-19)' do
+    parent, child = pair
+    child.update!(is_required: true)
+    issues = [dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant'),
+              dcf_real_issue(project.reload, parent => 'Beta', child => 'Bee')]
+    child_id = "issue_custom_field_values_#{child.id}"
+    parent_id = "issue_custom_field_values_#{parent.id}"
+    none = "##{child_id} option[value='__none__'][data-dcf-required-none='1']"
+
+    dcf_login
+    visit "/issues/bulk_edit?#{issues.map { |issue| "ids[]=#{issue.id}" }.join('&')}"
+    expect(page).to have_css("##{child_id}[data-dcf-state='unfiltered']", visible: :all)
+    expect(js("[document.querySelector(#{none.to_json}).disabled, document.querySelector(#{none.to_json}).hidden]"))
+      .to eq([true, true])
+    select_value(parent_id, 'Alpha')
+    expect(dcf_selectable_options(child_id)).to eq(['', 'Ant', 'Ape'])
+    select_value(parent_id, '__none__')
+    expect(value_of(child_id)).to eq('__none__')
+    expect(dcf_selectable_options(child_id)).to eq(['__none__'])
+    expect(hint_of(child_id)).to eq('Cleared because the current choice for Fe parent allows no values for this field.')
+    shot('bulk-edit-required-none', wp: 'wp-19')
+
+    find('#bulk_edit_form input[type=submit]').click
+    expect(page).to have_css('#flash_notice')
+    expect(issues.map { |issue| [issue.reload.custom_field_value(parent), issue.custom_field_value(child)] })
+      .to eq([['', ''], ['', '']])
   end
 end

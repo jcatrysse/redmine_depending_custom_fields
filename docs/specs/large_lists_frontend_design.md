@@ -197,8 +197,9 @@ This supersedes limits L11 on pruning; L11's integer enumeration ids stay. It is
 1. **Blank sentinel.** For an active child in form context with `!multiple?` and `edit_tag_style == 'check_box'` (radio buttons), `edit_tag` returns `view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 })` immediately BEFORE `span.check_box_group`.
    - With no radio checked, the field posts `''`. A checked radio comes later and wins (last-wins, probe 4).
    - With `id: nil` the label-for scan is unchanged: the radios already render without ids.
-   - Without JS nothing regresses: the server always checks the current value, and a blank required radio already stores blank.
+   - Without JS the posted value is unchanged: the browser still posts the checked radio, or the selected option of a required drop-down without a '' option (below), after the sentinel. One exception, with or without JS (WP-19, accepted): the sentinel always posts the managed child, so core and `NonEditableDependencies` validate the custom values on every form save, as for a drop-down. A blank required radio child under a parent value with options therefore needs a value even on a notes-only save that posts no other custom field (for example with the parent read-only by workflow); before WP-19 nothing was posted and that save went through. See compatibility section 5 (row 'Notes-only save with a blank required radio child') and `spec/requests/dcf_sentinel_params_spec.rb` 'a notes-only save'.
    - This amends server guarantee 1 to: "adds attributes, and for single radio children one id-less hidden input".
+   - Delivered (WP-19, open input from WP-17): the same sentinel goes immediately BEFORE the `<select>` of a required single drop-down child that core renders without a '' option (`is_required?` with a `default_value`, saved before the clear-on-save rule). When nothing is usable the runtime sets `selectedIndex = -1`, so the select posts nothing and the sentinel posts `''`; the no-options bypass then accepts the clear. Without JS the browser posts the selected (or first) option after the sentinel, as before. The runtime reads parents from non-hidden controls only (`findParent`), so a sentinel is never a parent value.
 2. **`__none__` for required children in bulk (FD-22, adopted; UD-10, WP-19).** `bulk_edit_tag` of an active child offers `[l(:label_none), '__none__']` even when `is_required?`. Core drops that option for required fields (core-7.0 `field_format.rb:615`).
    - Consolidated form (server S13, WP-19): for required active children only, the option is rendered as `<option value="__none__" data-dcf-required-none="1">` right after "(no change)"; non-required output stays core's `List#bulk_edit_tag` plus the data attributes.
    - The runtime enables a `data-dcf-required-none` option only while the parent selection allows no value (parent "(none)", or a parent value without links), so it is never chosen as a fallback while options exist.
@@ -567,7 +568,7 @@ Release: every "after" column ships in 0.1.0 (M2) (WP-16 to WP-19; rows F10 and 
 | F7 | multi select cleared | mirror posts name[]=, core hidden removed, values posted twice (L) | core hidden '' posts name[]=; each value posted once | P outcome |
 | F8 | multi checkbox child | all inputs disabled (P1, P2) | only disallowed inputs disabled, their labels hidden (CSS override) | C |
 | F9 | single radio, not required, parent changes | nothing posted, stale value rejected (G1) | "(none)" radio checked, posts '' | F |
-| F10 | single radio, required | nothing posted, stale, invalid (G1/G2) | all unchecked, sentinel posts '' | F (server sentinel) |
+| F10 | single radio, required | nothing posted, stale, invalid (G1/G2) | all unchecked, sentinel posts '' (WP-19: `runtime_edit.test.js` 'F10 required radio' on the regenerated `radio_required`; F9 now posts the sentinel and the (none) radio; system 'clears a required radio child when the new parent value allows nothing (WP-19)') | F (server sentinel) |
 | F11 | chain | event-driven | explicit BFS cascade, depth-ordered init | P |
 | F12 | multi parent | union, defaults of added parents merged | same | P |
 | F13 | parent read-only by workflow (visible) | child unfiltered (T) | filtered by data-dcf-parent-values; stored disallowed value kept with the "not editable here" hint | C |
@@ -589,7 +590,7 @@ Release: every "after" column ships in 0.1.0 (M2) (WP-16 to WP-19; rows F10 and 
 | B2e | bulk parent value with no links | child unchanged, server invalid per issue | child "(none)" with the "Cleared because..." hint | C |
 | B2g | bulk grandchild | stays on visible "(no change)" (Q1) | unfiltered while its parent is "(no change)"; filtered with default or "(no change)" when its parent got a default | F |
 | B3 | bulk parent "(none)" | child disabled, mirror posts __none__ (A2, Q2) | child __none__, "(no change)" disabled, cascades | P outcome |
-| B3r | bulk parent "(none)", required child | stale value, invalid (U2) | __none__ offered (FD-22); cleared; accepted by the no-options bypass | F |
+| B3r | bulk parent "(none)", required child | stale value, invalid (U2) | __none__ offered (FD-22); cleared; accepted by the no-options bypass (WP-19: `runtime_bulk.test.js` 'B3r UD-10' on the regenerated `bulk_required`, 'B3r required child without the marked (none)' for the rejected outcome, the re-render fallback test, 'B3r UD-10 multi' and the re-rendered required multi child (marked (none) first, FM-02: nothing posted while the parent stays (no change)); `runtime_wizard.test.js` W2 required descendant; `spec/requests/bulk_update_dependencies_spec.rb`; system 'offers the marked (none) of a required child in bulk edit') | F |
 | B4 | bulk parent back to "(no change)" | forced value kept | child restored to its pre-cascade value and unfiltered | C |
 | B5 | bulk pick under "(no change)", then parent A | n/a | pick kept when allowed | N |
 | B6 | bulk hide_when_disabled | hidden while the parent is "(no change)" (M) | never hidden in bulk | F (D3) |
@@ -788,7 +789,7 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
    - for issue copies the baseline is the copy source's stored child and parent values (UD-06, server S7), which is exactly what `data-dcf-stored` carries;
    - This replaces whole-set `legacy_combination?` (R14). The shared parity cases in `test/js/fixtures/shared/rules_cases.json` cover add, remove and reorder for multi children.
    - Delivered by WP-09 in 0.1.0 (M1) (UD-04, UD-05, UD-06).
-4. **The blank sentinel** (3.4.1; WP-19, 0.1.0 (M2)), with specs: present only for single radio active children; no id; label `for` unchanged; request spec posting `x=&x=r1` (stored r1) and `x=` (cleared) on all four versions.
+4. **The blank sentinel** (3.4.1; WP-19, 0.1.0 (M2)), with specs: present only for single radio active children (and required drop-downs without a '' option, delivered); no id; label `for` unchanged; request spec posting `x=&x=r1` (stored r1) and `x=` (cleared) on all four versions (`spec/requests/dcf_sentinel_params_spec.rb`).
 5. **`__none__` for required active children in `bulk_edit_tag`** (3.4.2; marked `data-dcf-required-none="1"`; WP-19, 0.1.0 (M2), UD-10), with request specs:
    - `bulk_update` with `__none__` on a required child whose parent maps to nothing is accepted through the no-options bypass;
    - with a parent that maps to options, it gives the per-issue "cannot be blank" failure.

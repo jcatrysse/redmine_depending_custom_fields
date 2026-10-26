@@ -141,8 +141,8 @@ Option-level and sibling markup:
 
 | Markup | Emitted when | Purpose |
 |---|---|---|
-| `<input type="hidden" name="<tag_name>" value="" data-dcf-blank="1">` (no id), immediately before `span.check_box_group` | managed, `form` context, single-value child, `edit_tag_style == 'check_box'` | Lets a required radio child post `''` when no radio is checked. Last-wins param parsing is verified on Rack 2.2.24, AP 7.2.4 and AP 8.1.4 (frontend finding 4). A checked radio comes later in the form and wins. |
-| `<option value="__none__" data-dcf-required-none="1">(none)</option>`, placed right after "(no change)" | managed, `bulk` context, **required** child (core omits `__none__` for required, F6) | D2 for required descendants. **Client rule:** this option is enabled and selectable only while the parent selection yields no allowed values (bulk kind `none`, or the allowed set is empty). Otherwise it stays hidden and disabled and is never chosen as a fallback. **Server:** posting it for a required child while the parent offers options fails per issue with "cannot be blank" (core plus the CustomFieldPatch bypass), so nothing is cleared silently. |
+| `<input type="hidden" name="<tag_name>" value="" data-dcf-blank="1" autocomplete="off">` (no id), immediately before `span.check_box_group`, or immediately before the `<select>` of a required single drop-down child without a '' option | managed, `form` context, single-value child, and `edit_tag_style == 'check_box'`, or (WP-19, open input from WP-17) a drop-down child that `is_required?` with `default_value.present?` (core `select_edit_tag` then omits the '' option; only a default saved before the clear-on-save rule or written past it). `ClientData.sentinel?(cf, data)`; never for a `[]` tag name | Lets a radio child post `''` when no radio is checked, and such a select when the runtime deselects every option (`selectedIndex = -1`). Last-wins param parsing is verified on Rack 2.2.24, AP 7.2.4 and AP 8.1.4 (frontend finding 4) and pinned on 5.1 to 7.0 by `spec/requests/dcf_sentinel_params_spec.rb`, urlencoded and multipart. A checked radio or selected option comes later in the form and wins. |
+| `<option data-dcf-required-none="1" value="__none__">none</option>` (text: core `label_none`), placed right after "(no change)", first for a multi child | managed, `bulk` context, **required** child (core omits `__none__` for required, F6) | D2 for required descendants. **Client rule:** this option is enabled and selectable only while the parent selection yields no allowed values (bulk kind `none`, or the allowed set is empty). Otherwise it stays hidden and disabled and is never chosen as a fallback. **Server:** posting it for a required child while the parent offers options fails per issue with "cannot be blank" (core plus the CustomFieldPatch bypass), so nothing is cleared silently. |
 | `<span hidden="hidden" data-dcf-locked-parent="<parent id>" data-dcf-locked-stored='["A"]' data-dcf-locked-allowed-by='[["B","D"]]'></span>` (no id, no name, no text), rendered from `view_issues_form_details_bottom` (inside `#all_attributes`) and `view_projects_form` by `Hooks::ReadOnlyCarrierHook` (WP-16, UD-37) | one per depending child that the user sees but cannot edit (workflow read-only: in `visible_custom_field_values`, not in `editable_custom_field_values`), on a persisted record whose custom fields the user may edit (`safe_attribute?('custom_field_values')`, the guard of core's form), holding a stored value, whose effective parent the user can see and edit on the form and that is available on the record. Never for a role-invisible child. None on project forms in Redmine 5.1 to 7.0 (every visible project field is editable). | Lets the runtime (WP-17) predict the WP-09b refusal of a parent change: `locked-stored` is the stored parent baseline (`ParentState#baseline`), `locked-allowed-by` one entry per stored child value with the parent keys that allow it (sanitized mapping, not pruned). A change to the values V is refused when V differs from `locked-stored` as a set and some entry holds none of V. Strings only; the names are outside the C1 set and never start with `data-dcf-parent`. |
 
 Semantics:
@@ -158,7 +158,7 @@ Semantics:
 - **Comparison.** The client compares every value as `String(x)`.
 
 Guarantees, asserted by specs:
-1. The server adds no element with an id. `custom_field_tag_with_label` (core-7.0 `app/helpers/custom_fields_helper.rb:122-130`) keeps `for=` on single selects. Multi selects and check groups have no `for`, as before.
+1. The server adds no element with an id: only data attributes, the id-less sentinel and, in bulk, the marked option (WP-19). `custom_field_tag_with_label` (core-7.0 `app/helpers/custom_fields_helper.rb:122-130`) keeps `for=` on single selects. Multi selects and check groups have no `for`, as before.
 2. Elements the client creates (hints) may carry JS-generated unique ids and `aria-describedby` on the control (UX-06). They are never part of the server-rendered tag, so the label-for scan is unaffected. `replaceIssueFormWith` copies only input/select/textarea values (core-7.0 `application-legacy.js:727-737`).
 3. Rendering adds 0 queries per field when the parent is available on the object, and at most one query per distinct parent that is not available on the object (section 3.3). For a copy, `data-dcf-stored` reads the source issue's `custom_field_values`, which core already loaded in `copy_from` (F8). Exceptions in ClientData are caught: the field then renders without data-dcf-* (fail open, BC-12). Server validation is unaffected.
 
@@ -509,7 +509,7 @@ module DependingFormatMethods
     data = ClientData.attributes_for(cf, context: :form, customized: custom_value.customized,
                                          custom_value: custom_value, tag_name: tag_name)   # never raises
     html = super(view, tag_id, tag_name, custom_value, ClientData.merge_options(options, data))
-    return html unless ClientData.sentinel?(cf, data)
+    return html unless ClientData.sentinel?(cf, data) && !tag_name.to_s.end_with?('[]')
     view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 }) + html
   end
 
@@ -596,8 +596,10 @@ module ClientData
     { 'child' => DependencyRules.child_baseline(custom_value), 'parent' => state.baseline }
   end
 
-  def sentinel?(cf, data)
-    data.key?(:dcf_parent) && data[:dcf_context] == 'form' && !cf.multiple? && cf.edit_tag_style == 'check_box'
+  def sentinel?(cf, data)       # WP-19: also a required select core renders without a '' option; false on any error
+    return false unless data.key?(:dcf_parent) && data[:dcf_context] == 'form' && !cf.multiple?
+    return true if cf.edit_tag_style == 'check_box'
+    cf.is_required? && cf.default_value.present?
   end
 
   def merge_options(options, data)        # never mutates the caller's hash; tolerates core's data: nil
@@ -608,13 +610,13 @@ module ClientData
 end
 ```
 
-Delivered (WP-16): the parent instance comes from the lookup or the memoized `DependencyRules.parent_record`, not `find_parent`; parent values are normalized (`[]` for a blank parent); `stored.child` is `[]` while the parent is unavailable; the warning logs the field id and the exception class only; a stored mapping that is not a Hash fails open; `sentinel?` waits for WP-19. See the WP-16 Delivered block of large_lists_work_packages.md.
+Delivered (WP-16): the parent instance comes from the lookup or the memoized `DependencyRules.parent_record`, not `find_parent`; parent values are normalized (`[]` for a blank parent); `stored.child` is `[]` while the parent is unavailable; the warning logs the field id and the exception class only; a stored mapping that is not a Hash fails open. Delivered (WP-19): `sentinel?` as sketched, plus the required select without a '' option (open input from WP-17); it reads only the Hash and the field, runs no query, adds no key to the Hash and gives false (with a `[DCF] blank sentinel skipped` warning naming the field id and the exception class) on any error. See the WP-16 and WP-19 Delivered blocks of large_lists_work_packages.md.
 
 Details:
 - `parent_visible?` applies the 2.1 rule and rescues StandardError, giving false.
 - `encode` turns canonical enumeration ids into Integers (`kind(cf) == 'enumeration'` and `CANONICAL_ID`), recursively for arrays.
 - `data-dcf-stored` stays all-String (no `encode`): the client compares as `String(x)`, and the values are exactly what `dependency_check` compares against.
-- ClientData and the overrides ship in 0.1.0 (M2): the every-field and managed attributes, `data-dcf-stored` and the fixtures in WP-16 (additive, the legacy JS ignores them); the sentinel and the required-none option in WP-19.
+- ClientData and the overrides ship in 0.1.0 (M2): the every-field and managed attributes, `data-dcf-stored` and the fixtures in WP-16 (additive, the legacy JS ignores them); the sentinel and the required-none option in WP-19 (delivered: the fixtures `radio`, `radio_required` and `bulk_required` regenerated).
 - Unit spec `spec/lib/client_data_spec.rb` (WP-16): unmanaged fields (no parent, dangling, cycle, self, invisible parent) carry only the every-field attributes; managed form context carries parent-values, parent-label and stored; a copy carries stored from the copy source and a plain new record carries none (gap 6); bulk is gated per project; `visible_by?` raising counts as not visible; a corrupt mapping renders without data-dcf-* (fail open).
 
 ## 7. Point 1: cache removal and the context menu without cache (D4)

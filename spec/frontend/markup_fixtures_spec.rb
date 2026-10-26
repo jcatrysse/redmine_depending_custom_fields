@@ -555,10 +555,53 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(names - every_field - ['data-dcf-multiple']).to eq([]), label
       end
     end
-    # WP-18: data-dcf-wizard-field marks the wizard field wrappers.
-    expect(fragment.to_html).not_to match(/data-dcf-(state|blank|required-none)/)
+    # WP-18: data-dcf-wizard-field marks the wizard field wrappers. WP-19:
+    # data-dcf-blank and data-dcf-required-none are allowed in their place
+    # only (check_markers); was all three forbidden. data-dcf-state is
+    # written by the runtime only.
+    expect(fragment.to_html).not_to match(/data-dcf-state/)
+    check_markers(name, fragment)
     expect(fragment.css('script')).to be_empty
     fields
+  end
+
+  # WP-19 (server design 2.2): the sentinel is an id-less hidden input with
+  # value '' right before the form-context single control of a managed field
+  # with the same name: a radio group, or a select without a '' option (a
+  # required field with a default value). The marked (none) is the one
+  # '__none__' option of a managed bulk select, right after '' (first for a
+  # multi select). Every managed single radio group has its sentinel.
+  def check_markers(name, fragment)
+    fragment.css('[data-dcf-blank]').each do |sentinel|
+      label = "#{name}: sentinel #{sentinel['name']}"
+      expect(sentinel.name).to eq('input'), label
+      expect(sentinel.attribute_nodes.map(&:name)).to eq(%w[type name value data-dcf-blank autocomplete]), label
+      expect([sentinel['type'], sentinel['value'], sentinel['data-dcf-blank']]).to eq(['hidden', '', '1']), label
+      control = sentinel.next_element
+      expect([control&.[]('data-dcf-context'), control&.[]('data-dcf-parent').present?]).to eq(['form', true]), label
+      if control.name == 'span'
+        expect(control['class'].to_s.split).to include('check_box_group'), label
+        expect(control.css('input').map { |input| input['type'] }.uniq).to eq(['radio']), label
+        expect(control.css('input').map { |input| input['name'] }.uniq).to eq([sentinel['name']]), label
+      else
+        expect([control.name, control['name'], control['multiple']]).to eq(['select', sentinel['name'], nil]), label
+        expect(control.css('option').map { |option| option['value'] }).not_to include(''), label
+      end
+    end
+    fragment.css('span.check_box_group[data-dcf-parent][data-dcf-context="form"]').each do |group|
+      next if group.at_css('input[type=checkbox]')
+
+      expect(group.previous_element&.[]('data-dcf-blank')).to eq('1'), "#{name}: radio group #{group['data-dcf-field']}"
+    end
+    fragment.css('[data-dcf-required-none]').each do |option|
+      select = option.parent
+      label = "#{name}: marked (none) in #{select['name']}"
+      expect([option.name, option['value'], option['data-dcf-required-none']]).to eq(%w[option __none__ 1]), label
+      expect([select.name, select['data-dcf-context'], select['data-dcf-parent'].present?]).to eq(['select', 'bulk', true]), label
+      values = select.css('option').map { |o| o['value'] }
+      expect(values.count('__none__')).to eq(1), label
+      expect(values.first(select['multiple'] ? 1 : 2)).to eq(select['multiple'] ? ['__none__'] : ['', '__none__']), label
+    end
   end
 
   def field_named(fragment, name_part)
@@ -660,10 +703,28 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(node.at_css('option[selected]')['value']).to eq('Ant')
         expect(select_labelled(fragment, 'User parent').at_css('option[selected]')['value']).to eq('Alpha')
       end,
+      # Flipped by WP-19 (UD-10): the marked (none) right after (No change);
+      # was no '__none__' option.
       'bulk_required' => lambda do |fragment|
-        expect(field_named(fragment, 'Child field').css('option').pluck('value')).not_to include('__none__')
+        options = field_named(fragment, 'Child field').css('option')
+        expect(options.pluck('value')).to eq(['', '__none__', 'Ant', 'Ape', 'Bee'])
+        expect(options.pluck('data-dcf-required-none')).to eq([nil, '1', nil, nil, nil])
+        expect(options[1].text).to eq('none')
       end,
-      'radio_required' => ->(fragment) { expect(fragment.css('input[data-dcf-blank]')).to be_empty },
+      # Flipped by WP-19: the sentinel right before the group; was none.
+      'radio_required' => lambda do |fragment|
+        group = field_named(fragment, 'Child field')
+        expect(fragment.css('input[data-dcf-blank]').to_a).to eq([group.previous_element])
+        expect(group.previous_element['id']).to be_nil
+        expect(group.css('input[type=radio]').pluck('value')).to eq(%w[Ant Ape Bee])
+      end,
+      # WP-19: a non-required radio group gets the sentinel too.
+      'radio' => lambda do |fragment|
+        group = field_named(fragment, 'Child field')
+        expect(fragment.css('input[data-dcf-blank]').to_a).to eq([group.previous_element])
+        expect(group.css('input[type=radio]').pluck('value')).to eq(['', 'Ant', 'Ape', 'Bee'])
+      end,
+      'multi_checkbox' => ->(fragment) { expect(fragment.css('[data-dcf-blank]')).to be_empty },
       # WP-18: implicit labels and data-dcf-wizard-field (UX-13), no
       # data-field-id, every field on '(No change)' (UD-11, the root has the
       # default Beta); was a data-field-id on every select.
@@ -744,6 +805,61 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     expect(paths.map { |path| File.extname(path) }.uniq).to eq(['.html'])
     expect(files.uniq.sort).to eq(self.class.scenarios.sort)
     expect(File).not_to exist(File.join(dcf_js_fixture_dir, 'legacy_mapping'))
+  end
+
+  # WP-19: check_contract accepts the sentinel and the marked (none) only
+  # in their place.
+  describe 'the marker checks' do
+    let(:group) do
+      '<span class="check_box_group" data-dcf-field="2" data-dcf-context="form" data-dcf-kind="list" data-dcf-parent="1" ' \
+        'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{}" data-dcf-parent-values="[]" ' \
+        'data-dcf-parent-label="P"><label><input type="radio" name="issue[custom_field_values][2]" value="a"> a</label></span>'
+    end
+    let(:sentinel) { '<input type="hidden" name="issue[custom_field_values][2]" value="" data-dcf-blank="1" autocomplete="off">' }
+
+    # In form context with the form-only attributes, so only check_markers
+    # can refuse it.
+    def bulk_select(options, context: 'bulk', multiple: false)
+      form = context == 'form' ? ' data-dcf-parent-values="[]" data-dcf-parent-label="P"' : ''
+      "<select name=\"issue[custom_field_values][2]\"#{' multiple="multiple"' if multiple} data-dcf-field=\"2\" " \
+        "data-dcf-context=\"#{context}\" data-dcf-kind=\"list\"#{' data-dcf-multiple="1"' if multiple} data-dcf-parent=\"1\" " \
+        "data-dcf-parent-name=\"issue[custom_field_values][1]\" data-dcf-map=\"{}\"#{form}>#{options}</select>"
+    end
+
+    def contract(html)
+      check_contract('probe', dcf_parse_fragment("<form><p>#{html}</p></form>"))
+    end
+
+    def refused(html)
+      expect { contract(html) }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+    end
+
+    it 'accepts the sentinel before a form radio group and the marked (none) after (No change)' do
+      expect { contract(sentinel + group) }.not_to raise_error
+      none = '<option data-dcf-required-none="1" value="__none__">none</option>'
+      expect { contract(bulk_select("<option value=\"\">(No change)</option>#{none}<option value=\"a\">a</option>")) }
+        .not_to raise_error
+      expect { contract(bulk_select("#{none}<option value=\"a\">a</option>", multiple: true)) }.not_to raise_error
+    end
+
+    it 'refuses a sentinel with an id, after the group, in bulk context or missing' do
+      refused(sentinel.sub('<input ', '<input id="x" ') + group)
+      refused(group + sentinel)
+      refused(group)
+      refused(sentinel + bulk_select('<option value="">(No change)</option>'))
+      refused(sentinel.sub('value=""', 'value="a"') + group)
+      refused('<p data-dcf-state="ok"></p>')
+    end
+
+    it 'refuses a marked (none) in form context, before (No change) or twice' do
+      none = '<option data-dcf-required-none="1" value="__none__">none</option>'
+      plain = '<option value="">(No change)</option><option value="__none__">none</option>'
+      expect { contract(bulk_select(plain, context: 'form')) }.not_to raise_error
+      refused(bulk_select("<option value=\"\">(No change)</option>#{none}", context: 'form'))
+      refused(bulk_select("#{none}<option value=\"\">(No change)</option>"))
+      refused(bulk_select("<option value=\"\">(No change)</option>#{none}<option value=\"__none__\">none</option>"))
+      refused(bulk_select("<option value=\"\">(No change)</option>#{none.sub('"1"', '"true"')}"))
+    end
   end
 
   describe 'the guard' do

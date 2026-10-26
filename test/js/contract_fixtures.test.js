@@ -5,6 +5,9 @@
 // WP-18 and WP-19 regenerate fixtures and must update this table. WP-18:
 // my_account is managed (UD-39), read_only_child_carrier shows the UD-37
 // warning after a refused parent change, the wizard opens on '(no change)'.
+// WP-19: radio and radio_required post the server sentinel before the
+// checked radio; bulk_required holds the marked (none), disabled and hidden
+// at load (UD-10).
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -33,9 +36,11 @@ const EXPECTED = {
   list_single_required: { controls: [ctl('9100002', 'ok', ['', 'Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}=Ant`] },
   list_multi_select: { controls: [ctl('9100002', 'ok', ['Ant', 'Ape'], ['Ant', 'Ape'])],
     entries: [`${P}=Alpha`, `${C}[]=Ant`, `${C}[]=Ape`, `${C}[]=`] },
-  radio: { controls: [ctl('9100002', 'ok', ['', 'Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}=Ant`] },
-  // No sentinel until WP-19.
-  radio_required: { controls: [ctl('9100002', 'ok', ['Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}=Ant`] },
+  // WP-19: the sentinel posts '' first, the checked radio wins (was [P, C=Ant]).
+  radio: { controls: [ctl('9100002', 'ok', ['', 'Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}=`, `${C}=Ant`],
+    sentinel: true },
+  radio_required: { controls: [ctl('9100002', 'ok', ['Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}=`, `${C}=Ant`],
+    sentinel: true },
   multi_checkbox: { controls: [ctl('9100002', 'ok', ['Ant', 'Ape'], ['Ant'])], entries: [`${P}=Alpha`, `${C}[]=Ant`, `${C}[]=`] },
   enumeration: { controls: [ctl('9100002', 'ok', ['', '9200004', '9200005'], ['9200004'])], entries: [`${P}=9200001`, `${C}=9200004`] },
   enumeration_inactive_child: { controls: [ctl('9100002', 'legacy', ['', '9200004', '9200007'], ['9200007'],
@@ -76,7 +81,9 @@ const EXPECTED = {
     entries: ['user[custom_field_values][9100001]=Alpha', 'user[custom_field_values][9100002]=Ant'] },
   bulk_single: bulkSingle('issue'),
   bulk_multi: { controls: [ctl('9100002', 'unfiltered', ['__none__', 'Ant', 'Ape', 'Bee'], [])], entries: [`${P}=`] },
-  bulk_required: { controls: [ctl('9100002', 'unfiltered', ['', 'Ant', 'Ape', 'Bee'], [''])], entries: [`${P}=`, `${C}=`] },
+  // WP-19 (UD-10): the marked (none) is disabled and hidden at load.
+  bulk_required: { controls: [ctl('9100002', 'unfiltered', ['', 'Ant', 'Ape', 'Bee'], [''], { requiredNone: true })],
+    entries: [`${P}=`, `${C}=`] },
   bulk_chain: { controls: [ctl('9100002', 'unfiltered', ['', '__none__', 'Ant', 'Ape', 'Bee'], ['']),
     ctl('9100003', 'unfiltered', ['', '__none__', 'Cub', 'Calf', 'Colt'], [''])], entries: [`${P}=`, `${C}=`, `${L3}=`] },
   time_entry_bulk: bulkSingle('time_entry'),
@@ -212,6 +219,15 @@ Object.keys(EXPECTED).forEach((scenario) => {
         assert.equal(c.closest('p').hidden, w.pHidden);
         assert.equal(c.closest('p').classList.contains('dcf-hidden'), w.pHidden);
       }
+      // WP-19: the server marks the required (none); the runtime keeps it
+      // disabled and hidden while the parent is (no change).
+      const marked = c.querySelectorAll('option[data-dcf-required-none]');
+      if (w.requiredNone) {
+        assert.deepEqual(Array.from(marked).map((o) => [o.value, o.getAttribute('data-dcf-required-none'), o.disabled, o.hidden]),
+          [['__none__', '1', true, true]]);
+      } else {
+        assert.equal(marked.length, 0);
+      }
     });
     writtenOnly(plain(html), doc);
     const form = doc.forms[0];
@@ -222,5 +238,19 @@ Object.keys(EXPECTED).forEach((scenario) => {
       assert.equal(s.disabled, false);
       Array.from(s.options).forEach((o) => assert.ok(!(o.selected && o.disabled)));
     });
+    // WP-19: the server sentinel sits right before the radio group and the
+    // runtime never writes to it, whatever the parent value.
+    const sentinels = Array.from(doc.querySelectorAll('input[data-dcf-blank]'));
+    assert.equal(sentinels.length, want.sentinel ? 1 : 0);
+    if (want.sentinel) {
+      const rendered = plain(html).querySelector('input[data-dcf-blank]').outerHTML;
+      const group = D.control(doc, '9100002');
+      assert.equal(group.previousElementSibling, sentinels[0]);
+      Array.from(D.byName(doc, P).options).map((o) => o.value).forEach((v) => {
+        fire.choose(pg.window, D.byName(doc, P), v);
+        assert.equal(sentinels[0].outerHTML, rendered, `after the parent ${v}`);
+        assert.deepEqual(E.entries(form).filter(([k]) => k === C)[0], [C, ''], `sentinel first after the parent ${v}`);
+      });
+    }
   });
 });

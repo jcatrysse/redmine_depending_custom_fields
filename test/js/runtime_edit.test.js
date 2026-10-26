@@ -378,32 +378,56 @@ test('F9 single radio, not required: "(none)" checked and enabled when nothing i
   assert.deepEqual(D.selected(c), ['']);
   assert.deepEqual(D.enabled(c), ['']);
   assert.deepEqual(D.hiddenValues(c), ['Ant', 'Ape', 'Bee']);
-  assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
+  // WP-19: the server sentinel posts '' before the '(none)' radio (was [C=]).
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`, `${CHILD}=`]);
   invariants(pg);
 });
 
-// The WP-19 sentinel is injected (hand-written, pre-WP-19 markup); WP-19
-// regenerates radio_required with it.
-test('F10 required radio: all radios unchecked, the injected WP-19 sentinel posts "" and stays untouched', async () => {
-  const sentinel = '<input type="hidden" name="issue[custom_field_values][9100002]" value="" data-dcf-blank="1">';
-  const html = F.tweak('radio_required', (doc) => {
-    const span = doc.querySelector('.check_box_group');
-    span.insertAdjacentHTML('beforebegin', sentinel);
-  });
-  const pg = await load(html);
+// WP-19: the regenerated radio_required holds the server sentinel (the test
+// injected it before WP-19).
+test('F10 required radio: all radios unchecked, the server sentinel posts "" and stays untouched', async () => {
+  const pg = await load('radio_required');
   const c = child(pg);
+  const s = pg.document.querySelector('input[data-dcf-blank]');
+  assert.equal(c.previousElementSibling, s);
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`, `${CHILD}=Ant`]);
   fire.choose(pg.window, parentOf(pg), 'Gamma');
   assert.deepEqual(D.selected(c), []);
   assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
-  const s = pg.document.querySelector('input[data-dcf-blank]');
   assert.deepEqual([s.value, s.disabled, s.hidden, s.getAttribute('aria-describedby')], ['', false, false, null]);
   assert.equal(c.previousElementSibling, s);
   invariants(pg);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`, `${CHILD}=Ant`], 'the stored value comes back after the sentinel');
+  invariants(pg);
 
-  const plain = await load('radio_required');
+  // The markup without the sentinel (before WP-19, or rendered elsewhere)
+  // posts nothing for the child.
+  const plain = await load(F.tweak('radio_required', (doc) => doc.querySelector('input[data-dcf-blank]').remove()));
   fire.choose(plain.window, parentOf(plain), 'Gamma');
   assert.deepEqual(D.selected(child(plain)), []);
   assert.deepEqual(childEntries(plain), [], 'without the sentinel nothing is posted');
+});
+
+// WP-19: a middle field rendered with the sentinel (a required select
+// without a blank option) is read from its select, never from the hidden
+// sentinel of the same name.
+test('the sentinel of a middle field is never read as the parent control', async () => {
+  const html = F.tweak('chain_of_three', (doc) => {
+    const middle = F.named(doc, CHILD);
+    middle.insertAdjacentHTML('beforebegin', `<input type="hidden" name="${CHILD}" value="" data-dcf-blank="1" autocomplete="off">`);
+    middle.querySelector('option[value=""]').remove();
+  });
+  const pg = await load(html);
+  const leaf = child(pg, '9100003');
+  assert.deepEqual([D.state(leaf), D.enabled(leaf)], ['ok', ['', 'Cub', 'Calf']]);
+  fire.choose(pg.window, child(pg), 'Ape');
+  assert.deepEqual([D.state(leaf), D.enabled(leaf)], ['empty', ['']]);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  assert.equal(child(pg).selectedIndex, -1);
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
+  assert.equal(D.state(leaf), 'waiting');
+  invariants(pg);
 });
 
 test('F11 explicit BFS cascade and depth-ordered init, independent of DOM order', async () => {

@@ -49,6 +49,22 @@ module RedmineDependingCustomFields
       {}
     end
 
+    # WP-19: whether edit_tag prepends the id-less blank sentinel to the
+    # tag of +cf+ (server design 2.2), from the attributes_for +data+ and the
+    # field only. Managed single fields in form context that can post nothing:
+    # a radio group with no radio checked, and a required select core renders
+    # without a '' option (a default value saved before the clear-on-save
+    # rule) once the runtime deselects every option. false on any error.
+    def sentinel?(cf, data)
+      return false unless data.key?(:dcf_parent) && data[:dcf_context] == 'form' && !cf.multiple?
+      return true if cf.edit_tag_style == 'check_box'
+
+      cf.is_required? && cf.default_value.present?
+    rescue StandardError => e
+      Rails.logger.warn("[DCF] blank sentinel skipped for custom field ##{cf&.id}: #{e.class}")
+      false
+    end
+
     # +options+ with +data+ merged into options[:data]; neither the Hash
     # nor its :data is changed. Core passes data: nil for list fields.
     def merge_options(options, data)

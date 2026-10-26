@@ -698,6 +698,23 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(trip_overhead('/issues/bulk_edit', managed: 5, params: { ids: [world[:issue].id] })).to eq(0)
     end
 
+    # WP-19: the radio sentinel and the marked (none) of a required child read
+    # only the computed attributes and the loaded field.
+    it 'adds no database round trip for radio sentinels and the marked (none) of required children (WP-19)' do
+      world = g6_world(children: 3, distinct: true)
+      world[:children].each { |child| child.update!(edit_tag_style: 'check_box', is_required: true) }
+      as(g6_member)
+      edit = "/issues/#{world[:issue].id}/edit"
+      bulk = { ids: [world[:issue].id] }
+
+      get edit
+      expect(doc.css('input[data-dcf-blank]').size).to eq(3)
+      expect(trip_overhead(edit, managed: 3)).to eq(0)
+      get '/issues/bulk_edit', params: bulk
+      expect(doc.css('option[data-dcf-required-none]').size).to eq(3)
+      expect(trip_overhead('/issues/bulk_edit', managed: 3, params: bulk)).to eq(0)
+    end
+
     it 'adds one database round trip to bulk edit per distinct parent the selected issues do not carry' do
       as(g6_member)
       results = [[1, false], [2, false], [2, true]].map do |children, distinct|

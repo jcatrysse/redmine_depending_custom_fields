@@ -720,23 +720,33 @@ test('an option pre-hidden by the server (hidden plus inline display:none) is re
 // Hand-written: a required single select without a blank option. Core omits
 // it for a required field with a default value, which a depending field holds
 // only when saved before the clear-on-save rule (depending_format_methods.rb).
-// Nothing is posted, so the server keeps the stored (or core default) value
-// and refuses it as 'is invalid' after the parent change; the WP-19 open
-// input from WP-17 covers the fix.
-test('single select without a blank option: no option stays selected and disabled when nothing is usable', async () => {
+// WP-19 (open input from WP-17): the server renders the id-less sentinel
+// before such a managed select, so the select posts '' while the runtime
+// leaves no option selected and the no-options bypass accepts the clear
+// (before WP-19 nothing was posted and the save was refused as 'is invalid').
+test('single select without a blank option: no option stays selected and disabled, the sentinel posts ""', async () => {
+  const name = 'issue[custom_field_values][2]';
   const html = '<form><p><label>P</label><select name="issue[custom_field_values][1]"><option value="A" selected>A</option><option value="C">C</option></select></p>' +
-    '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
+    `<p><label>C</label><input type="hidden" name="${name}" value="" data-dcf-blank="1" autocomplete="off">` +
+    `<select name="${name}" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ` +
     'data-dcf-map="{&quot;A&quot;:[&quot;Ant&quot;,&quot;Ape&quot;]}" data-dcf-stored="{&quot;child&quot;:[&quot;Ant&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
     '<option value="Ant" selected>Ant</option><option value="Ape">Ape</option></select></p></form>';
   const pg = await load(html);
   const c = D.control(pg.document, '2');
+  const sentinel = pg.document.querySelector('input[data-dcf-blank]');
+  const rendered = sentinel.outerHTML;
   assert.deepEqual(D.selected(c), ['Ant']);
+  assert.deepEqual(E.list(pg.document.forms[0], name), [`${name}=`, `${name}=Ant`]);
   fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'C');
   assert.equal(c.selectedIndex, -1);
-  assert.deepEqual(E.list(pg.document.forms[0], 'issue[custom_field_values][2]'), []);
-  assert.deepEqual(E.serialized(pg.window, pg.document.forms[0]).filter(([k]) => k.endsWith('[2]')), []);
+  assert.deepEqual(E.list(pg.document.forms[0], name), [`${name}=`]);
+  assert.deepEqual(E.serialized(pg.window, pg.document.forms[0]).filter(([k]) => k.endsWith('[2]')), [[name, '']]);
+  assert.equal(sentinel.outerHTML, rendered, 'the runtime never writes to the sentinel');
   fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'A');
   assert.deepEqual(D.selected(c), ['Ant']);
+  assert.deepEqual(E.list(pg.document.forms[0], name), [`${name}=`, `${name}=Ant`]);
+  assert.deepEqual(E.serialized(pg.window, pg.document.forms[0]).filter(([k]) => k.endsWith('[2]')), [[name, ''], [name, 'Ant']]);
+  assert.equal(sentinel.outerHTML, rendered);
 });
 
 test('writes only what changed: an option whose state stays the same gets no attribute write', async () => {

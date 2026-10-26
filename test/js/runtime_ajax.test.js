@@ -84,6 +84,24 @@ test('F15 updateIssueFrom serializes exactly the spec entry list (no disabled co
   }
 });
 
+// WP-19: the server sentinel is serialized before the radios and, having no
+// id, is never copied by replaceIssueFormWith: the new form holds exactly the
+// re-rendered sentinel, right before its group.
+test('F15 the radio sentinel is posted first and stays single after replaceIssueFormWith', async () => {
+  const pg = await load('radio_required');
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  pg.window.updateIssueFrom('/issues/1/edit.js', parentOf(pg));
+  const posted = Array.from(new pg.window.URLSearchParams(pg.window.ajaxCalls[0].data).entries()).filter(([k]) => k === CHILD);
+  assert.deepEqual(posted, [[CHILD, '']]);
+  pg.window.replaceIssueFormWith(coreForm(attributes('radio_required')));
+  await D.microtask();
+  const sentinels = Array.from(pg.document.querySelectorAll('input[data-dcf-blank]'));
+  assert.equal(sentinels.length, 1);
+  assert.equal(child(pg).previousElementSibling, sentinels[0]);
+  assert.deepEqual([sentinels[0].value, sentinels[0].hasAttribute('id')], ['', false]);
+  assert.deepEqual(E.list(pg.document.getElementById('issue-form'), CHILD), [`${CHILD}=`, `${CHILD}=Ant`]);
+});
+
 test('gap 13: one replaceIssueFormWith insertion inits once per added root, filtered before the next task, no timer', async () => {
   const pg = await load('list_single');
   const before = pg.clock.calls;

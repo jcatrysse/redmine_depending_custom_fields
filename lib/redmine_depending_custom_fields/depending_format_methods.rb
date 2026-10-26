@@ -130,18 +130,39 @@ module RedmineDependingCustomFields
     # WP-16: core's tag plus the data-dcf-* attributes of ClientData (server
     # design 2.2) on the select or the check box group; the caller's options
     # are not changed. Without data (ClientData failed or the field has
-    # none), core gets the caller's options as they are.
+    # none), core gets the caller's options as they are. WP-19: before a
+    # managed single radio group (or a required select without a '' option)
+    # an id-less hidden input with the same name posts '' first; a checked
+    # radio or selected option comes later and wins (last-wins parsing).
     def edit_tag(view, tag_id, tag_name, custom_value, options = {})
-      data = ClientData.attributes_for(custom_value.custom_field, context: :form, customized: custom_value.customized,
-                                                                  custom_value: custom_value, tag_name: tag_name)
-      super(view, tag_id, tag_name, custom_value, ClientData.merge_options(options, data))
+      cf = custom_value.custom_field
+      data = ClientData.attributes_for(cf, context: :form, customized: custom_value.customized,
+                                           custom_value: custom_value, tag_name: tag_name)
+      html = super(view, tag_id, tag_name, custom_value, ClientData.merge_options(options, data))
+      return html unless ClientData.sentinel?(cf, data) && !tag_name.to_s.end_with?('[]')
+
+      view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 }) + html
     end
 
     # Bulk edit, time-entry bulk edit and the context-menu wizard: core's
-    # select plus the bulk attributes for the selected +objects+.
+    # select plus the bulk attributes for the selected +objects+. WP-19
+    # (UD-10): for a required child with parent data, core's body with its
+    # (none) option kept and marked data-dcf-required-none (core drops it for
+    # required fields); the runtime enables it only while the parent
+    # selection allows no value, and the server still refuses a blank value
+    # per record while the parent value allows options.
     def bulk_edit_tag(view, tag_id, tag_name, custom_field, objects, value, options = {})
       data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
-      super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
+      merged = ClientData.merge_options(options, data)
+      unless custom_field.is_required? && data.key?(:dcf_parent)
+        return super(view, tag_id, tag_name, custom_field, objects, value, merged)
+      end
+
+      opts = []
+      opts << [l(:label_no_change_option), ''] unless custom_field.multiple?
+      opts << [l(:label_none), '__none__', { 'data-dcf-required-none' => '1' }]
+      opts += possible_values_options(custom_field, objects)
+      view.select_tag(tag_name, view.options_for_select(opts, value), merged.merge(multiple: custom_field.multiple?))
     end
   end
 end

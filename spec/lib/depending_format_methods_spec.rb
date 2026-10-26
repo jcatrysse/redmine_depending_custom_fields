@@ -1324,6 +1324,10 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       allow(client).to receive(:attributes_for).and_call_original
     end
 
+    def locales
+      %w[en de fr nl]
+    end
+
     def styled(kind, style, multiple: false, required: false)
       parent, child = build_kit(kind, multiple: multiple)
       child.update!(edit_tag_style: style, is_required: required)
@@ -1347,7 +1351,10 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(doc.at_css('label')['for']).to eq(select['id'])
         end
 
-        it 'puts the attributes on span.check_box_group for radios and check boxes, never on an input' do
+        # Flipped by WP-19: the only input with a data-dcf-* attribute is the
+        # id-less blank sentinel before a single radio group (data-dcf-blank
+        # only); was no input with one and no sentinel. Check boxes: none.
+        it 'puts the attributes on span.check_box_group for radios and check boxes, never on a choice input' do
           [[false, 'radio'], [true, 'checkbox']].each do |multiple, type|
             parent, child = styled(kind, 'check_box', multiple: multiple)
             issue = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
@@ -1355,15 +1362,21 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
 
             expect(doc.css('span.check_box_group[data-dcf-field]').size).to eq(1), type
             expect(doc.css("input[type=#{type}]").size).to be > 1
-            expect(doc.css('input').map { |input| dcf_attribute_names(input) }.flatten).to eq([]), type
-            expect(doc.css('input[data-dcf-blank]')).to be_empty
+            expect(doc.css("input[type=#{type}]").map { |input| dcf_attribute_names(input) }.flatten).to eq([]), type
+            expect(doc.css('input').map { |input| dcf_attribute_names(input) }.flatten)
+              .to eq(multiple ? [] : ['data-dcf-blank']), type
+            expect(doc.css('input[data-dcf-blank]').size).to eq(multiple ? 0 : 1), type
             expect(doc.at_css('label')['for']).to be_nil
           end
         end
 
-        it 'only adds data-dcf-* attributes: ids, label for= and every other byte stay core output' do
+        # Flipped by WP-19: a single radio group also gets the id-less blank
+        # sentinel (the only element the override adds), so the comparison
+        # removes it; was byte-identical for every variant. The id list and
+        # label for= stay core's.
+        it 'only adds data-dcf-* attributes and the sentinel of a single radio group: ids, label for= and every other byte stay core output' do
           variants = [['', false, false], ['', true, false], ['', false, true], ['check_box', false, false],
-                      ['check_box', true, false], ['check_box', false, true]]
+                      ['check_box', true, false], ['check_box', false, true], ['', true, true], ['check_box', true, true]]
           variants.each do |style, multiple, required|
             parent, child = styled(kind, style, multiple: multiple, required: required)
             issue = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
@@ -1371,27 +1384,182 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
             bare = stubbed { labelled(Issue.find(issue.id), child) }
 
             label = [style, multiple, required].inspect
-            expect(Nokogiri::HTML.fragment(real).css('[data-dcf-field]').size).to eq(1), label
-            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(bare).to_html), label
+            fragment = Nokogiri::HTML.fragment(real)
+            expect(fragment.css('[data-dcf-field]').size).to eq(1), label
+            expect(fragment.css('input[data-dcf-blank]').size).to eq(style == 'check_box' && !multiple ? 1 : 0), label
+            fragment.css('input[data-dcf-blank]').each(&:remove)
+            expect(without_dcf(fragment.to_html)).to eq(Nokogiri::HTML.fragment(bare).to_html), label
             expect(real.scan(/ id="(.+?)"/)).to eq(bare.scan(/ id="(.+?)"/)), label
+            expect(fragment.at_css('label')['for']).to eq(Nokogiri::HTML.fragment(bare).at_css('label')['for']), label
           end
         end
 
-        it 'renders bulk tags as core List#bulk_edit_tag plus the bulk attributes, without (none) for a required child' do
+        # Flipped by WP-19 (UD-10): a required child gets core's (none)
+        # option marked data-dcf-required-none right after (No change),
+        # nothing else changes (drift guard); was core output without (none).
+        # The non-required half is unchanged.
+        it 'renders bulk tags as core List#bulk_edit_tag plus the bulk attributes, and the marked (none) for a required child' do
           [false, true].each do |required|
             parent, child = styled(kind, 'check_box', required: required)
             issues = [kit_issue(project, parent => 'A', child => 'a1')]
             real = view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str
             bare = stubbed { view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str }
-            select = Nokogiri::HTML.fragment(real).at_css('select')
+            fragment = Nokogiri::HTML.fragment(real)
+            select = fragment.at_css('select')
 
             expect(select['data-dcf-context']).to eq('bulk')
             expect(select['data-dcf-parent']).to eq(parent.id.to_s)
             expect(select['data-dcf-parent-values']).to be_nil
             expect(select['data-dcf-stored']).to be_nil
-            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(bare).to_html)
-            expect(select.css('option').map { |o| o['value'] }.include?('__none__')).to eq(!required)
+            expect(fragment.css('input')).to be_empty
+            values = select.css('option').map { |o| o['value'] }
+            expect(values.count('__none__')).to eq(1)
+            expect(values.first(2)).to eq(['', '__none__'])
+            marked = select.css('option[data-dcf-required-none]')
+            expect(marked.map { |o| [o['value'], o['data-dcf-required-none'], o.text] })
+              .to eq(required ? [['__none__', '1', I18n.t(:label_none)]] : [])
+            # The option and the newline options_for_select joins it with.
+            marked.each do |option|
+              option.next.remove if option.next&.text? && option.next.text == "\n"
+              option.remove
+            end
+            expect(without_dcf(fragment.to_html)).to eq(Nokogiri::HTML.fragment(bare).to_html)
           end
+        end
+
+        # WP-19: the id-less blank sentinel (server design 2.2), so a single
+        # radio group posts '' when no radio is checked; the checked radio
+        # comes later and wins (last-wins parsing).
+        it 'prepends one id-less blank sentinel to a managed single radio group, required or not' do
+          [false, true].each do |required|
+            parent, child = styled(kind, 'check_box', required: required)
+            issue = kit_issue(project, parent => 'A', child => 'a1')
+            html = child.format.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", value_of(issue, child))
+            doc = Nokogiri::HTML.fragment(html)
+            sentinel = doc.at_css('input[data-dcf-blank]')
+
+            expect(html).to be_a(ActiveSupport::SafeBuffer)
+            expect(doc.css('input[data-dcf-blank]').size).to eq(1)
+            expect(sentinel.attribute_nodes.map(&:name)).to eq(%w[type name value data-dcf-blank autocomplete])
+            expect([sentinel['type'], sentinel['name'], sentinel['value'], sentinel['data-dcf-blank']])
+              .to eq(['hidden', "issue[custom_field_values][#{child.id}]", '', '1'])
+            expect(doc.element_children.first).to eq(sentinel)
+            expect(sentinel.next_element.matches?('span.check_box_group[data-dcf-field][data-dcf-parent]')).to be(true)
+            expect(doc.css('input[type=radio]').map { |radio| radio['name'] }.uniq).to eq([sentinel['name']])
+            expect(html.scan(' id="')).to eq([])
+          end
+        end
+
+        # WP-19, open input from WP-17: core omits the '' option of a required
+        # single select with a default value (only fields saved before the
+        # clear-on-save rule hold one), so the runtime's selectedIndex = -1
+        # would post nothing; the sentinel posts '' instead.
+        it 'prepends the sentinel to a managed required single select without a blank option, keeping label for=' do
+          parent, child = styled(kind, '', required: true)
+          child.update_column(:default_value, kit_key(child, 'a1'))
+          child = CustomField.find(child.id)
+          issue = kit_issue(project, parent => 'A', child => 'a1')
+          html = labelled(issue, child)
+          doc = Nokogiri::HTML.fragment(html)
+          select = doc.at_css('select')
+          sentinel = doc.at_css('input[data-dcf-blank]')
+
+          expect(select.css('option').map { |o| o['value'] }).not_to include('')
+          expect(sentinel.next_element).to eq(select)
+          expect([sentinel['name'], sentinel['value'], sentinel['id']]).to eq([select['name'], '', nil])
+          expect(html.scan(' id="').size).to eq(1)
+          expect(doc.at_css('label')['for']).to eq(select['id'])
+          bare = stubbed { labelled(Issue.find(issue.id), child) }
+          doc.css('input[data-dcf-blank]').each(&:remove)
+          expect(without_dcf(doc.to_html)).to eq(Nokogiri::HTML.fragment(bare).to_html)
+
+          child.update_column(:default_value, nil)
+          html = labelled(Issue.find(issue.id), CustomField.find(child.id))
+          expect(Nokogiri::HTML.fragment(html).css('input[data-dcf-blank]')).to be_empty
+        end
+
+        it 'adds neither the sentinel nor the marked (none) without parent data (unmanaged or ClientData failing)' do
+          parent, hidden_parent_child = styled(kind, 'check_box', required: true)
+          member = dcf_create_user("wp19-#{SecureRandom.hex(3)}")
+          dcf_add_member(member, project, dcf_create_role(permissions: [:view_issues, :edit_issues]))
+          parent.update!(visible: false, role_ids: [dcf_create_role(permissions: [:view_issues]).id])
+          x, y = build_cycle(kind)
+          own = styled(kind, 'check_box', required: true).last
+          dangling = styled(kind, 'check_box', required: true).last
+          variants = {
+            'role-invisible parent' => hidden_parent_child,
+            'self-parent' => write_store(own, 'parent_custom_field_id' => own.id),
+            'dangling parent' => write_store(dangling, 'parent_custom_field_id' => CustomField.maximum(:id).to_i + 1_000),
+            'cycle member' => write_store(x, 'edit_tag_style' => 'check_box'),
+            'other cycle member' => write_store(y, 'edit_tag_style' => 'check_box'),
+            'ClientData failing' => styled(kind, 'check_box', required: true).last
+          }
+          variants.each do |label, field|
+            field.update_column(:is_required, true)
+            field = CustomField.find(field.id)
+            issue = kit_issue(project, field => [])
+            allow(User).to receive(:current).and_return(label == 'role-invisible parent' ? member : dcf_admin)
+            if label == 'ClientData failing'
+              allow(rules).to receive(:mapping).and_raise(RuntimeError)
+              allow(Rails.logger).to receive(:warn)
+            end
+            html = labelled(issue, field)
+            bulk = view.custom_field_tag_for_bulk_edit('issue', field, [issue], '').to_str
+
+            expect(field.edit_tag_style).to eq('check_box'), label
+            expect(html).not_to include('data-dcf-blank'), label
+            expect(html).not_to include('data-dcf-parent'), label
+            expect(bulk).not_to include('__none__'), label
+            expect(bulk).not_to include('data-dcf-required-none'), label
+          end
+        end
+
+        # WP-19 drift guard: the reimplemented body of a required child gives
+        # core's own output for the same field when it is not required, plus
+        # the data attributes; '__none__' sits in the same slot.
+        it 'renders the marked (none) exactly where core puts its own (none), single and multi' do
+          [false, true].each do |multiple|
+            parent, child = styled(kind, '', multiple: multiple, required: true)
+            issues = [kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1'),
+                      kit_issue(project, parent => 'B', child => multiple ? %w[b1] : 'b1')]
+            real = view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str
+            optional = CustomField.find(child.id)
+            optional.is_required = false
+            core = stubbed { view.custom_field_tag_for_bulk_edit('issue', optional, issues, '').to_str }
+            options = Nokogiri::HTML.fragment(real).css('option')
+
+            label = multiple ? 'multi' : 'single'
+            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(core).to_html), label
+            expect(options.map { |o| o['value'] }.first(multiple ? 1 : 2)).to eq(multiple ? ['__none__'] : ['', '__none__']), label
+            expect(options.select { |o| o['data-dcf-required-none'] }.map { |o| o['value'] }).to eq(['__none__']), label
+            expect(real).to include('<option data-dcf-required-none="1" value="__none__">'), label
+            selected = view.custom_field_tag_for_bulk_edit('issue', child, issues, '__none__').to_str
+            expect(Nokogiri::HTML.fragment(selected).css('option[selected]').map { |o| o['value'] }).to eq(['__none__']), label
+          end
+        end
+
+        it 'labels the marked (none) with the core label_none of the current locale' do
+          parent, child = styled(kind, '', required: true)
+          issues = [kit_issue(project, parent => 'A', child => 'a1')]
+          locales.each do |locale|
+            text = I18n.with_locale(locale) do
+              Nokogiri::HTML.fragment(view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str)
+                        .at_css('option[data-dcf-required-none]').text
+            end
+            expect(text).to eq(I18n.t(:label_none, locale: locale)), locale
+            expect(text).not_to match(/translation.missing/i), locale
+          end
+        end
+
+        it 'asks ClientData once per edit tag and per bulk tag' do
+          parent, child = styled(kind, 'check_box', required: true)
+          issue = kit_issue(project, parent => 'A', child => 'a1')
+          allow(client).to receive(:attributes_for).and_call_original
+          labelled(issue, child)
+          view.custom_field_tag_for_bulk_edit('issue', child, [issue], '')
+
+          expect(client).to have_received(:attributes_for).with(child, hash_including(context: :form)).once
+          expect(client).to have_received(:attributes_for).with(child, hash_including(context: :bulk)).once
         end
       end
     end
@@ -1470,6 +1638,36 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       expect(select['data-dcf-parent-name']).to eq("#{prefix}[custom_field_values][#{parent.id}]")
       expect(html).to include("data-dcf-parent-name=\"x&quot;&lt;y&gt; &amp;z[custom_field_values][#{parent.id}]\"")
       expect(html).not_to include('&amp;quot;')
+    end
+
+    it 'escapes the sentinel name of an unusual tag name exactly once (WP-19)' do
+      parent, child = build_kit(:list)
+      child.update!(edit_tag_style: 'check_box')
+      child = CustomField.find(child.id)
+      issue = kit_issue(project, parent => 'A', child => 'a1')
+      name = "x\"<y> &z[custom_field_values][#{child.id}]"
+      html = child.format.edit_tag(view, 'tag', name, value_of(issue, child))
+      sentinel = Nokogiri::HTML.fragment(html).at_css('input[data-dcf-blank]')
+
+      expect(sentinel['name']).to eq(name)
+      expect(html).to include("<input type=\"hidden\" name=\"x&quot;&lt;y&gt; &amp;z[custom_field_values][#{child.id}]\" value=\"\"")
+      expect(html).not_to include('&amp;quot;')
+      expect(html).not_to include('<y>')
+    end
+
+    # WP-19: bulk_edit_tag reimplements core List#bulk_edit_tag for required
+    # managed children; a change of core's body (identical on 5.1 to 7.0)
+    # must fail here first.
+    it 'pins the core List#bulk_edit_tag body it reimplements for required children' do
+      file, line = Redmine::FieldFormat::List.instance_method(:bulk_edit_tag).source_location
+      lines = File.readlines(file)[(line - 1)..]
+      indent = lines.first[/\A */]
+      body = lines.take_while.with_index { |text, i| i.zero? || !text.start_with?("#{indent}end") }
+      source = (body + [lines[body.size]]).map(&:strip).join("\n")
+
+      expect(source).to include("opts << [l(:label_none), '__none__'] unless custom_field.is_required?")
+      # The same 11 stripped lines on 5.1, 6.0, 6.1 and 7.0.
+      expect(Digest::SHA256.hexdigest(source)).to eq('399c63f4f7dec0ecf5958609eb7e13b55c4e7b4840fd4212a6fd2764725797d6')
     end
   end
 
