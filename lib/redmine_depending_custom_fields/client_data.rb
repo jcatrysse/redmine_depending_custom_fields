@@ -38,7 +38,8 @@ module RedmineDependingCustomFields
       return data unless pid
 
       parent = lookup[pid] || DependencyRules.parent_record(cf, pid)
-      return data unless parent && parent_visible?(parent, bulk ? Array(objects) : form_scope(customized), bulk, user)
+      scope = bulk ? Array(objects) : form_scope(customized)
+      return data unless parent && parent_visible?(parent, scope, bulk, user, bulk ? nil : customized)
 
       add_parent_data(data, cf, pid, tag_name)
       add_form_data(data, cf, parent, customized, custom_value) unless bulk
@@ -140,16 +141,34 @@ module RedmineDependingCustomFields
       { 'child' => child, 'parent' => DependencyRules.normalize_values(state.baseline) }
     end
 
-    # Form context: the projects of form_scope. Bulk context: every distinct
-    # project of the objects, the base rule (nil project) without objects.
-    # An error counts as not visible (fail closed).
-    def parent_visible?(parent, objects, bulk, user)
+    # Form context: the projects of form_scope, or on a user form a parent
+    # core renders there as a control (user_form_control?, UD-39). Bulk
+    # context: every distinct project of the objects, the base rule (nil
+    # project) without objects. An error counts as not visible (fail closed).
+    def parent_visible?(parent, objects, bulk, user, customized = nil)
+      return true if !bulk && user_form_control?(parent, customized, user)
+
       projects = objects.map { |object| scope_project(object) }.uniq
       projects = [nil] if projects.empty? && bulk
       projects.all? { |project| parent.visible_by?(project, user) }
     rescue StandardError => e
       Rails.logger.warn("[DCF] client data visibility check failed for custom field ##{parent&.id}: #{e.class}")
       false
+    end
+
+    # UD-39 (WP-18): core renders a user field as a control, whatever its
+    # visibility, on the viewer's own My account when it is editable and on
+    # the registration form (a new User) when the setting shows editable
+    # fields or it is required (core my/account and account/register). The
+    # admin user form keeps the base rule. No query.
+    def user_form_control?(parent, customized, user)
+      return false unless customized.is_a?(User)
+
+      if customized.new_record?
+        (Setting.show_custom_fields_on_registration? && parent.editable?) || parent.is_required?
+      else
+        !user.nil? && customized.id == user.id && parent.editable?
+      end
     end
 
     # The objects whose projects must all grant the parent in form context:

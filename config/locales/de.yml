@@ -87,6 +87,18 @@ de:
   text_dcf_storage_usage: "%{label}: %{size} von %{limit} Bytes in der Datenbank belegt (%{percent} %)."
   text_dcf_storage_admin_help: "Verwenden Sie für sehr große Listen das Format Schlüssel/Wert-Liste (abhängig) oder vergrößern Sie die Datenbankspalten (siehe Plugin-README, Abschnitt „MySQL / MariaDB and large lists“)."
 
+  # Texte der Formularlaufzeit (Meta-Tag dcf-i18n im Seitenkopf, ClientConfig::I18N)
+  text_dcf_hint_select_parent: "Wählen Sie zuerst einen Wert für %{parent} aus."
+  text_dcf_hint_no_options: "Für den gewählten Wert von %{parent} sind keine Werte verfügbar."
+  text_dcf_hint_no_options_generic: "Für dieses Feld sind keine Werte verfügbar."
+  text_dcf_hint_legacy: "Gespeicherte Werte, die nicht zum gewählten Wert von %{parent} passen, bleiben erhalten, bis Sie %{parent} ändern: %{values}."
+  text_dcf_hint_legacy_locked: "Gespeicherte Werte, die nicht zu %{parent} passen (hier nicht änderbar), bleiben unverändert erhalten: %{values}."
+  text_dcf_hint_legacy_generic: "Gespeicherte Werte, die nicht zur aktuellen Auswahl passen, bleiben unverändert erhalten: %{values}."
+  text_dcf_hint_bulk_default: "Auf den Standardwert für den gewählten Wert von %{parent} gesetzt. Wählen Sie (Keine Änderung), um die aktuellen Werte beizubehalten."
+  text_dcf_hint_bulk_cleared: "Geleert, weil die aktuelle Auswahl für %{parent} keine Werte für dieses Feld zulässt."
+  text_dcf_live_message: "%{field}: %{message}"
+  text_dcf_hint_locked_refused: "Ein abhängiges Feld, das Sie nicht bearbeiten können, hat einen Wert, den diese Auswahl nicht zulässt; das Speichern wird abgelehnt."
+
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:
     errors:

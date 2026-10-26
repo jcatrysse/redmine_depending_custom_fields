@@ -4,6 +4,8 @@ require_relative '../rails_helper'
 
 # Opt-in (DCF_SYSTEM_SPECS=1). WP-03: submitting the core bulk edit form must
 # keep an untouched multi-value dependent field (it used to be cleared).
+# WP-18: the new runtime runs here (row B1m: an untouched multi child posts
+# nothing); the WP-03 legacy hotfix is gone with the legacy script.
 RSpec.describe 'Bulk edit with an untouched multi-value dependent field', type: :system do
   fixtures :users
 

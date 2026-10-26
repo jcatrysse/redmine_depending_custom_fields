@@ -225,9 +225,9 @@ RSpec.describe 'Admin custom field form parent select and cycle warning', type: 
 
   # The required warning says that the required check is not enforced
   # while the parent value allows nothing. That is DependencyRules.no_options?,
-  # which keeps the 0.0.16 parent read for fields without an effective parent
-  # until WP-18 retires the legacy script (semantics-r2-1), so the warning is
-  # computed from the stored parent as in 0.0.16 and needs no chain walk.
+  # which reads only the effective parent since WP-18 (the 0.0.16 parent read
+  # for fields without one went with the legacy script), so the warning is
+  # gated on the effective parent read from the partial's own FieldIndex.load.
   describe 'required warning (warning_required_child_no_options)' do
     [:list, :enumeration].each do |kind|
       it "is shown for a required #{kind} field whose effective parent has an unmapped value" do
@@ -240,11 +240,57 @@ RSpec.describe 'Admin custom field form parent select and cycle warning', type: 
         expect(cycle_warnings(page)).to eq([])
       end
 
-      # Flipped by semantics-r2-1: was "is not shown for a required #{kind}
-      # stored-cycle member, self-parent or field below a cycle" (compat-ui-r1-1
-      # gated it on the effective parent while no_options? had no fallback).
-      it "is shown for a required #{kind} stored-cycle member, self-parent or field below a cycle with an unmapped " \
-         'stored parent value, as the required bypass still applies to them' do
+      # A new record has no index (dcf_index nil); its effective parent comes
+      # from DependencyRules.effective_parent_id, so the new form and a failed
+      # create re-render show the warning for an acyclic parent.
+      it "is shown on the new #{kind} form and its failed create re-render for a required field with a parent" do
+        root = kind == :list ? dcf_list_field(values: %w[r1 r2]) : dcf_enum_field(names: %w[r1 r2])
+        format = kind == :list ? 'depending_list' : 'depending_enumeration'
+        attributes = { field_format: format, is_required: '1', parent_custom_field_id: root.id.to_s }
+
+        get '/custom_fields/new', params: { type: 'IssueCustomField', custom_field: attributes }
+        expect(response).to have_http_status(:ok)
+        expect(required_warnings(Nokogiri::HTML(response.body)).size).to eq(1)
+
+        expect do
+          post '/custom_fields', params: { type: 'IssueCustomField', custom_field: attributes.merge(name: '') }
+        end.not_to change(CustomField, :count)
+        expect(response).to have_http_status(:ok)
+        expect(required_warnings(Nokogiri::HTML(response.body)).size).to eq(1)
+      end
+
+      # Review round 2 (semantics-r2-1): a new field may pick a parent in or
+      # below a stored cycle (parent_candidates offers it, parent_errors skips
+      # new records); it has no effective parent, so core's required check
+      # applies after the create and the form does not claim otherwise.
+      it "is not shown on the new #{kind} form and its failed create re-render " \
+         'for a parent in or below a stored cycle' do
+        world = dcf_stored_cycles(kind)
+        format = kind == :list ? 'depending_list' : 'depending_enumeration'
+        [world.x, world.self_parent, world.child].each do |parent|
+          attributes = { field_format: format, is_required: '1', parent_custom_field_id: parent.id.to_s }
+
+          get '/custom_fields/new', params: { type: 'IssueCustomField', custom_field: attributes }
+          expect(response).to have_http_status(:ok)
+          page = Nokogiri::HTML(response.body)
+          expect(selected(page)).to eq([parent.id.to_s]), parent.name
+          expect(required_warnings(page)).to eq([]), parent.name
+
+          expect do
+            post '/custom_fields', params: { type: 'IssueCustomField', custom_field: attributes.merge(name: '') }
+          end.not_to change(CustomField, :count)
+          expect(response).to have_http_status(:ok)
+          page = Nokogiri::HTML(response.body)
+          expect(selected(page)).to eq([parent.id.to_s]), parent.name
+          expect(required_warnings(page)).to eq([]), parent.name
+        end
+      end
+
+      # Flipped back by WP-18 (WP-10 open input): "is not shown for a
+      # required #{kind} stored-cycle member, self-parent or field below a
+      # cycle", as compat-ui-r1-1 had it; semantics-r2-1 showed it while the
+      # required bypass kept the 0.0.16 parent read for the legacy script.
+      it "is not shown for a required #{kind} stored-cycle member, self-parent or field below a cycle" do
         world = dcf_stored_cycles(kind)
         x = make_required(world.x)
         self_parent = make_required(world.self_parent)
@@ -252,24 +298,26 @@ RSpec.describe 'Admin custom field form parent select and cycle warning', type: 
         below_self_parent = make_required(world.below_self_parent)
 
         page = edit_page(x)
-        expect(required_warnings(page).size).to eq(1)
+        expect(required_warnings(page)).to eq([])
         expect(warning_texts(page)).to eq([cycle_text([x.name, world.y.name])])
 
         page = edit_page(self_parent)
-        expect(required_warnings(page).size).to eq(1)
+        expect(required_warnings(page)).to eq([])
         expect(warning_texts(page)).to eq([cycle_text([self_parent.name])])
 
         [child, below_self_parent].each do |below|
           page = edit_page(below)
-          expect(required_warnings(page).size).to eq(1), below.name
+          expect(required_warnings(page)).to eq([]), below.name
           expect(cycle_warnings(page)).to eq([]), below.name
         end
       end
     end
 
-    # contracts-r2-1, compat-ui-r2-1: the warning walks no chain, so the edit
-    # page of a required field costs the same queries whatever the depth of
-    # its parent's stored chain (one FieldIndex.load per render).
+    # contracts-r2-1, compat-ui-r2-1: the edit page of a required field costs
+    # the same queries whatever the depth of its parent's stored chain (one
+    # FieldIndex.load per render). WP-18: the warning reads the effective
+    # parent from that index, which knows every depending field, so the
+    # chain walk adds no query.
     it 'renders a required field with the same number of queries for a parent chain of one and two depending levels' do
       root = dcf_list_field(values: %w[r1 r2])
       upper = dcf_list_field(format: 'depending_list', values: %w[u1 u2], parent: root)

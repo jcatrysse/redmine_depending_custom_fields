@@ -1,5 +1,6 @@
 <%# frozen_string_literal: true %>
 <%# One wizard entry per root (ContextMenuHook): the levels hold only fields the gate user (local user, default User.current) may edit on every selected issue (ParentDetector.wizard_levels). %>
+<%# Each field: an implicit label around its name and core's bulk select (no for, no new id: core ids repeat the issue form's on the issue page, UX-13). %>
 <% issue_ids = Array(issues).map(&:id) %>
 <% fields_hierarchy = RedmineDependingCustomFields::ParentDetector.wizard_levels(parent_field, issues, graph: graph, user: local_assigns.fetch(:user, User.current)) %>
 <% if fields_hierarchy.any? %>
@@ -24,9 +25,9 @@
       <% fields_hierarchy.each_with_index do |field_level, index| %>
         <div class="cf-col" data-level="<%= index %>">
           <% field_level.each do |cf| %>
-            <div class="cf-wizard-field">
-              <span title="<%= cf.description.presence %>" class="field-description"><%= h(cf.name) %></span>
-              <%= render_custom_field(cf, issues) %>
+            <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>">
+              <label class="cf-wizard-label"><span title="<%= cf.description.presence %>" class="field-description"><%= h(cf.name) %></span>
+              <%= render_custom_field(cf, issues) %></label>
             </div>
           <% end %>
         </div>

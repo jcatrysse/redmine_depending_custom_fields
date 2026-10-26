@@ -29,7 +29,8 @@ module DcfJsFixtures
   # Attributes that hold one id, and the kind of that id.
   ID_ATTRIBUTES = {
     'data-dcf-field' => CF, 'data-dcf-parent' => CF, 'data-dcf-locked-parent' => CF, 'data-parent-id' => CF,
-    'data-field-id' => CF, 'data-dcf-editor-field-id' => CF, 'data-dcf-editor-parent-id' => CF
+    'data-field-id' => CF, 'data-dcf-editor-field-id' => CF, 'data-dcf-editor-parent-id' => CF,
+    'data-dcf-wizard-field' => CF
   }.freeze
   # Attributes whose JSON may hold enumeration ids (numbers or digit strings).
   JSON_ATTRIBUTES = %w[data-dcf-map data-dcf-defaults data-dcf-parent-values data-dcf-stored
@@ -91,8 +92,8 @@ module DcfJsFixtures
 
   # Rewrites only known volatile positions: the authenticity token input and
   # the CSRF meta, state hashes, and the timestamp and digest of asset src
-  # and href attributes. Values, labels, option values and data-dcf JSON are
-  # never touched. Returns the serialized fragment.
+  # and href attributes (dcf_js_asset_url). Values, labels, option values and
+  # data-dcf JSON are never touched. Returns the serialized fragment.
   def dcf_js_normalize(html)
     fragment = html.is_a?(String) ? dcf_parse_fragment(html) : html
     fragment.css('input[name="authenticity_token"]').each { |input| input['value'] = TOKEN }
@@ -110,10 +111,32 @@ module DcfJsFixtures
       %w[src href].each do |name|
         next unless node[name]
 
-        node[name] = node[name].sub(/-[0-9a-f]{64}(?=\.\w+(\?|\z))/, '').sub(/\?\d+\z/, '')
+        node[name] = dcf_js_asset_url(node[name])
       end
+      dcf_js_order_link_attributes(node) if node.name == 'link'
     end
     dcf_serialize(fragment)
+  end
+
+  # WP-18: rel, href, then the other attributes by name (Rails 6.1 writes
+  # media before href, Rails 7 after it).
+  def dcf_js_order_link_attributes(node)
+    pairs = node.attribute_nodes.map { |attr| [attr.name, attr.value] }
+    order = %w[rel href]
+    sorted = pairs.sort_by { |name, _| [order.index(name) || order.size, name] }
+    return if sorted == pairs
+
+    pairs.map(&:first).each { |name| node.remove_attribute(name) }
+    sorted.each { |name, value| node[name] = value }
+  end
+
+  # WP-18 (head fixtures): an asset URL without its digest (64 hex, or the 8
+  # hex of Propshaft on 6.x/7.0) and its 5.1 asset id, and a plugin asset in
+  # the version-independent form /plugin_assets/<plugin>/<file> (5.1 adds
+  # javascripts/ or stylesheets/, Propshaft serves it below /assets).
+  def dcf_js_asset_url(url)
+    url = url.sub(/-(?:[0-9a-f]{64}|[0-9a-f]{8})(?=\.\w+(\?|\z))/, '').sub(/\?\d+\z/, '')
+    url.sub(%r{\A(?:/assets)?/plugin_assets/([^/]+)/(?:javascripts/|stylesheets/)?}, '/plugin_assets/\\1/')
   end
 
   # Raises LeakedId, naming the node path and attribute, when a number in an
@@ -216,34 +239,6 @@ module DcfJsFixtures
     dcf_js_guard!(normalized)
     normalized = "#{normalized}\n" unless normalized.end_with?("\n")
     dcf_js_write_or_compare(group, scenario, normalized, 'html')
-  end
-
-  # The same for the legacy head global of a scenario (MappingBuilder.build
-  # entries, read by test/js/legacy_ignores_contract.test.js until WP-18) as
-  # <group>/<scenario>.json. Field ids must be in the custom field range,
-  # digit strings in the enumeration range. Returns the JSON text.
-  def dcf_js_mapping_fixture(group, scenario, mapping)
-    dcf_js_guard_mapping!(mapping)
-    dcf_js_write_or_compare(group, scenario, "#{JSON.pretty_generate(mapping)}\n", 'json')
-  end
-
-  def dcf_js_guard_mapping!(mapping)
-    problems = []
-    mapping.each do |field_id, entry|
-      [field_id, entry[:parent_id]].each do |id|
-        problems << "#{id} (field #{field_id})" unless id.to_s.match?(/\A\d+\z/) && dcf_in_fixture_range?(id.to_i, CF)
-      end
-      [entry[:map], entry[:defaults]].each do |hash|
-        hash.each do |key, values|
-          ([key] + Array(values)).map(&:to_s).grep(/\A\d+\z/).each do |n|
-            problems << "#{n} in field #{field_id}" unless dcf_in_fixture_range?(n.to_i, ENUMERATION)
-          end
-        end
-      end
-    end
-    raise LeakedId, "leaked sequence ids: #{problems.join('; ')}" if problems.any?
-
-    true
   end
 
   # Writes (DCF_WRITE_JS_FIXTURES=1) or compares +text+; in compare mode the

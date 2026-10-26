@@ -143,9 +143,5 @@ module RedmineDependingCustomFields
       data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
       super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
     end
-
-    def after_custom_field_save(_custom_field)
-      Rails.cache.delete('depending_custom_fields/mapping')
-    end
   end
 end

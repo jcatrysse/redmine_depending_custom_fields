@@ -87,6 +87,18 @@ en:
   text_dcf_storage_usage: "%{label}: %{size} of %{limit} bytes used in the database (%{percent}%)."
   text_dcf_storage_admin_help: "For very large lists use the Key/Value list (depending) format, or widen the database columns (see the plugin README, section \"MySQL / MariaDB and large lists\")."
 
+  # Issue-form runtime texts (head meta tag dcf-i18n, ClientConfig::I18N)
+  text_dcf_hint_select_parent: "Select a value for %{parent} first."
+  text_dcf_hint_no_options: "No values are available for the selected %{parent}."
+  text_dcf_hint_no_options_generic: "No values are available for this field."
+  text_dcf_hint_legacy: "Stored values that do not match the selected %{parent} are kept until you change %{parent}: %{values}."
+  text_dcf_hint_legacy_locked: "Stored values that do not match %{parent} (not editable here) are kept unchanged: %{values}."
+  text_dcf_hint_legacy_generic: "Stored values that do not match the current selection are kept unchanged: %{values}."
+  text_dcf_hint_bulk_default: "Set to the default for the selected %{parent}. Choose (No change) to keep the current values."
+  text_dcf_hint_bulk_cleared: "Cleared because the current choice for %{parent} allows no values for this field."
+  text_dcf_live_message: "%{field}: %{message}"
+  text_dcf_hint_locked_refused: "A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused."
+
   # Model errors, shown after the field name
   activerecord:
     errors:

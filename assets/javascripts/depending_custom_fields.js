@@ -344,8 +344,7 @@
 
     // UD-37 carrier (WP-16): a change of the parent to the values V is refused
     // by the server when V differs from the stored baseline as a set and some
-    // stored child value is allowed by none of V. Hook point only: WP-18 adds
-    // the warning text (new key) and the wiring.
+    // stored child value is allowed by none of V.
     function lockedRefused(stored, allowedBy, values) {
       var next = normalizeList(values) || [];
       if (sameSet(next, normalizeList(stored) || [])) return false;
@@ -371,6 +370,8 @@
     if (window.DependingCustomFields && window.DependingCustomFields.__runtime) return;
 
     var CHILD_SEL = '[data-dcf-parent]';
+    var LOCKED_SEL = 'span[data-dcf-locked-parent]';
+    var ROOT_SEL = CHILD_SEL + ', ' + LOCKED_SEL;
     var ATTRS = ['data-dcf-field', 'data-dcf-parent', 'data-dcf-context', 'data-dcf-parent-name', 'data-dcf-map',
                  'data-dcf-defaults', 'data-dcf-hide', 'data-dcf-parent-values', 'data-dcf-parent-label',
                  'data-dcf-stored'];
@@ -385,13 +386,16 @@
       bulkDefault: 'Set to the default for the selected %{parent}. Choose (No change) to keep the current values.',
       bulkCleared: 'Cleared because the current choice for %{parent} allows no values for this field.',
       liveMessage: '%{field}: %{message}',
-      saveFailed: 'The change could not be saved.'
+      saveFailed: 'The change could not be saved.',
+      lockedRefused: 'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.'
     };
     var states = new WeakMap();
     var configs = new WeakMap();
     var memories = new WeakMap();
     var ownEvents = new WeakSet();
     var hiddenByUs = new WeakSet();
+    var lockedHints = new WeakMap();
+    var lockedEls = new WeakSet();
     var texts = null;
     var hintSeq = 0;
     var live = { el: null, timer: null, pending: new Map() };
@@ -484,7 +488,7 @@
       var values = isSelect(first) ? readValues(first) : els.filter(function (i) {
         return (i.type === 'radio' || i.type === 'checkbox') && i.checked;
       }).map(function (i) { return i.value; });
-      return { el: first, values: values };
+      return { el: first, values: values, els: els };
     }
 
     function textOf(node) { return node.textContent.replace(/\s+/g, ' ').trim(); }
@@ -663,9 +667,89 @@
 
     // The visible hint text of a control, or null; null too inside a hidden
     // element (a p hidden by hide_when_disabled, the server or a theme).
+    // A UD-37 warning element stands for itself.
     function shownHint(ctl) {
+      if (lockedEls.has(ctl)) return !ctl.hidden && !ctl.closest('[hidden]') ? ctl.textContent : null;
       var st = states.get(ctl);
       return st && st.hint && !st.hint.hidden && !ctl.closest('[hidden]') ? st.hint.textContent : null;
+    }
+
+    // UD-37 (WP-18): a carrier of a visible read-only dependent field (WP-16)
+    // names its parent; while any carrier of a parent predicts that the
+    // server refuses the parent's current values, one warning em sits under
+    // that parent control. Text only: no option is disabled, submit is never
+    // blocked and the carrier is never changed. Invalid carriers are ignored.
+    function lockedParent(scope, fieldId) {
+      return findParent(scope, 'issue[custom_field_values][' + fieldId + ']') ||
+        findParent(scope, 'project[custom_field_values][' + fieldId + ']');
+    }
+    function predictsRefusal(carrier, values) {
+      var stored = jsonAttr(carrier.getAttribute('data-dcf-locked-stored'));
+      var allowedBy = jsonAttr(carrier.getAttribute('data-dcf-locked-allowed-by'));
+      return Array.isArray(stored) && Array.isArray(allowedBy) && R.lockedRefused(stored, allowedBy, values);
+    }
+    function carriersOf(scope, fieldId) {
+      return Array.prototype.filter.call(scope.querySelectorAll(LOCKED_SEL), function (c) {
+        return c.getAttribute('data-dcf-locked-parent') === fieldId && scopeOf(c) === scope;
+      });
+    }
+    function refusedFor(scope, fieldId, values) {
+      return carriersOf(scope, fieldId).some(function (c) { return predictsRefusal(c, values); });
+    }
+    // The warning element when it newly appeared or changed, else null.
+    function setLockedWarning(parent, on) {
+      var el = parent.el;
+      var em = lockedHints.get(el);
+      if (!on && !em) return null;
+      if (!em) {
+        em = document.createElement('em');
+        em.className = 'info dcf-hint dcf-hint--locked';
+        em.id = 'dcf-hint-' + (++hintSeq);
+        em.hidden = true;
+        var box = el.closest('p, .cf-wizard-field');
+        var anchor = el.closest('.check_box_group') || el;
+        if (box) box.appendChild(em);
+        else anchor.parentNode.insertBefore(em, anchor.nextSibling);
+        lockedHints.set(el, em);
+        lockedEls.add(em);
+      }
+      var text = t('lockedRefused');
+      var appeared = on && (em.hidden || em.textContent !== text);
+      if (on && em.textContent !== text) em.textContent = text;
+      if (em.hidden !== !on) em.hidden = !on;
+      var targets = isSelect(el) ? [el] : parent.els.filter(function (i) { return i.type === 'radio' || i.type === 'checkbox'; });
+      targets.forEach(function (target) { setDescribedBy(target, em.id, on); });
+      return appeared ? em : null;
+    }
+    // Checks the carriers of the given field ids (each once per scope) and
+    // returns {ctl, announce} entries for the live region.
+    function checkLocked(pairs) {
+      var done = new Map();
+      var out = [];
+      pairs.forEach(function (pair) {
+        var scope = pair[0];
+        var fieldId = pair[1];
+        if (!done.has(scope)) done.set(scope, new Set());
+        if (done.get(scope).has(fieldId)) return;
+        done.get(scope).add(fieldId);
+        if (!carriersOf(scope, fieldId).length) return;
+        var parent = lockedParent(scope, fieldId);
+        if (!parent) return;
+        var refused = refusedFor(scope, fieldId, parent.values);
+        var em = setLockedWarning(parent, refused);
+        var shown = lockedHints.get(parent.el);
+        if (shown) out.push({ ctl: shown, announce: em ? em.textContent : null });
+      });
+      return out;
+    }
+    // The [scope, parent id] pairs of the carriers in or around +root+.
+    function carrierPairs(root) {
+      var list = [];
+      if (root.nodeType === 1 && root.matches(LOCKED_SEL)) list.push(root);
+      list = list.concat(Array.prototype.slice.call(root.querySelectorAll(LOCKED_SEL)));
+      return list.filter(function (c) { return c.isConnected; }).map(function (c) {
+        return [scopeOf(c), c.getAttribute('data-dcf-locked-parent')];
+      });
     }
 
     // D3: only the field's own p, only when it holds no control of another
@@ -731,7 +815,10 @@
       var legacyValues = d.values.filter(function (v) { return d.legacy.has(v); });
       var text = hintText(ctl, cfg, d.hint, legacyValues, parent && parent.el);
       var announce = setHint(ctl, st, text, d.hint === 'legacy');
-      setFieldHidden(ctl, d.hideField, cfg);
+      var after = readValues(ctl);
+      // D3 keeps a field shown while a UD-37 carrier predicts a refusal of
+      // its values, so the warning under it stays visible.
+      setFieldHidden(ctl, d.hideField && !refusedFor(scope, cfg.fieldId, after), cfg);
       if (ctl.getAttribute('data-dcf-state') !== d.state) ctl.setAttribute('data-dcf-state', d.state);
       // The class marks the bulk default only; a user change hides both bulk hints.
       setClass(ctl, 'dcf-auto-applied', d.hint === 'bulkDefault');
@@ -742,7 +829,6 @@
       st.autoHint = d.hint === 'bulkDefault' || d.hint === 'bulkCleared';
       // What a user pick needs to recompute the legacy state (recordPick).
       st.form = cfg.ctx === 'form' && d.filter ? { kind: ps.kind, allowedSize: allowed.size, eligible: d.eligible } : null;
-      var after = readValues(ctl);
       st.applied = after;
       st.followed = after;
       if (d.rememberKey !== null) {
@@ -889,15 +975,20 @@
       var ctl = childOf(target);
       // A re-dispatch: no pick, and its dependents already follow the values.
       if (ctl && !recordPick(ctl)) return;
-      // WP-18 hook point (UD-37): span[data-dcf-locked-parent] carriers of this
-      // field can be checked here with rules.lockedRefused (needs a new key).
       var scope = scopeOf(target);
       var visited = new Set();
       if (ctl) visited.add(ctl);
       var results = [];
       spread(scope, dependentsOf(scope, parsed.prefix, parsed.fieldId), visited, results);
+      // UD-37: the carriers of the changed field and of every field the
+      // cascade changed.
+      var pairs = [[scope, parsed.fieldId]].concat(changedPairs(results));
       dispatchAll(results);
-      announce(results);
+      announce(results.concat(checkLocked(pairs)));
+    }
+
+    function changedPairs(results) {
+      return results.filter(function (r) { return r.changed; }).map(function (r) { return [scopeOf(r.ctl), r.fieldId]; });
     }
 
     function onNativeChange(e) {
@@ -949,7 +1040,11 @@
         });
         spread(scope, queue, visited, results);
       });
+      var pairs = carrierPairs(root).concat(changedPairs(results));
       dispatchAll(results);
+      // UD-37: a page rendered with a refused parent value (a failed save,
+      // an AJAX re-render) shows the warning at once; nothing is announced.
+      checkLocked(pairs);
     }
 
     function publicInit(root) {
@@ -959,7 +1054,8 @@
     }
 
     // Gap 13: the added roots of one callback, deduplicated and without nested
-    // or detached ones, are initialised synchronously; no timer.
+    // or detached ones, are initialised synchronously; no timer. Roots with a
+    // UD-37 carrier count too.
     function onMutations(records) {
       var seen = new Set();
       var roots = [];
@@ -967,7 +1063,8 @@
         each(r.addedNodes, function (n) {
           if (n.nodeType !== 1 || seen.has(n)) return;
           seen.add(n);
-          if (n.matches(CHILD_SEL) || n.querySelector(CHILD_SEL)) roots.push(n);
+          // One selector, so one subtree walk per added node.
+          if (n.matches(ROOT_SEL) || n.querySelector(ROOT_SEL)) roots.push(n);
         });
       });
       roots.filter(function (n) {

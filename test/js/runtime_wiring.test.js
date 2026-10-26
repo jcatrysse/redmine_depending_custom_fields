@@ -190,21 +190,233 @@ test('X3 discovery is only [data-dcf-parent]: legacy data attributes and the car
   assert.deepEqual(pg.updates, []);
 });
 
-test('UD-37 carrier: never changed, no parent option disabled, no text added, submit never prevented', async () => {
+// UD-37 (WP-18): the warning for a parent change the server will refuse
+// because of a visible read-only dependent field (data-dcf-locked-* carrier,
+// WP-16). Text only, under the parent; never a disabled option, never a
+// blocked submit, the carrier never changed. Flipped by WP-18: the WP-17
+// test asserted that no text was added (hook point only).
+const LOCKED = 'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.';
+const lockedHint = (pg) => {
+  const el = parentOf(pg);
+  const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+  const shown = ids.map((id) => pg.document.getElementById(id)).filter((h) => h && !h.hidden);
+  return shown.map((h) => h.textContent);
+};
+
+const describedBy = (el) => (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+
+test('UD-37 carrier: a refused parent value shows the warning, an allowed or the stored one hides it; nothing else changes', async () => {
   const pg = await load('read_only_child_carrier');
   const carrier = pg.document.querySelector('span[data-dcf-locked-parent]');
   const before = carrier.outerHTML;
-  const text = pg.document.body.textContent;
-  for (const v of ['Gamma', '', 'Beta', 'Alpha']) {
+  const submits = [];
+  const add = pg.window.EventTarget.prototype.addEventListener;
+  pg.window.EventTarget.prototype.addEventListener = function (type, fn, o) {
+    if (type === 'submit') submits.push(type);
+    return add.call(this, type, fn, o);
+  };
+  assert.deepEqual(lockedHint(pg), [], 'the stored value at load');
+  assert.equal(pg.document.querySelectorAll('em.dcf-hint').length, 0, 'created lazily');
+  const seen = [];
+  for (const v of ['Gamma', '', 'Beta', 'Gamma', 'Alpha']) {
     fire.choose(pg.window, parentOf(pg), v);
+    seen.push([v, lockedHint(pg)]);
     assert.equal(carrier.outerHTML, before);
     assert.deepEqual(D.disabled(parentOf(pg)), []);
+    assert.equal(parentOf(pg).disabled, false);
   }
-  assert.equal(pg.document.body.textContent, text);
+  assert.deepEqual(seen, [['Gamma', [LOCKED]], ['', [LOCKED]], ['Beta', []], ['Gamma', [LOCKED]], ['Alpha', []]]);
+  const hints = pg.document.querySelectorAll('em.dcf-hint');
+  assert.equal(hints.length, 1, 'one warning element, reused');
+  assert.equal(hints[0].className, 'info dcf-hint dcf-hint--locked');
+  assert.equal(hints[0].parentNode, parentOf(pg).closest('p'));
+  assert.match(hints[0].id, /^dcf-hint-\d+$/);
+  assert.equal(hints[0].children.length, 0);
+  assert.equal(parentOf(pg).hasAttribute('aria-describedby'), false, 'removed while hidden');
   const ev = new pg.window.Event('submit', { bubbles: true, cancelable: true });
   pg.document.forms[0].dispatchEvent(ev);
   assert.equal(ev.defaultPrevented, false);
+  assert.deepEqual(submits, []);
+  assert.deepEqual(pg.updates, [], 'the parent is not a managed field');
   assert.equal(pg.window.DependingCustomFields.rules.lockedRefused(['Alpha'], [['Beta']], ['Gamma']), true);
+  assert.equal(pg.window.DependingCustomFields.t('lockedRefused'), LOCKED);
+});
+
+test('UD-37 carrier: the warning is announced politely after a user change, never at load', async () => {
+  const pg = await load('read_only_child_carrier');
+  assert.equal(pg.document.getElementById('dcf-live'), null);
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  pg.clock.tick(400);
+  assert.equal(pg.document.getElementById('dcf-live').textContent, `Parent field: ${LOCKED}`);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  fire.choose(pg.window, parentOf(pg), 'Gamma');
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  pg.clock.tick(400);
+  assert.equal(pg.document.getElementById('dcf-live').textContent, `Parent field: ${LOCKED}`, 'a hidden warning is dropped');
+});
+
+test('UD-37 carrier: a page rendered with a refused value shows the warning at load and after an observer re-render', async () => {
+  const refused = F.tweak('read_only_child_carrier', (doc) => F.selectValues(F.named(doc, PARENT), 'Gamma'));
+  const atLoad = await load(refused);
+  assert.deepEqual(lockedHint(atLoad), [LOCKED]);
+  assert.equal(atLoad.document.getElementById('dcf-live'), null, 'no announcement at load');
+
+  const pg = await load('read_only_child_carrier');
+  const inner = /<div id="all_attributes">([\s\S]*)<\/div>/.exec(refused)[1];
+  pg.document.getElementById('all_attributes').innerHTML = inner;
+  await D.microtask();
+  assert.deepEqual(lockedHint(pg), [LOCKED], 'updateIssueFrom keeps the in-flight value; the carrier its stored baseline');
+  pg.window.DependingCustomFields.init(pg.document);
+  assert.equal(pg.document.querySelectorAll('em.dcf-hint').length, 1, 'init is idempotent');
+});
+
+test('UD-37 carrier: a parent the cascade changes is checked too (P to C cleared to the carrier of G on C)', async () => {
+  const html = '<form id="issue-form"><div id="all_attributes">' +
+    '<p><label>P</label><select name="issue[custom_field_values][1]"><option value=""></option><option value="A" selected>A</option><option value="B">B</option></select></p>' +
+    '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
+    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{&quot;A&quot;:[&quot;c1&quot;],&quot;B&quot;:[&quot;c2&quot;]}" ' +
+    'data-dcf-parent-values="[&quot;A&quot;]" data-dcf-parent-label="P" data-dcf-stored="{&quot;child&quot;:[&quot;c1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
+    '<option value=""></option><option value="c1" selected>c1</option><option value="c2">c2</option></select></p>' +
+    '<span hidden="hidden" data-dcf-locked-parent="2" data-dcf-locked-stored="[&quot;c1&quot;]" data-dcf-locked-allowed-by="[[&quot;c1&quot;]]"></span>' +
+    '</div></form>';
+  const pg = await load(html);
+  const c = D.byName(pg.document, 'issue[custom_field_values][2]');
+  const shown = () => Array.from(c.closest('p').querySelectorAll('em.dcf-hint--locked')).filter((h) => !h.hidden).map((h) => h.textContent);
+  assert.deepEqual(shown(), []);
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'B');
+  assert.deepEqual(D.selected(c), ['']);
+  assert.deepEqual(shown(), [LOCKED]);
+  const em = c.closest('p').querySelector('em.dcf-hint--locked');
+  assert.ok(describedBy(c).includes(em.id), 'the warning is linked while shown');
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'A');
+  fire.choose(pg.window, c, 'c1');
+  assert.deepEqual(shown(), []);
+  assert.equal(describedBy(c).includes(em.id), false, 'and unlinked when hidden');
+});
+
+// semantics-r1-1: D3 would hide C's p (hide_when_disabled, nothing allowed),
+// and with it the warning; C stays shown while a carrier predicts a refusal.
+test('UD-37 carrier: a cascade parent with "Hide when no valid options" stays shown while its carrier predicts a refusal', async () => {
+  const html = '<form id="issue-form"><div id="all_attributes">' +
+    '<p><label>P</label><select name="issue[custom_field_values][1]"><option value=""></option><option value="A" selected>A</option><option value="Z">Z</option></select></p>' +
+    '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" data-dcf-hide="1" ' +
+    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{&quot;A&quot;:[&quot;c1&quot;]}" ' +
+    'data-dcf-parent-values="[&quot;A&quot;]" data-dcf-parent-label="P" data-dcf-stored="{&quot;child&quot;:[&quot;c1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
+    '<option value=""></option><option value="c1" selected>c1</option></select></p>' +
+    '<span hidden="hidden" data-dcf-locked-parent="2" data-dcf-locked-stored="[&quot;c1&quot;]" data-dcf-locked-allowed-by="[[&quot;c1&quot;]]"></span>' +
+    '</div></form>';
+  const pg = await load(html);
+  const c = D.byName(pg.document, 'issue[custom_field_values][2]');
+  const box = c.closest('p');
+  const shown = () => Array.from(box.querySelectorAll('em.dcf-hint--locked'))
+    .filter((h) => !h.hidden && !h.closest('[hidden]')).map((h) => h.textContent);
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'Z');
+  assert.deepEqual(D.selected(c), ['']);
+  assert.equal(box.hidden, false);
+  assert.deepEqual(shown(), [LOCKED]);
+  // Review round 2: C's own hint and the warning are both linked.
+  const own = box.querySelector('em.dcf-hint:not(.dcf-hint--locked)');
+  const em = box.querySelector('em.dcf-hint--locked');
+  assert.equal(own.hidden, false);
+  assert.equal(own.textContent, 'No values are available for the selected P.');
+  assert.deepEqual(describedBy(c).slice().sort(), [own.id, em.id].sort());
+  pg.clock.tick(400);
+  assert.ok(pg.document.getElementById('dcf-live').textContent.includes(`C: ${LOCKED}`));
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'A');
+  fire.choose(pg.window, c, 'c1');
+  assert.deepEqual(shown(), []);
+  assert.equal(describedBy(c).includes(em.id), false);
+  assert.equal(box.hidden, false);
+  assert.deepEqual(pg.errors, []);
+});
+
+// Review round 2 (tests-r2-7): radio and check box parents. One warning in
+// the parent's p (not inside the group), linked from every choice input,
+// never from the hidden '' input; nothing disabled.
+test('UD-37 carrier: radio and check box parents link every choice input to one warning in their p', async () => {
+  const carrier = '<span hidden="hidden" data-dcf-locked-parent="1" data-dcf-locked-stored="[&quot;c1&quot;]" ' +
+    'data-dcf-locked-allowed-by="[[&quot;c1&quot;]]"></span>';
+  const radio = '<span class="check_box_group">' +
+    '<label><input type="radio" name="issue[custom_field_values][1]" value=""> (none)</label>' +
+    '<label><input type="radio" name="issue[custom_field_values][1]" value="c1" checked="checked"> c1</label>' +
+    '<label><input type="radio" name="issue[custom_field_values][1]" value="c2"> c2</label></span>';
+  const boxes = '<span class="check_box_group">' +
+    '<label><input type="checkbox" name="issue[custom_field_values][1][]" value="c1" checked="checked"> c1</label>' +
+    '<label><input type="checkbox" name="issue[custom_field_values][1][]" value="c2"> c2</label>' +
+    '<input type="hidden" name="issue[custom_field_values][1][]" value=""></span>';
+  for (const [group, refused, stored] of [[radio, 'c2', 'c1'], [boxes, ['c2'], ['c1']]]) {
+    const pg = await load(`<form id="issue-form"><div id="all_attributes"><p><label>P</label>${group}</p>${carrier}</div></form>`);
+    const p = pg.document.querySelector('#all_attributes > p');
+    const inputs = Array.from(p.querySelectorAll('input')).filter((i) => i.type !== 'hidden');
+    const hidden = p.querySelector('input[type="hidden"]');
+    fire.choose(pg.window, inputs[0], refused);
+    const ems = p.querySelectorAll('em.dcf-hint--locked');
+    assert.equal(ems.length, 1);
+    const em = ems[0];
+    assert.equal(em.parentNode, p, 'in the p, not inside the group');
+    assert.deepEqual([em.hidden, em.textContent], [false, LOCKED]);
+    inputs.forEach((i) => assert.deepEqual(describedBy(i), [em.id], i.value));
+    if (hidden) assert.equal(hidden.hasAttribute('aria-describedby'), false);
+    assert.deepEqual(D.disabled(p.querySelector('.check_box_group')), []);
+    fire.choose(pg.window, inputs[0], stored);
+    assert.equal(em.hidden, true);
+    inputs.forEach((i) => assert.equal(i.hasAttribute('aria-describedby'), false, i.value));
+    assert.deepEqual(pg.errors, []);
+  }
+});
+
+// tests-r1-3: ReadOnlyCarrierHook also renders carriers in the project form.
+test('UD-37 carrier: the project settings form warns too', async () => {
+  const html = '<form id="edit_project_1" class="edit_project"><div class="box tabular">' +
+    '<p><label>Hardware</label><select name="project[custom_field_values][1]"><option value=""></option><option value="A" selected>A</option><option value="B">B</option></select></p>' +
+    '<span hidden="hidden" data-dcf-locked-parent="1" data-dcf-locked-stored="[&quot;A&quot;]" data-dcf-locked-allowed-by="[[&quot;A&quot;]]"></span>' +
+    '</div></form>';
+  const pg = await load(html);
+  const p = D.byName(pg.document, 'project[custom_field_values][1]');
+  const shown = () => Array.from(p.closest('p').querySelectorAll('em.dcf-hint--locked')).filter((h) => !h.hidden).map((h) => h.textContent);
+  assert.deepEqual(shown(), []);
+  fire.choose(pg.window, p, 'B');
+  assert.deepEqual(shown(), [LOCKED]);
+  assert.deepEqual(D.disabled(p), []);
+  pg.clock.tick(400);
+  assert.equal(pg.document.getElementById('dcf-live').textContent, `Hardware: ${LOCKED}`);
+  fire.choose(pg.window, p, 'A');
+  assert.deepEqual(shown(), []);
+  assert.deepEqual(pg.errors, []);
+});
+
+test('UD-37 carrier: multi parents compare as sets; several carriers give one warning; invalid carriers are ignored', async () => {
+  const carrier = (stored, allowed) => `<span hidden="hidden" data-dcf-locked-parent="1" data-dcf-locked-stored="${stored}" data-dcf-locked-allowed-by="${allowed}"></span>`;
+  const q = (o) => JSON.stringify(o).replace(/"/g, '&quot;');
+  const page = (extra) => '<form id="issue-form"><div id="all_attributes"><p><label>P</label>' +
+    '<select multiple name="issue[custom_field_values][1][]"><option value="A" selected>A</option><option value="B" selected>B</option><option value="C">C</option></select>' +
+    '<input type="hidden" name="issue[custom_field_values][1][]" value=""></p>' + extra + '</div></form>';
+  const pg = await load(page(carrier(q(['A', 'B']), q([['B', 'C']])) + carrier(q(['A', 'B']), q([['A']]))));
+  const p = D.byName(pg.document, 'issue[custom_field_values][1]');
+  const shown = () => Array.from(pg.document.querySelectorAll('em.dcf-hint--locked')).filter((h) => !h.hidden).map((h) => h.textContent);
+  fire.choose(pg.window, p, ['B', 'A']);
+  assert.deepEqual(shown(), [], 'the same set');
+  fire.choose(pg.window, p, ['A', 'C']);
+  assert.deepEqual(shown(), [], 'every entry still holds one value');
+  fire.choose(pg.window, p, ['B']);
+  assert.deepEqual(shown(), [LOCKED], 'the second carrier refuses; one warning for any number');
+  fire.choose(pg.window, p, ['C']);
+  assert.deepEqual(shown(), [LOCKED]);
+  for (const bad of [carrier('x[', q([['A']])), carrier(q(['A']), '{'), carrier('&quot;A&quot;', q([['A']]))]) {
+    const b = await load(page(bad));
+    fire.choose(b.window, D.byName(b.document, 'issue[custom_field_values][1]'), ['C']);
+    assert.equal(b.document.querySelectorAll('em.dcf-hint').length, 0, bad);
+    assert.deepEqual(b.errors, []);
+  }
+});
+
+test('UD-37 carrier: a role-invisible child leaves no carrier, so no parent value ever shows anything', async () => {
+  const pg = await load('role_invisible_child');
+  const before = pg.document.body.innerHTML;
+  for (const v of ['Gamma', '', 'Beta', 'Alpha']) fire.choose(pg.window, parentOf(pg), v);
+  pg.clock.tick(1000);
+  assert.equal(pg.document.body.innerHTML, before);
+  assert.equal(pg.document.getElementById('dcf-live'), null);
 });
 
 test('X6 the observer is childList only and filtered: attribute and style changes and plain rows cause no init', async () => {
@@ -394,14 +606,19 @@ test('i18n: English fallbacks without a meta tag, the meta texts when given, fal
   assert.equal(D.hintText(child(nested)), 'Select a value for Parent field first.', 'only the flat dcf-i18n object counts');
 });
 
-test('i18n: the 10 English fallbacks equal the en texts of the registry and en.yml error_save_failed', async () => {
+// WP-18: 11 keys (UD-37 adds lockedRefused); the key set equals the meta
+// keys of the en head fixture (ClientConfig::I18N).
+test('i18n: the 11 English fallbacks equal the en texts of the registry and en.yml error_save_failed', async () => {
   const keys = {
     selectParent: 'text_dcf_hint_select_parent', noOptions: 'text_dcf_hint_no_options',
     noOptionsGeneric: 'text_dcf_hint_no_options_generic', legacy: 'text_dcf_hint_legacy',
     legacyLocked: 'text_dcf_hint_legacy_locked', legacyGeneric: 'text_dcf_hint_legacy_generic',
     bulkDefault: 'text_dcf_hint_bulk_default', bulkCleared: 'text_dcf_hint_bulk_cleared',
-    liveMessage: 'text_dcf_live_message'
+    liveMessage: 'text_dcf_live_message', lockedRefused: 'text_dcf_hint_locked_refused'
   };
+  const head = fs.readFileSync(path.join(ROOT, 'test', 'js', 'fixtures', 'head', 'en.html'), 'utf8');
+  const meta = new JSDOM(`<!doctype html><html><head>${head}</head></html>`).window.document.querySelector('meta[name="dcf-i18n"]');
+  assert.deepEqual(Object.keys(JSON.parse(meta.getAttribute('content'))).sort(), Object.keys(keys).concat('saveFailed').sort());
   const registry = fs.readFileSync(path.join(ROOT, 'docs', 'specs', 'large_lists_i18n_registry.md'), 'utf8');
   const en = {};
   registry.split('\n').forEach((line) => {

@@ -15,10 +15,13 @@ RSpec.describe 'Format singleton state' do
   # WP-09b: the non-editable check is module_function too, and its Issue and
   # Project patches keep nothing on the records. WP-16 adds ClientData
   # (module_function) and the read-only carrier hook (a singleton listener).
+  # WP-18 adds ClientConfig (module_function) and the head hook (a singleton
+  # listener).
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
                dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
                patches/issue_validation_patch.rb patches/project_validation_patch.rb
-               client_data.rb hooks/read_only_carrier_hook.rb]
+               client_data.rb hooks/read_only_carrier_hook.rb
+               client_config.rb hooks/view_layouts_base_html_head_hook.rb]
             .map { |name| File.join(lib_dir, name) }
 
   # Names of the instance, class and global variables the source assigns
@@ -107,7 +110,6 @@ RSpec.describe 'Format singleton state' do
       fmt.storage_preview(child, child.format_store)
       fmt.normalized_store_pairs(child)
       fmt.before_custom_field_save(child)
-      fmt.after_custom_field_save(child)
       fmt.query_filter_values(child, IssueQuery.new(name: '_', project: project))
       view = ActionView::Base.empty
       fmt.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", cfv)
@@ -141,6 +143,13 @@ RSpec.describe 'Format singleton state' do
       expect(RedmineDependingCustomFields::DependencyRules.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::NonEditableDependencies.instance_variables).to eq([])
       expect(RedmineDependingCustomFields::ClientData.instance_variables).to eq([])
+      I18n.with_locale(:de) { RedmineDependingCustomFields::ClientConfig.payload }
+      listener = RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook.instance
+      listener.view_layouts_base_html_head({})
+      known = listener.instance_variables
+      I18n.with_locale(:fr) { listener.view_layouts_base_html_head({}) }
+      expect(RedmineDependingCustomFields::ClientConfig.instance_variables).to eq([])
+      expect(listener.instance_variables).to eq(known)
     end
 
     [:list, :enumeration].each do |kind|

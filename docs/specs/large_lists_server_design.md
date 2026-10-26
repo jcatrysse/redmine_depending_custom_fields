@@ -70,7 +70,7 @@ Core facts used:
 
 | Issue(s) | Change in this revision |
 |---|---|
-| R1, R2, QA-01, UX-02, BC-01, SP-04, SP-05 | One canonical contract owned here (section 2): context `form/bulk`; `data-dcf-parent-values` gated by parent visibility; parent attributes only on managed fields (effective parent: valid, acyclic, visible); unpruned map; meta `dcf-i18n` (flat object with the frontend's 10 runtime keys); one UMD runtime file, no separate rules script (compat section 2.4 "Rules asset"). |
+| R1, R2, QA-01, UX-02, BC-01, SP-04, SP-05 | One canonical contract owned here (section 2): context `form/bulk`; `data-dcf-parent-values` gated by parent visibility; parent attributes only on managed fields (effective parent: valid, acyclic, visible); unpruned map; meta `dcf-i18n` (flat object with the keys of `ClientConfig::I18N`, 11 since UD-37); one UMD runtime file, no separate rules script (compat section 2.4 "Rules asset"). |
 | R6, FD-22 | Radio blank sentinel added. `__none__` with `data-dcf-required-none` for required managed children in bulk (UD-10). |
 | R13 | One fixture mechanism (generated markup) with fixed per-kind id ranges, a normalizer and a sequence-bump self check, checked under two seeds (compat section 2.4 "Fixture ids"). The JSON contract fixture is deleted. |
 | R14, QA-06, BC-06 | D1 is per value. |
@@ -166,10 +166,10 @@ Guarantees, asserted by specs:
 
 ```erb
 <form class="cf-wizard-form" action="<%= depending_custom_fields_save_path %>" method="post"> ...hidden ids[], issue_ids, authenticity_token unchanged...
-  <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>"> <%= bulk tag (context bulk) %> </div>
+  <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>"><label class="cf-wizard-label"><span class="field-description" title="..">name</span> <%= bulk tag (context bulk) %></label></div>
 ```
 
-The client scope is `closest('form')`. The regex-injected `data-field-id` is removed (0.1.0 (M2), WP-18).
+The client scope is `closest('form')`. The regex-injected `data-field-id` is removed (0.1.0 (M2), WP-18). The label is implicit (UX-13): no `for`, no new id.
 
 ### 2.4 Head hook output
 
@@ -183,7 +183,7 @@ The head hook has no DB access and no Rails.cache. It ships in 0.1.0 (M2) (WP-18
 [editor assets: dcf_dependency_editor_model.js, dcf_dependency_editor.js, dcf_dependency_editor.css]
 ```
 
-Consolidated with compat section 2.4: there is no separate `depending_custom_fields_rules.js`. The rules live in the one UMD runtime `depending_custom_fields.js` ("Rules asset"). The meta tag is `<meta name="dcf-i18n">` with a flat object of the frontend's 10 runtime keys ("i18n meta tag"; the frontend owns the key list, the server emits it).
+Consolidated with compat section 2.4: there is no separate `depending_custom_fields_rules.js`. The rules live in the one UMD runtime `depending_custom_fields.js` ("Rules asset"). The meta tag is `<meta name="dcf-i18n">` with a flat object of the frontend's runtime keys ("i18n meta tag"; the frontend owns the key list, the server emits it): 10, and 11 since UD-37 (`lockedRefused`, WP-18).
 
 - The editor assets are added (0.1.0 (M3), WP-25) only when `context[:controller].class.name` is one of `CustomFieldsController` or `ProjectCustomFieldConfigurationController`. Class names are compared as strings, so no constant is loaded. The hook adds them through `ClientConfig.editor_asset_tags(view)`, in the order model JS, editor JS, CSS (editor design 5.1, AD-15).
 - The editor assets are included **only** by this hook. Project views must not include them again through `content_for`. Page-specific files such as `dcf_config.css` and `dcf_value_reorder.js` stay under project-area `content_for` (P-D11).
@@ -202,7 +202,8 @@ module RedmineDependingCustomFields
              'bulkDefault' => :text_dcf_hint_bulk_default,
              'bulkCleared' => :text_dcf_hint_bulk_cleared,
              'liveMessage' => :text_dcf_live_message,
-             'saveFailed' => :error_save_failed }.freeze
+             'saveFailed' => :error_save_failed,
+             'lockedRefused' => :text_dcf_hint_locked_refused }.freeze # UD-37 (WP-18)
     EDITOR_CONTROLLERS = %w[CustomFieldsController ProjectCustomFieldConfigurationController].freeze
     module_function
     def payload
@@ -936,6 +937,7 @@ Keys rendered by the server head hook (`ClientConfig::I18N`, 2.4) but owned by t
 - `text_dcf_hint_bulk_default`;
 - `text_dcf_hint_bulk_cleared`;
 - `text_dcf_live_message`;
+- `text_dcf_hint_locked_refused` (UD-37: the warning for a parent change the server will refuse because of a visible read-only dependent field);
 - the existing `error_save_failed` (reused, not redefined).
 
 Revision-1 keys are withdrawn:

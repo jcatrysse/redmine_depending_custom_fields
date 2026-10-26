@@ -17,13 +17,19 @@ RSpec.describe ContextMenuWizardHelper do
     let(:cf) { build_custom_field(id: 5, default_value: 'foo') }
     let(:issues) { [instance_double(Issue)] }
 
-    it 'injects the data-field-id attribute into the select tag' do
+    # Flipped by WP-18: was 'injects the data-field-id attribute into the
+    # select tag' with cf.default_value as the value. UD-11: every wizard
+    # field opens on '(no change)' (value nil); the core bulk tag (with the
+    # plugin's bulk_edit_tag data) is returned as it is.
+    it 'returns the core bulk tag for a nil value, unchanged and without data-field-id' do
+      tag = ActiveSupport::SafeBuffer.new("<select name='cf'></select>")
       allow(helper_object).to receive(:custom_field_tag_for_bulk_edit)
-        .with('issue', cf, issues, cf.default_value)
-        .and_return("<select name='cf'></select>")
+        .with('issue', cf, issues, nil)
+        .and_return(tag)
 
       html = helper_object.render_custom_field(cf, issues)
-      expect(html).to include("data-field-id='5'")
+      expect(html).to equal(tag)
+      expect(html).not_to include('data-field-id')
     end
   end
 end

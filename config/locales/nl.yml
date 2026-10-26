@@ -87,6 +87,18 @@ nl:
   text_dcf_storage_usage: "%{label}: %{size} van %{limit} bytes gebruikt in de database (%{percent}%)."
   text_dcf_storage_admin_help: "Gebruik voor zeer grote lijsten het formaat Sleutel/Waarde-lijst (afhankelijk) of vergroot de databasekolommen (zie de README van de plugin, sectie \"MySQL / MariaDB and large lists\")."
 
+  # Teksten van de formulierlogica (metatag dcf-i18n in de paginakop, ClientConfig::I18N)
+  text_dcf_hint_select_parent: "Kies eerst een waarde voor %{parent}."
+  text_dcf_hint_no_options: "Er zijn geen waarden beschikbaar voor de gekozen waarde van %{parent}."
+  text_dcf_hint_no_options_generic: "Er zijn geen waarden beschikbaar voor dit veld."
+  text_dcf_hint_legacy: "Opgeslagen waarden die niet passen bij de gekozen waarde van %{parent}, blijven behouden tot u %{parent} wijzigt: %{values}."
+  text_dcf_hint_legacy_locked: "Opgeslagen waarden die niet passen bij %{parent} (hier niet te wijzigen), blijven ongewijzigd behouden: %{values}."
+  text_dcf_hint_legacy_generic: "Opgeslagen waarden die niet passen bij de huidige keuze, blijven ongewijzigd behouden: %{values}."
+  text_dcf_hint_bulk_default: "Ingesteld op de standaardwaarde voor de gekozen waarde van %{parent}. Kies (Geen wijziging) om de huidige waarden te behouden."
+  text_dcf_hint_bulk_cleared: "Leeggemaakt omdat de huidige keuze voor %{parent} geen waarden voor dit veld toestaat."
+  text_dcf_live_message: "%{field}: %{message}"
+  text_dcf_hint_locked_refused: "Een afhankelijk veld dat u niet kunt bewerken, heeft een waarde die deze keuze niet toestaat; opslaan wordt geweigerd."
+
   # Modelfouten, getoond na de veldnaam
   activerecord:
     errors:

@@ -68,8 +68,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
 
   describe 'structure' do
     # WP-16: the module adds edit_tag and bulk_edit_tag (the data contract);
-    # super still reaches core List for both formats.
-    shared = [:after_custom_field_save, :before_custom_field_save, :bulk_edit_tag, :edit_tag, :normalized_store_pairs,
+    # super still reaches core List for both formats. WP-18 (UD-14):
+    # after_custom_field_save is deleted with the cache.
+    shared = [:before_custom_field_save, :bulk_edit_tag, :edit_tag, :normalized_store_pairs,
               :possible_values_options, :storage_preview, :validate_custom_field, :validate_custom_value,
               :value_from_keyword]
     formats = {
@@ -147,7 +148,8 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     end
 
     # WP-16: ten shared methods (edit_tag and bulk_edit_tag added; was eight).
-    it 'has exactly the ten shared public methods and only dcf_ private helpers' do
+    # Flipped by WP-18: nine (after_custom_field_save deleted; was ten).
+    it 'has exactly the nine shared public methods and only dcf_ private helpers' do
       expect(described_class.public_instance_methods(false).sort).to eq(shared)
       expect(described_class.private_instance_methods(false).map(&:to_s)).to all(start_with('dcf_'))
     end
@@ -1279,14 +1281,16 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     end
   end
 
-  describe '#after_custom_field_save' do
+  # Flipped by WP-18 (UD-14, server design 7.1): was '#after_custom_field_save
+  # deletes the mapping cache key on save'; the hook and the cache are gone.
+  describe 'no after_custom_field_save' do
     [:list, :enumeration].each do |kind|
-      it "deletes the mapping cache key on save of a depending #{kind}" do
+      it "saves a depending #{kind} without the hook and without touching the cache" do
         child = build_kit(kind).last
-        allow(Rails.cache).to receive(:delete).and_call_original
+        expect(child.format).not_to respond_to(:after_custom_field_save)
+        expect(Rails.cache).not_to receive(:delete)
         expect(Rails.cache).not_to receive(:delete_matched)
         CustomField.find(child.id).update!(name: "#{child.name} renamed")
-        expect(Rails.cache).to have_received(:delete).with('depending_custom_fields/mapping')
       end
     end
   end

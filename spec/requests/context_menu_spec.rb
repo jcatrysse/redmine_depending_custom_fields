@@ -333,8 +333,11 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
     end
 
     # Core loads the selection without ORDER BY: ids are compared as sets and
-    # the carriers with each other.
-    it 'keeps the markup the legacy wizard script reads' do
+    # the carriers with each other. Flipped by WP-18: was 'keeps the markup
+    # the legacy wizard script reads' with a data-field-id on the select and
+    # the span beside it; now data-dcf-wizard-field wraps an implicit label
+    # (UX-13) and the select opens on '(no change)' (UD-11).
+    it 'keeps the entry and form markup and wraps each field in an implicit label' do
       issues = [issue_on(tracker), issue_on(tracker)]
       ids = issues.map { |i| i.id.to_s }
       menu = open_menu(issues)
@@ -350,9 +353,15 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(form.at_css("input[type=hidden][name='issue_ids']")['value']).to eq(joined)
       expect(form.at_css("input[type=hidden][name='authenticity_token']")).not_to be_nil
       expect(form.css('div.cf-cols > div.cf-col').map { |col| col['data-level'] }).to eq(%w[0 1])
-      field = form.at_css('div.cf-col div.cf-wizard-field')
-      expect(field.at_css('span.field-description').text).to eq(parent.name)
-      expect(field.at_css('select')['data-field-id']).to eq(parent.id.to_s)
+      fields = form.css('div.cf-col > div.cf-wizard-field')
+      expect(fields.map { |f| f['data-dcf-wizard-field'] }).to eq([parent.id.to_s, child.id.to_s])
+      field = fields.first
+      label = field.at_css('> label.cf-wizard-label')
+      expect(label['for']).to be_nil
+      expect(label.at_css('> span.field-description').text).to eq(parent.name)
+      expect(label.at_css('> select')['name']).to eq("issue[custom_field_values][#{parent.id}]")
+      expect(form.css('[data-field-id]')).to be_empty
+      expect(form.css('option[selected]')).to be_empty
     end
 
     it 'escapes field names and descriptions exactly once' do
@@ -456,7 +465,8 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
   describe 'cost' do
     before { as(dcf_admin) }
 
-    it 'calls neither Rails.cache nor MappingBuilder nor FieldIndex.load' do
+    # WP-18: MappingBuilder is deleted (its not_to receive line is gone).
+    it 'calls neither Rails.cache nor FieldIndex.load' do
       parent = dcf_list_field
       child = depending(parent)
       offstage = depending(dcf_list_field)
@@ -468,7 +478,6 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
           original.call(*args, &block)
         end
       end
-      expect(RedmineDependingCustomFields::MappingBuilder).not_to receive(:build)
       expect(RedmineDependingCustomFields::FieldIndex).not_to receive(:load)
 
       menu = open_menu(issues)
@@ -587,7 +596,26 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       end
       expect(File).not_to exist(File.join(root, 'app/services/redmine_depending_custom_fields/parent_menu_builder.rb'))
       expect(defined?(RedmineDependingCustomFields::ParentMenuBuilder)).to be_nil
-      expect(RedmineDependingCustomFields::MappingBuilder).to respond_to(:build)
+      # Flipped by WP-18 (UD-14): MappingBuilder is deleted too (was
+      # expected to respond to build).
+      expect(File).not_to exist(File.join(root, 'lib/redmine_depending_custom_fields/mapping_builder.rb'))
+      expect(defined?(RedmineDependingCustomFields::MappingBuilder)).to be_nil
+    end
+
+    # WP-18 (server design 7.1, quality G3): no cache, no inline script and
+    # no removed global anywhere in app or lib; the stale cache key is never
+    # read, written or deleted.
+    it 'has no Rails.cache, inline script or removed global in app and lib' do
+      files = Dir[File.join(root, '{app,lib}', '**', '*.{rb,erb}')]
+      needles = Regexp.union('Rails.cache', 'javascript_tag', '<script', 'content_tag(:script', 'tag.script',
+                             'depending_custom_fields/mapping', 'DependingCustomFieldData', 'ContextMenuWizardConfig',
+                             'MappingBuilder', 'after_custom_field_save')
+      offending = files.select { |path| File.read(path).match?(needles) }
+      expect(offending.map { |path| path.delete_prefix("#{root}/") }).to eq([])
+      assets = Dir[File.join(root, 'assets', 'javascripts', '*.js')].map { |path| File.basename(path) }
+      expect(assets).not_to include('depending_custom_fields_legacy.js')
+      wizard = File.read(File.join(root, 'assets', 'javascripts', 'context_menu_wizard.js'))
+      expect(wizard).not_to match(/DependingCustomFieldData|ContextMenuWizardConfig|basePath|requestSetup/)
     end
 
     it 'keeps CustomFieldVisibility loaded, with no caller in app or lib' do

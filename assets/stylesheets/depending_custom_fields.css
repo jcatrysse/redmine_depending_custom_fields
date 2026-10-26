@@ -23,19 +23,24 @@
 }
 .depending-child { margin-left: 20px; }
 
-.cf-wizard-spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid #ccc;
-  border-top-color: #000;
-  border-radius: 50%;
-  animation: cf-spin 1s linear infinite;
-  margin: 10px auto;
+/* Issue-form runtime (frontend design 8). Core's em.info and
+   .check_box_group label set display:block, which beats [hidden]. */
+em.info.dcf-hint[hidden] { display: none; }
+.check_box_group label[hidden] { display: none; }
+em.info.dcf-hint.dcf-hint--legacy { color: #9a5b00; }
+em.info.dcf-hint.dcf-hint--locked { color: #a33; }
+p.dcf-hidden { display: none !important; } /* themes may set p display */
+select[data-dcf-state="legacy"],
+.check_box_group[data-dcf-state="legacy"] {
+  outline: 1px dashed #c98a00;
+  outline-offset: 1px;
 }
-
-@keyframes cf-spin {
-  to { transform: rotate(360deg); }
+select.dcf-auto-applied {
+  outline: 1px dashed #3e5b76;
+  outline-offset: 1px;
 }
+option.dcf-legacy-option,
+label.dcf-legacy-option { font-style: italic; }
 
 /* context menu wizard panel */
 .cf-wizard {
@@ -55,12 +60,6 @@
 
 #cf-wizard-container {
   position: absolute;
-}
-
-#context-menu.cf-has-wizard ul.cf-wizard {
-  width: auto !important;
-  min-width: unset !important;
-  max-width: none !important;
 }
 
 .context-menu.cf-wizard {
@@ -93,6 +92,19 @@
   display: block;
   font-weight: bold;
   margin-bottom: 2px;
+}
+
+/* WP-18: an implicit label wraps the field name and its select (UX-13). */
+.cf-wizard .cf-wizard-label {
+  display: flex;
+  flex-direction: column;
+  font-weight: normal;
+}
+
+.cf-wizard em.dcf-hint {
+  display: block;
+  max-width: 260px;
+  white-space: normal;
 }
 
 .cf-wizard select {

@@ -4,9 +4,9 @@ require_relative '../rails_helper'
 require 'timeout'
 
 # Opt-in (DCF_SYSTEM_SPECS=1). WP-15: the context menu wizard rendered from
-# the selection graph opens and saves with the legacy wizard script, which
-# still posts to basePath + '/depending_custom_fields/save' (the form action
-# of the named route points to the same URL) until WP-18.
+# the selection graph opens and saves. WP-18: the wizard script posts to the
+# form action (the named route) and the new runtime filters the fields; every
+# field opens on '(no change)' (UD-11), this example picks both values.
 RSpec.describe 'Context menu wizard', type: :system do
   fixtures :users
 

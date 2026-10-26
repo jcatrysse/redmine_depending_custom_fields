@@ -46,12 +46,12 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
     node.attribute_nodes.map(&:name).grep(/\Adata-dcf-/).sort
   end
 
-  # The page without the pre-existing head script that carries every
-  # mapping until WP-18 (FM-20b); nothing else may leak.
+  # The whole page (FM-20b). WP-18: the head script that carried every
+  # mapping is gone (SD-15), so nothing is stripped any more; was the page
+  # without the window.DependingCustomFieldData script.
   def body_without_mapping
-    page = Nokogiri::HTML(response.body)
-    page.css('script').select { |s| s.text.include?('window.DependingCustomFieldData') }.each(&:remove)
-    page.to_html
+    expect(response.body).not_to include('window.DependingCustomFieldData')
+    response.body
   end
 
   def priority
@@ -185,7 +185,9 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       wizard_select = template.at_css("select[data-dcf-field='#{visible.id}']")
       expect(wizard_select['data-dcf-context']).to eq('bulk')
       expect(wizard_select['data-dcf-parent']).to eq(root.id.to_s)
-      expect(wizard_select['data-field-id']).to eq(visible.id.to_s)
+      # WP-18: no data-field-id any more (was the field id).
+      expect(wizard_select['data-field-id']).to be_nil
+      expect(wizard_select.ancestors('[data-dcf-wizard-field]').first['data-dcf-wizard-field']).to eq(visible.id.to_s)
       expect(response.body).not_to include("#{tag}H")
       expect(response.body).not_to include("#{tag}Hidden")
       expect(response.body).not_to include("[#{hidden.id}]")
@@ -194,11 +196,12 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       as(dcf_admin)
       post '/issues/context_menu', params: { ids: [issue.id] }
       template = doc.at_css("template#cf-wizard-#{root.id}")
-      expect(response.body.scan("data-field-id='#{visible.id}'").size + response.body.scan("data-field-id=\"#{visible.id}\"").size)
-        .to eq(1)
+      # WP-18: one wrapper per field instead of one data-field-id per select.
+      expect(template.css("[data-dcf-wizard-field='#{visible.id}']").size).to eq(1)
+      expect(response.body).not_to include('data-field-id')
       below_select = template.at_css("select[data-dcf-field='#{below.id}']")
       expect(JSON.parse(below_select['data-dcf-map'])).to eq("#{tag}H1" => %W[#{tag}B1])
-      expect(below_select['data-field-id']).to eq(below.id.to_s)
+      expect(below_select['data-field-id']).to be_nil
       expect(template.css('select[data-dcf-map]').size).to eq(3)
     end
 
@@ -279,9 +282,12 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(response.body).not_to include("#{secret}P")
     end
 
-    # QA-23: registration shows required fields even when they are hidden;
-    # an anonymous visitor cannot see a parent with visible false (base rule).
-    it 'emits no parent data on the registration form for a parent hidden from non-admins' do
+    # QA-23, UD-39 (WP-18): registration shows a user field as a control
+    # when the setting shows editable fields or the field is required,
+    # whatever its visibility; such a parent counts as visible there.
+    # Flipped by WP-18: was 'emits no parent data on the registration form
+    # for a parent hidden from non-admins' (base rule).
+    it 'emits the parent data on the registration form for a parent hidden from non-admins that core renders there' do
       parent, child = pair(type: UserCustomField)
       parent.update!(visible: false)
       child.update!(is_required: true)
@@ -292,22 +298,71 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(response).to have_http_status(200)
       node = control(doc, child)
 
-      expect(node).not_to be_nil
-      expect(dcf_names(node)).to eq(every_field)
-      expect(body_without_mapping).not_to include('data-dcf-map')
+      expect(doc.at_css("select[name='user[custom_field_values][#{parent.id}]']")).not_to be_nil
+      expect(node['data-dcf-parent']).to eq(parent.id.to_s)
+      expect(JSON.parse(node['data-dcf-map'])).to eq(RedmineDependingCustomFields::DependencyRules.mapping(child))
+      expect(node['data-dcf-parent-label']).to eq(parent.name)
+      expect(node['data-dcf-stored']).to be_nil
     end
 
-    # QA-23 base rule, pinned until UD-39 is decided: My account renders an
-    # editable user field whatever its visibility, so a parent hidden from
-    # non-admins is a control on the page while its child stays unmanaged;
-    # the roles of a user field are ignored.
-    it 'emits no parent data on My account for a parent hidden from non-admins, also with roles the user holds' do
+    # UD-39 mirrors core's predicate: without the setting, an editable but
+    # not required parent is not on the registration page, so nothing of it
+    # reaches the page (its name and values stay hidden from visitors).
+    it 'emits no parent data on the registration form for a hidden parent that core does not render there' do
+      parent, child = pair(type: UserCustomField)
+      parent.update!(visible: false)
+      child.update!(is_required: true)
+      allow(Setting).to receive(:self_registration?).and_return(true)
+      allow(Setting).to receive(:show_custom_fields_on_registration?).and_return(false)
+      as(User.anonymous)
+      get '/account/register'
+      expect(response).to have_http_status(200)
+      node = control(doc, child)
+
+      expect(node).not_to be_nil
+      expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
+      expect(dcf_names(node)).to eq(every_field)
+      expect(response.body).not_to include('data-dcf-map')
+      expect(response.body).not_to include("#{secret}P")
+      expect(response.body).not_to include("#{secret}Parent")
+
+      parent.update!(is_required: true)
+      get '/account/register'
+      expect(control(doc, child)['data-dcf-parent']).to eq(parent.id.to_s)
+    end
+
+    # The setting shows editable fields only: a hidden parent that is not
+    # editable and not required is not on the page, so none of it leaks.
+    it 'emits no parent data on the registration form for a hidden parent that is not editable' do
+      parent, child = pair(type: UserCustomField)
+      parent.update!(visible: false, editable: false)
+      child.update!(is_required: true)
+      allow(Setting).to receive(:self_registration?).and_return(true)
+      allow(Setting).to receive(:show_custom_fields_on_registration?).and_return(true)
+      as(User.anonymous)
+      get '/account/register'
+      expect(response).to have_http_status(200)
+      node = control(doc, child)
+
+      expect(node).not_to be_nil
+      expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
+      expect(dcf_names(node)).to eq(every_field)
+      expect(response.body).not_to include('data-dcf-map')
+      expect(response.body).not_to include("#{secret}P")
+    end
+
+    # QA-23, UD-39 (WP-18): My account renders an editable user field
+    # whatever its visibility, so a parent hidden from non-admins counts as
+    # visible there; the roles of a user field are still ignored. Flipped by
+    # WP-18: was 'emits no parent data on My account for a parent hidden
+    # from non-admins, also with roles the user holds' (base rule).
+    it 'emits the parent data on My account for an editable parent hidden from non-admins' do
       parent, child = pair(type: UserCustomField)
       parent.update!(visible: false, role_ids: [role.id])
       person = User.find(member.id)
       person.custom_field_values = { parent.id.to_s => "#{secret}P1", child.id.to_s => "#{secret}c1" }
       person.save!(validate: false)
-      as(person)
+      as(User.find(person.id)) # a fresh instance: value_was is the stored value
       get '/my/account'
       expect(response).to have_http_status(200)
       parent_select = doc.at_css("select[name='user[custom_field_values][#{parent.id}]']")
@@ -315,9 +370,26 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       expect(parent_select).not_to be_nil
       expect(parent_select.at_css('option[selected]')['value']).to eq("#{secret}P1")
-      expect(dcf_names(node)).to eq(every_field)
+      expect(node['data-dcf-parent']).to eq(parent.id.to_s)
+      expect(JSON.parse(node['data-dcf-parent-values'])).to eq(["#{secret}P1"])
+      expect(JSON.parse(node['data-dcf-stored'])).to eq('child' => ["#{secret}c1"], 'parent' => ["#{secret}P1"])
       expect(node.at_css('option[selected]')['value']).to eq("#{secret}c1")
-      expect(body_without_mapping).not_to include('data-dcf-map')
+    end
+
+    it 'emits no parent data on My account for a hidden parent that is not editable there' do
+      parent, child = pair(type: UserCustomField)
+      parent.update!(visible: false, editable: false)
+      person = User.find(member.id)
+      person.custom_field_values = { parent.id.to_s => "#{secret}P1", child.id.to_s => "#{secret}c1" }
+      person.save!(validate: false)
+      as(person)
+      get '/my/account'
+      expect(response).to have_http_status(200)
+
+      expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
+      expect(dcf_names(control(doc, child))).to eq(every_field)
+      expect(response.body).not_to include('data-dcf-map')
+      expect(response.body).not_to include("#{secret}P")
     end
 
     it 'keeps the validation independent of the user: a hidden parent still rejects a disallowed child value' do
@@ -993,7 +1065,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
         get "/issues/#{issue.id}/edit"
         expect(response).to have_http_status(200)
         body = body_without_mapping
-        expect(response.body).to include(value) # inside the legacy head script only (FM-20b)
+        # Flipped by WP-18: the value was in the legacy head script (FM-20b).
+        expect(response.body).not_to include(value)
         expect(body).not_to include(value)
         expect(body).not_to include(child.name)
         expect(body).not_to include("[custom_field_values][#{child.id}]")

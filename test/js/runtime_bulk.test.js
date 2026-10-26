@@ -350,7 +350,9 @@ test('bulk multi child: a user pick of __none__ plus values is left as is', asyn
 
 // The wizard template is inert; cloned into the container as
 // context_menu_wizard.js does, it is a bulk form of its own.
-test('wizard template: inert until cloned, then bulk context scoped to its form (W1..W6 are WP-18)', async () => {
+// WP-18: the regenerated fixture (implicit labels, data-dcf-wizard-field,
+// no data-field-id, root on '(no change)'); W1..W6 are in runtime_wizard.test.js.
+test('wizard template: inert until cloned, then bulk context scoped to its form', async () => {
   const pg = await load(`${F.read('list_single')}${F.read('wizard_template')}`);
   const issueChild = pg.document.querySelector('#issue-form [data-dcf-field="9100002"]');
   assert.equal(pg.document.querySelectorAll('#context-menu [data-dcf-state]').length, 0);
@@ -365,6 +367,8 @@ test('wizard template: inert until cloned, then bulk context scoped to its form 
   const middle = D.control(form, '9100002');
   const leaf = D.control(form, '9100003');
   assert.deepEqual([D.state(middle), D.state(leaf)], ['unfiltered', 'unfiltered']);
+  assert.equal(D.byName(form, PARENT).value, '', 'UD-11: the root opens on (no change)');
+  assert.equal(middle.closest('label.cf-wizard-label').closest('[data-dcf-wizard-field]').getAttribute('data-dcf-wizard-field'), '9100002');
   fire.choose(pg.window, D.byName(form, PARENT), 'Alpha');
   assert.deepEqual([D.selected(middle), D.enabled(middle)], [[''], ['', '__none__', 'Ant', 'Ape']]);
   assert.equal(middle.classList.contains('dcf-auto-applied'), false);
@@ -375,7 +379,7 @@ test('wizard template: inert until cloned, then bulk context scoped to its form 
   fire.choose(pg.window, middle, 'Ant');
   assert.deepEqual(D.selected(leaf), ['Calf']);
   assert.equal(D.hintText(leaf), 'Set to the default for the selected Middle field. Choose (No change) to keep the current values.',
-    'the parent label comes from the .field-description of its .cf-wizard-field');
+    'the parent label comes from the implicit label of its .cf-wizard-field, without the select');
   assert.equal(D.hint(leaf).parentNode, leaf.closest('.cf-wizard-field'));
   fire.choose(pg.window, D.byName(form, PARENT), 'Beta');
   fire.choose(pg.window, middle, 'Bee');

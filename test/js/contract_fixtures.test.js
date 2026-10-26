@@ -2,7 +2,9 @@
 // WP-17: the filtering outcome on every generated markup fixture (WP-16,
 // spec/frontend/markup_fixtures_spec.rb): data-dcf-state, enabled and
 // selected values per managed control and the spec entry list after load.
-// WP-18 and WP-19 regenerate fixtures and must update this table.
+// WP-18 and WP-19 regenerate fixtures and must update this table. WP-18:
+// my_account is managed (UD-39), read_only_child_carrier shows the UD-37
+// warning after a refused parent change, the wizard opens on '(no change)'.
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -69,7 +71,9 @@ const EXPECTED = {
     entries: ['project[custom_field_values][9100001]=Alpha', 'project[custom_field_values][9100002]=Bee'] },
   user_form: { controls: [ctl('9100002', 'ok', ['', 'Ant'], ['Ant'])],
     entries: ['user[custom_field_values][9100001]=Alpha', 'user[custom_field_values][9100002]=Ant'] },
-  my_account: unmanaged,
+  // UD-39 (WP-18): was unmanaged.
+  my_account: { controls: [ctl('9100002', 'ok', ['', 'Ant'], ['Ant'])],
+    entries: ['user[custom_field_values][9100001]=Alpha', 'user[custom_field_values][9100002]=Ant'] },
   bulk_single: bulkSingle('issue'),
   bulk_multi: { controls: [ctl('9100002', 'unfiltered', ['__none__', 'Ant', 'Ape', 'Bee'], [])], entries: [`${P}=`] },
   bulk_required: { controls: [ctl('9100002', 'unfiltered', ['', 'Ant', 'Ape', 'Bee'], [''])], entries: [`${P}=`, `${C}=`] },
@@ -78,7 +82,8 @@ const EXPECTED = {
   time_entry_bulk: bulkSingle('time_entry'),
   wizard_template: { wizard: true },
   tricky_values: { controls: [ctl('9100002', 'ok', ['', 'a]', 'say "hi"'], ['say "hi"'])], entries: [`${P}=[x]`, `${C}=say "hi"`] },
-  read_only_child_carrier: unmanaged,
+  // UD-37 (WP-18): was unmanaged (untouched also after changes).
+  read_only_child_carrier: { carrier: true },
   role_invisible_child: unmanaged,
   hide_when_disabled: { controls: [ctl('9100002', 'empty', [''], [''], { pHidden: true })], entries: [`${P}=Gamma`, `${C}=`] },
   bulk_hide_when_disabled: { controls: [ctl('9100002', 'unfiltered', ['', '__none__', 'Ant', 'Ape', 'Bee'], [''], { pHidden: false })],
@@ -151,6 +156,26 @@ Object.keys(EXPECTED).forEach((scenario) => {
       assert.deepEqual(pg.errors, []);
       return;
     }
+    if (want.carrier) {
+      const before = plain(html);
+      assert.equal(doc.body.innerHTML, before.body.innerHTML, 'untouched at load (the stored parent value)');
+      const parent = D.byName(doc, P);
+      fire.choose(pg.window, parent, 'Gamma');
+      const hints = Array.from(doc.querySelectorAll('em.dcf-hint'));
+      assert.deepEqual(hints.map((h) => [h.className, h.hidden, h.textContent]),
+        [['info dcf-hint dcf-hint--locked', false,
+          'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.']]);
+      assert.equal(parent.getAttribute('aria-describedby'), hints[0].id);
+      fire.choose(pg.window, parent, 'Alpha');
+      assert.equal(hints[0].hidden, true);
+      assert.equal(parent.hasAttribute('aria-describedby'), false);
+      hints[0].remove();
+      doc.getElementById('dcf-live').remove();
+      assert.equal(doc.body.innerHTML, before.body.innerHTML, 'only the warning and the live region were added');
+      assert.deepEqual(pg.updates, []);
+      assert.deepEqual(pg.errors, []);
+      return;
+    }
     if (want.wizard) {
       assert.equal(doc.querySelectorAll('[data-dcf-state]').length, 0, 'the template is inert');
       const template = doc.querySelector('template');
@@ -163,6 +188,10 @@ Object.keys(EXPECTED).forEach((scenario) => {
       await D.microtask();
       const form = container.querySelector('form');
       ['9100002', '9100003'].forEach((id) => assert.equal(D.state(D.control(form, id)), 'unfiltered', id));
+      // UD-11 (WP-18): every field, the root with a default included, on '(no change)'.
+      assert.deepEqual(Array.from(form.querySelectorAll('select')).map((sel) => sel.value), ['', '', '']);
+      assert.equal(form.querySelectorAll('[data-field-id]').length, 0);
+      assert.equal(form.querySelectorAll('div.cf-wizard-field[data-dcf-wizard-field] > label.cf-wizard-label > select').length, 3);
       const rendered = plain(`<div>${template.innerHTML}</div>`).querySelector('form');
       assert.deepEqual(E.entries(form), E.entries(rendered));
       assert.deepEqual(E.entries(form), E.serialized(pg.window, form));

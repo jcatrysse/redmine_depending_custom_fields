@@ -4,13 +4,18 @@
 // optional jQuery 3.7.1 and an optional <meta name="dcf-i18n">. page()
 // resolves after DOMContentLoaded, when the runtime ran its start(). With
 // head: true jQuery and the runtime sit in <head> (runScripts 'dangerously',
-// the real page order) and page() resolves after load.
+// the real page order) and page() resolves after load. WP-18: scripts (more
+// sources, evaluated after the runtime in this order, as the head hook
+// includes context_menu_wizard.js) and url (the page URL; jsdom's default
+// about:blank has the origin 'null').
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
 const RUNTIME_PATH = path.join(__dirname, '..', '..', '..', 'assets', 'javascripts', 'depending_custom_fields.js');
 const RUNTIME = fs.readFileSync(RUNTIME_PATH, 'utf8');
+const WIZARD_PATH = path.join(__dirname, '..', '..', '..', 'assets', 'javascripts', 'context_menu_wizard.js');
+const WIZARD = fs.readFileSync(WIZARD_PATH, 'utf8');
 const JQUERY = fs.readFileSync(require.resolve('jquery/dist/jquery.js'), 'utf8');
 const OPEN = [];
 
@@ -86,16 +91,21 @@ function result(window, clock, errors, c) {
 
 // opts: jquery (default true), clock (default true), meta, before(window)
 // (runs before the runtime is evaluated), twice (evaluate the runtime twice),
-// runtime (source to evaluate instead of the asset), head.
+// runtime (source to evaluate instead of the asset), head, scripts, url,
+// headHtml (raw head markup instead of the meta tag, for the head fixtures).
 function page(body, opts) {
-  const o = Object.assign({ jquery: true, clock: true }, opts || {});
+  const o = Object.assign({ jquery: true, clock: true, scripts: [] }, opts || {});
   const source = o.runtime || RUNTIME;
   const errors = [];
+  const urlOption = o.url ? { url: o.url } : {};
+  const headStart = o.headHtml !== undefined ? o.headHtml : metaTag(o.meta);
   if (o.head) {
     let clock = null;
     let c = null;
-    const head = metaTag(o.meta) + (o.jquery ? `<script>${JQUERY}</script>` : '') + `<script>${source}</script>`;
+    const head = headStart + (o.jquery ? `<script>${JQUERY}</script>` : '') + `<script>${source}</script>` +
+      o.scripts.map((s) => `<script>${s}</script>`).join('');
     const dom = new JSDOM(`<!doctype html><html><head>${head}</head><body>${body}</body></html>`, {
+      ...urlOption,
       runScripts: 'dangerously',
       virtualConsole: virtualConsole(errors),
       beforeParse(window) {
@@ -106,8 +116,8 @@ function page(body, opts) {
     });
     return ready(dom.window, 'load').then(() => result(dom.window, clock, errors, c));
   }
-  const dom = new JSDOM(`<!doctype html><html><head>${metaTag(o.meta)}</head><body>${body}</body></html>`,
-    { runScripts: 'outside-only', virtualConsole: virtualConsole(errors) });
+  const dom = new JSDOM(`<!doctype html><html><head>${headStart}</head><body>${body}</body></html>`,
+    { ...urlOption, runScripts: 'outside-only', virtualConsole: virtualConsole(errors) });
   const window = dom.window;
   const clock = o.clock ? installClock(window) : null;
   if (o.jquery) window.eval(JQUERY);
@@ -115,6 +125,7 @@ function page(body, opts) {
   const c = collect(window);
   window.eval(source);
   if (o.twice) window.eval(source);
+  o.scripts.forEach((s) => window.eval(s));
   return ready(window, 'DOMContentLoaded').then(() => result(window, clock, errors, c));
 }
 
@@ -172,6 +183,6 @@ const hintElements = (ctl) => Array.from((ctl.closest('p, .cf-wizard-field') || 
 const hintText = (ctl) => { const h = hint(ctl); return h && !h.hidden ? h.textContent : null; };
 
 module.exports = {
-  RUNTIME, RUNTIME_PATH, JQUERY, metaTag, installClock, page, closeAll, microtask, flush,
+  RUNTIME, RUNTIME_PATH, WIZARD, WIZARD_PATH, JQUERY, metaTag, installClock, page, closeAll, microtask, flush,
   control, byName, choices, items, selected, enabled, disabled, hiddenValues, state, hint, hintElements, hintText
 };

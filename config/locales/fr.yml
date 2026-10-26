@@ -87,6 +87,18 @@ fr:
   text_dcf_storage_usage: "%{label} : %{size} octets utilisés sur %{limit} dans la base de données (%{percent} %)."
   text_dcf_storage_admin_help: "Pour les très grandes listes, utilisez le format Liste clé/valeur (dépendante) ou agrandissez les colonnes de la base de données (voir le README du plugin, section « MySQL / MariaDB and large lists »)."
 
+  # Textes de l'exécution du formulaire (balise meta dcf-i18n de l'en-tête, ClientConfig::I18N)
+  text_dcf_hint_select_parent: "Sélectionnez d'abord une valeur pour %{parent}."
+  text_dcf_hint_no_options: "Aucune valeur n'est disponible pour la valeur choisie dans %{parent}."
+  text_dcf_hint_no_options_generic: "Aucune valeur n'est disponible pour ce champ."
+  text_dcf_hint_legacy: "Les valeurs enregistrées qui ne correspondent pas à la valeur choisie dans %{parent} sont conservées jusqu'à ce que vous modifiiez %{parent} : %{values}."
+  text_dcf_hint_legacy_locked: "Les valeurs enregistrées qui ne correspondent pas à %{parent} (non modifiable ici) sont conservées telles quelles : %{values}."
+  text_dcf_hint_legacy_generic: "Les valeurs enregistrées qui ne correspondent pas à la sélection actuelle sont conservées telles quelles : %{values}."
+  text_dcf_hint_bulk_default: "Valeur par défaut appliquée pour la valeur choisie dans %{parent}. Choisissez (Pas de changement) pour conserver les valeurs actuelles."
+  text_dcf_hint_bulk_cleared: "Vidé, car le choix actuel pour %{parent} n'autorise aucune valeur pour ce champ."
+  text_dcf_live_message: "%{field} : %{message}"
+  text_dcf_hint_locked_refused: "Un champ dépendant que vous ne pouvez pas modifier a une valeur que ce choix n'autorise pas ; l'enregistrement sera refusé."
+
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:
     errors:

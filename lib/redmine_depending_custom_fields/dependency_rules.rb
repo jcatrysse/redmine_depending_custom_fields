@@ -304,30 +304,18 @@ module RedmineDependingCustomFields
       normalize_values(value_was)
     end
 
-    # True when the parent value of +customized+ allows no child value, so
-    # the required bypass (CustomFieldPatch) drops the blank error. Like
-    # 0.0.16, the parent field must still exist: one find_parent per record
-    # and id, memoized and shared with parent_state. Without an effective
-    # parent (WP-10: in or below a stored cycle, a self-parent, another type
-    # or family) it keeps the 0.0.16 read (legacy_parent_state), because the
-    # legacy script still disables such a field while that parent allows
-    # nothing and posts ''; WP-18 removes the fallback with the script.
+    # True when the effective parent's value on +customized+ allows no child
+    # value, so the required bypass (CustomFieldPatch) drops the blank error.
+    # Like 0.0.16, the parent field must still exist: one find_parent per
+    # record and id, memoized and shared with parent_state. Without an
+    # effective parent (in or below a stored cycle, a self-parent, another
+    # type or family) false: core's required check applies (WP-18; the 0.0.16
+    # read of the raw pointer went with the legacy script).
     def no_options?(cf, customized)
-      state = parent_state(cf, customized) || legacy_parent_state(cf, customized)
+      state = parent_state(cf, customized)
       return false unless state && allowed_for(cf, state).empty?
 
       !parent_record(cf, parent_id(cf)).nil?
-    end
-
-    # The parent read before WP-10, for the required bypass only: the raw
-    # pointer names any existing field, of any type and family, the field
-    # itself included, and its value is read from +customized+. nil for a
-    # blank or invalid pointer, a nil object and a dangling parent.
-    def legacy_parent_state(cf, customized)
-      pid = parent_id(cf)
-      return nil if pid.nil? || customized.nil?
-
-      read_parent_state(cf, customized, pid)
     end
 
     # id => CustomField from what is already loaded: the custom field values of
@@ -384,7 +372,7 @@ module RedmineDependingCustomFields
       Sanitizer.sanitize_default_dependencies(cf.default_value_dependencies)
     end
 
-    # The stored flag cast like MappingBuilder and the API do.
+    # The stored flag cast with the Boolean type, as the API does.
     def hide_when_disabled?(cf)
       ActiveModel::Type::Boolean.new.cast(cf.hide_when_disabled) == true
     end
@@ -552,6 +540,6 @@ module RedmineDependingCustomFields
     end
 
     private_class_method :list_values, :enumerations_of, :key_set, :string_values, :stored_value,
-                         :read_parent_state, :legacy_parent_state
+                         :read_parent_state
   end
 end

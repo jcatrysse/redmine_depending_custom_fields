@@ -80,9 +80,10 @@ compared regardless of their order.
 This applies to the REST API, email, bulk edit (fields left on "(No change)"
 and updates of other attributes), the context menu wizard and copies. The
 forms in the browser (the issue form, including the copy form, project
-settings, time entries and others) still remove such a value when they open,
-if the parent field is on the form. Saving such a form clears the value, or
-is refused for a required field.
+settings, time entries and others) keep such a value selected and marked,
+with a hint under the field, while the parent value is unchanged, so a save
+keeps it. When you change the parent value, the stored value is dropped; it
+comes back when you switch the parent back to the stored value.
 
 ### Copies
 
@@ -93,8 +94,7 @@ strictly. Bulk copy, project copy and a copy made through the REST API
 (`copy_from`) keep such values, and a project copy no longer skips those
 issues. A field you cannot edit gets its default value on a copy instead
 (see [Dependent fields you cannot edit](#dependent-fields-you-cannot-edit)).
-The copy form in the browser is the issue form, so it clears such values (see
-above).
+The copy form in the browser keeps such values too, marked (see above).
 
 ### Unavailable parent, missing parent and cycles
 
@@ -136,12 +136,16 @@ by workflow or hidden for your role), with the same rule for stored values:
   wizard, by email (notes-only replies included) or through REST, and tracker
   or project moves that make the parent unavailable, still save. A default
   value the field gets on a new issue, a copy or a move is still checked.
-- The forms in the browser (the issue form, including the copy form, the
-  project settings form and others) clear an editable dependent field whose
-  stored value its parent value does not allow, if the parent field is on the
-  form (see [Stored values](#stored-values)). So the form save is refused
-  when a field you cannot edit depends on that cleared field and holds a
-  value.
+- The forms in the browser keep an editable dependent field's stored value
+  that its parent value does not allow (see [Stored values](#stored-values)),
+  so a save that changes nothing else, for example a note, is accepted even
+  when a field you cannot edit depends on it. (Up to 0.0.16 the forms cleared
+  such a value when saving.)
+- On the issue form, when you choose a parent value that the server will
+  refuse because of a dependent field you can see but cannot edit, a warning
+  appears under the parent field. Nothing is disabled and the form can still
+  be submitted (the server then refuses it). For a dependent field you cannot
+  see there is no warning; the server message is the only feedback.
 
 To get such a save through, ask someone who may edit that field to change or
 clear it first, or an administrator to fix a default value the parent value
@@ -168,15 +172,16 @@ old setting. This race is accepted. A cycle can also come from data saved
 before this check existed. The guards:
 
 - the server treats fields that are part of a cycle, or whose chain of parents
-  reaches one, as independent (no dependency check) until the cycle is fixed;
+  reaches one, as independent (no dependency check; a required one needs a
+  value like any required field) until the cycle is fixed;
 - the admin form of a field that is part of a cycle shows a warning naming
   the fields of the cycle; choosing another "Depends on" field breaks it;
 - every walk along the parents on the server keeps a list of the fields it
-  has visited and stops after 1,000 fields, so a cycle never loops there. The
-  issue-form script of this version has no such guard and still filters the
-  members of a cycle by their mappings: on a form with a stored cycle it can
-  loop and raise script errors in the browser, so fix the cycle with the help
-  of the warning.
+  has visited and stops after 1,000 fields, so a cycle never loops there;
+- the forms in the browser get no parent data for these fields and show all
+  their values, and the browser script evaluates each field at most once per
+  change, so a cycle never loops there either. Fix the cycle with the help of
+  the warning.
 
 ## Installation
 
@@ -195,6 +200,22 @@ before this check existed. The guards:
 * `requires_redmine` stays at **5.0**: the code is kept compatible with Ruby 2.7
   and Rails 6.1, but Redmine 5.0 itself is not tested.
 * Ruby **2.7 or newer** is required.
+
+## Downgrade
+
+Since 0.1.0 the plugin no longer uses the Rails cache: the key
+`depending_custom_fields/mapping` is never read, written or deleted. Earlier
+versions (0.0.x) read it, so on a persistent cache store (file, Memcache,
+Redis) it may hold a stale dependency mapping from before the upgrade. Before
+you start an earlier version again, delete it once:
+
+```bash
+bin/rails runner -e production "Rails.cache.delete('depending_custom_fields/mapping')"
+```
+
+This is not needed for the memory or null cache stores. When 0.1.0 is rolled
+back by reverting its changes, run the same command once after the revert,
+before Redmine is restarted.
 
 ## MySQL / MariaDB and large lists
 
@@ -415,6 +436,94 @@ the scripts never create roles themselves):
 * The GitHub workflows are manual only (`workflow_dispatch`).
 * MySQL / MariaDB runs: see
   [MySQL / MariaDB and large lists](#mysql--mariadb-and-large-lists).
+
+## Integration
+
+The browser runtime (`assets/javascripts/depending_custom_fields.js`) filters
+the dependent fields Redmine renders through its custom field helpers:
+`custom_field_tag` and `custom_field_tag_with_label` (single-record forms),
+the format's `edit_tag`, and the format's `bulk_edit_tag` (bulk edit,
+time-entry bulk edit and the context menu wizard). A field rendered any other
+way, for example with a plain `select_tag` in another plugin's view, is not
+filtered in the browser; the server still validates it.
+
+### Data attributes
+
+The server writes these attributes on the `<select>` or the
+`span.check_box_group` of each depending field. Values are JSON where shown.
+
+| Attribute | Value | When |
+|---|---|---|
+| `data-dcf-field` | the field id | every depending field |
+| `data-dcf-context` | `form` (single-record form) or `bulk` (bulk edit and the wizard) | every depending field; missing or unknown reads as `form` |
+| `data-dcf-kind` | `list` or `enumeration` | every depending field (informational) |
+| `data-dcf-multiple` | `1` | multi-value fields (informational) |
+| `data-dcf-parent` | the parent field id | managed fields: the parent is valid, not part of a cycle and visible to the user (on My account and the registration form: rendered there as a control) |
+| `data-dcf-parent-name` | the form name of the parent control, for example `issue[custom_field_values][5]` | managed fields |
+| `data-dcf-map` | `{"<parent value>": [<child values>]}` | managed fields; `{}` allows nothing |
+| `data-dcf-defaults` | `{"<parent value>": <child value or values>}` | managed fields with per-parent defaults |
+| `data-dcf-hide` | `1` | managed fields with "Hide when no valid options" (also written in bulk context; the runtime applies it only on single-record forms) |
+| `data-dcf-parent-values` | the parent's current values on the record, `[]` when blank or not available | managed fields in form context |
+| `data-dcf-parent-label` | the parent field name | managed fields in form context |
+| `data-dcf-stored` | `{"child": [...], "parent": [...]}`, the stored values the server keeps while the parent is unchanged | managed fields in form context on saved records and copies |
+
+A dependent field you can see but cannot edit has no control; when its
+stored value matters for a parent change, the form gets one hidden carrier
+`<span hidden data-dcf-locked-parent="<parent id>" data-dcf-locked-stored='[...]' data-dcf-locked-allowed-by='[[...]]'>`:
+the stored parent values and, per stored value of the hidden field, the
+parent values that allow it. A field you cannot see gets no carrier and
+nothing else on the page. The wizard wraps each field in
+`div.cf-wizard-field[data-dcf-wizard-field="<field id>"]` with an implicit
+`label.cf-wizard-label`. Never write parent data or a mapping for a parent
+the user cannot see.
+
+### State and events
+
+The runtime sets `data-dcf-state` on each managed control:
+
+- `ok`: filtered by the parent value;
+- `waiting`: the parent has no value;
+- `empty`: the parent value allows nothing;
+- `legacy`: a stored value the parent value does not allow is selected (also
+  after a user pick that keeps it);
+- `none`: bulk edit or the wizard with the parent on "(none)";
+- `unfiltered`: bulk edit or the wizard with the parent on "(No change)", or
+  no usable mapping.
+
+After every evaluation that changes something it dispatches `dcf:updated`
+(bubbles) on the control, with `detail` `{fieldId, state, values, changed}`;
+`values` is a copy. The native `change` event fires only when the values
+really change. An overlay (select2 and similar) can redraw on it:
+
+```javascript
+document.addEventListener('dcf:updated', function (event) {
+  var select = event.target;
+  if (window.jQuery && window.jQuery(select).data('select2')) window.jQuery(select).trigger('change.select2');
+});
+```
+
+Markup inserted later is picked up by a MutationObserver. Call
+`window.DependingCustomFields.init(root)` to evaluate a root yourself; it is
+synchronous and does nothing when nothing changed. `setup(root)` and
+`requestSetup(root)` are deprecated aliases (kept throughout 0.1.x,
+removable no earlier than 0.2.0). The runtime reads its texts from
+`<meta name="dcf-i18n">` in the page head.
+
+Known limits:
+
+- `dcf:updated` follows evaluations only: a user pick that moves
+  `data-dcf-state` between `legacy` and its base state dispatches none.
+- Options another script adds to a field after an evaluation stay as added
+  until the next change of that field's parent (the observer ignores nodes
+  without `[data-dcf-parent]`, and `init(root)` does nothing while the parent
+  is unchanged).
+- An option or choice input another script disabled is enabled again when
+  the parent allows it; only a select's own `disabled` is kept.
+- The change listener runs in the bubble phase: a change whose propagation
+  is stopped below `document` is not seen.
+- A change event whose values did not change is not a pick.
+- A field inside an element with `hidden` is not announced to screen
+  readers.
 
 ## API
 

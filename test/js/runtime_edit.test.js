@@ -555,12 +555,17 @@ test('F18 project, user and My account forms behave like the issue form (a form 
   assert.deepEqual([D.state(uc), D.enabled(uc), D.selected(uc)], ['ok', ['', 'Ant'], ['Ant']]);
   fire.choose(user.window, D.byName(user.document, 'user[custom_field_values][9100001]'), 'Beta');
   assert.deepEqual(D.selected(uc), ['']);
+  // UD-39 (WP-18): My account renders the hidden but editable parent as a
+  // control, so its child is managed now (was unmanaged, state null and
+  // every option enabled).
   const account = await load('my_account');
   const ac = D.control(account.document, '9100002');
-  assert.equal(D.state(ac), null);
-  assert.deepEqual(D.enabled(ac), ['', 'Ant', 'Bee']);
+  assert.deepEqual([D.state(ac), D.enabled(ac), D.selected(ac)], ['ok', ['', 'Ant'], ['Ant']]);
+  fire.choose(account.window, D.byName(account.document, 'user[custom_field_values][9100001]'), 'Beta');
+  assert.deepEqual([D.enabled(ac), D.selected(ac)], [['', 'Bee'], ['']]);
   invariants(project);
   invariants(user);
+  invariants(account);
 });
 
 // Hand-written: inline-edit rows with a nested prefix (no fixture renders one).

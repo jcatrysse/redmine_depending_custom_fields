@@ -291,21 +291,19 @@ RSpec.describe 'Custom field cycle validation' do
         let(:project) { dcf_create_project }
         let(:unconstrained) { world.depending }
 
-        # semantics-r2-1: no_options? (the required bypass) keeps the 0.0.16
-        # parent read for these fields until WP-18 retires the legacy script,
-        # which still disables them while their stored parent allows nothing.
-        # Was: no_options? false for every field. Here x, y, the child, the
-        # self-parent and the field below it have a parent value that allows
-        # a value; a, b and c have a blank partner value, which allows nothing.
-        it 'has no effective parent and no parent state for any member or field below one' do
+        # Flipped by WP-18 (WP-10 open input): no_options? (the required
+        # bypass) reads only the effective parent, so it is false for every
+        # field here (semantics-r2-1 kept the 0.0.16 parent read for the
+        # legacy script, which was true for a, b and c, whose blank partner
+        # value allows nothing).
+        it 'has no effective parent, no parent state and no required bypass for any member or field below one' do
           issue = kit_issue(project, world.x => 'x1', world.y => 'y1', world.child => 'c1',
                                      world.self_parent => 's1', world.below_self_parent => 'd1')
-          bypassed = [world.a, world.b, world.c]
           unconstrained.each do |field|
             fresh = CustomField.find(field.id)
             expect(rules.effective_parent_id(fresh, rules.lookup_records(issue))).to be_nil, field.name
             expect(rules.parent_state(fresh, issue)).to be_nil, field.name
-            expect(rules.no_options?(fresh, issue)).to be(bypassed.include?(field)), field.name
+            expect(rules.no_options?(fresh, issue)).to be(false), field.name
           end
         end
 
@@ -315,29 +313,30 @@ RSpec.describe 'Custom field cycle validation' do
           expect(issue.valid?).to be(true), issue.errors.full_messages.inspect
         end
 
-        # Flipped by semantics-r2-1: was "keeps the core required check on a
-        # required member (no bypass without a parent state)". The 0.0.16
-        # bypass is kept until WP-18 (the legacy script disables a member
-        # whose partner allows nothing and posts ''); core's required check
-        # still applies while the partner value allows a value.
-        it 'drops the blank error of a required member only while its stored partner value allows nothing' do
+        # Flipped back by WP-18 (WP-10 open input): "keeps the core required
+        # check on a required member (no bypass without a parent state)", as
+        # before semantics-r2-1, which dropped the blank error while the
+        # stored partner value allowed nothing (legacy script).
+        it 'keeps the core required check on a required member, whatever its stored partner value' do
           y = CustomField.find(world.y.id)
           y.update!(is_required: true)
-          expect(errors_for(kit_new_issue(project, world.x => 'x2', y => []), y)).to eq([])
-          expect(errors_for(kit_new_issue(project, world.x => 'x1', y => []), y))
-            .to eq([I18n.t('activerecord.errors.messages.blank')])
+          blank = I18n.t('activerecord.errors.messages.blank')
+          expect(errors_for(kit_new_issue(project, world.x => 'x2', y => []), y)).to eq([blank])
+          expect(errors_for(kit_new_issue(project, world.x => 'x1', y => []), y)).to eq([blank])
           expect(errors_for(kit_new_issue(project, world.x => 'x2', y => 'y2'), y)).to eq([])
         end
 
-        it 'drops the blank error of a required self-parent and of required fields below a cycle in the same way' do
+        # Flipped by WP-18: was 'drops the blank error of a required
+        # self-parent and of required fields below a cycle in the same way'.
+        it 'keeps the core required check on a required self-parent and on required fields below a cycle' do
           required = [world.self_parent, world.below_self_parent, world.child].map do |field|
             CustomField.find(field.id).tap { |f| f.update!(is_required: true) }
           end
           blank = I18n.t('activerecord.errors.messages.blank')
           issue = kit_new_issue(project, required.to_h { |f| [f, []] }.merge(world.x => 'x2'))
-          expect(required.map { |f| errors_for(issue, f) }).to eq([[], [], []])
+          expect(required.map { |f| errors_for(issue, f) }).to eq([[blank], [blank], [blank]])
           issue = kit_new_issue(project, required.to_h { |f| [f, []] }.merge(world.x => 'x1'))
-          expect(required.map { |f| errors_for(issue, f) }).to eq([[], [], [blank]])
+          expect(required.map { |f| errors_for(issue, f) }).to eq([[blank], [blank], [blank]])
         end
 
         it 'does not judge non-editable members whose cycle partner changes (WP-09b)' do

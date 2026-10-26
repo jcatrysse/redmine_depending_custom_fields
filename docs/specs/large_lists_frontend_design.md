@@ -22,7 +22,7 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
    - `data-dcf-allowed` is dropped. `data-dcf-parent-values`, `data-dcf-parent-label` and `data-dcf-stored` are added.
    - Issues: R1, QA-01, UX-02, BC-01, SP-04.
 2. **One head hook and one meta tag.**
-   - Meta name `dcf-i18n`, payload a flat JSON object of the 10 runtime keys (binding, compat section 2.4; this revision originally proposed `redmine-depending-custom-fields` with a nested `{"i18n":{...}}` payload), locale keys `text_dcf_hint_*`. The `label_dcf_hint_*` keys are deleted.
+   - Meta name `dcf-i18n`, payload a flat JSON object of the 10 runtime keys (11 since UD-37; binding, compat section 2.4; this revision originally proposed `redmine-depending-custom-fields` with a nested `{"i18n":{...}}` payload), locale keys `text_dcf_hint_*`. The `label_dcf_hint_*` keys are deleted.
    - The rules module is folded into `depending_custom_fields.js`. The script list is therefore unchanged from today, and the "rules file missing, runtime inert" failure mode no longer exists.
    - Issues: R2, BC-01, R11.
 3. **D1 per value on both sides.**
@@ -73,7 +73,7 @@ These amendments come from the consolidated plan and override older wording else
 | Emission predicate (gap 2) | Client emission relies on `DependencyRules.effective_parent_id(cf)`: valid (exists, same type and family, not self), acyclic and visible to the user (fail closed). `DependencyRules.parent_of(cf)` (WP-05) is the memoized raw lookup it builds on: it returns the parent record, or nil for blank, dangling, wrong type or family, or self. Stored cycle members and chains reaching a cycle get no parent attributes (UD-08). | 3.2, 12.1, 14 |
 | Legacy marker (gap 6) | `data-dcf-stored` = server D1 baseline: the stored value for persisted records (`value_was` with a saved row, else `[]`), copy source values for issue copies (UD-06), absent for other new records. Row F6b is split into F6b-a (copy, kept) and F6b-b (plain new record, dropped). | 3.3, 5.4, 6, 9, 12.1 |
 | MutationObserver (gap 13) | Coalesced per callback, synchronous init of added roots, no timer debounce; jsdom test: one `replaceIssueFormWith` insertion causes exactly one `init` per root. Recorded in compat section 3. | 0, 0.1, 5.11, 12.1 |
-| Meta tag | `<meta name="dcf-i18n">` with a flat object of the 10 keys of `ClientConfig::I18N`. | 0, 3.6, 7 |
+| Meta tag | `<meta name="dcf-i18n">` with a flat object of the keys of `ClientConfig::I18N` (10, 11 since UD-37, WP-18). | 0, 3.6, 7 |
 | Required "(none)" in bulk | `bulk_edit_tag` adds `<option value="__none__" data-dcf-required-none="1">` for required managed children; the runtime enables it only while the parent selection allows no value (UD-10, WP-19). | 3.4, 5.5 |
 | Shared rules cases | `test/js/fixtures/shared/rules_cases.json` (WP-05; `spec/fixtures` is the DB fixture directory). | 4, 13, 14 |
 | Fixture ids | Fixed per-kind id ranges from WP-02 plus the normalizer, the sequence-bump self check and two seeds (`--seed 1`, `--seed 4242`); support file `spec/support/dcf_js_fixtures.rb` (WP-16). | 2, 12.1 |
@@ -116,7 +116,7 @@ These amendments come from the consolidated plan and override older wording else
 | `assets/javascripts/context_menu_wizard.js` | EDITED (section 7) |
 | `assets/stylesheets/depending_custom_fields.css` | EDITED (section 8) |
 | `lib/redmine_depending_custom_fields/hooks/view_layouts_base_html_head_hook.rb`, `client_config.rb`, `client_data.rb`, the shared format module, `app/helpers/context_menu_wizard_helper.rb`, `app/views/depending_custom_fields/_context_menu_wizard.html.erb` | Server area implements C1 (sections 3 and 14) |
-| `config/locales/{en,de,fr,nl}.yml` | 9 new keys (section 3.6); `error_save_failed` is reused |
+| `config/locales/{en,de,fr,nl}.yml` | 10 new keys (section 3.6, the tenth `text_dcf_hint_locked_refused` for UD-37); `error_save_failed` is reused |
 | `package.json`, `package-lock.json`, `.gitignore` | NEW (section 12) |
 | `test/js/**` | NEW node and jsdom tests, generated fixtures (section 12) |
 | `spec/frontend/markup_fixtures_spec.rb`, `spec/support/dcf_js_fixtures.rb` (WP-16) | NEW: the single fixture mechanism (section 12). |
@@ -243,8 +243,9 @@ Head hook output, in this order. jQuery is already loaded by `javascript_heads` 
 | `bulkCleared` | `text_dcf_hint_bulk_cleared` |
 | `liveMessage` | `text_dcf_live_message` |
 | `saveFailed` | `error_save_failed` (exists in all four locales, `config/locales/en.yml:76`) |
+| `lockedRefused` | `text_dcf_hint_locked_refused` (UD-37, added by WP-18: the warning under a parent control while a `data-dcf-locked-*` carrier predicts the server's refusal) |
 
-New locale keys. They are flat, with key parity across de/en/fr/nl. Values that start with `%{` or contain `: ` are double-quoted in YAML. `%{values}` is a comma-joined list of option labels: at most 3, then `, ...`. The colon-list phrasing avoids plural forms. Interpolation variables: `%{parent}` in all hint keys that name the parent, `%{values}` in the three `text_dcf_hint_legacy*` keys, `%{field}` and `%{message}` in `text_dcf_live_message`. The en, de, fr and nl texts have a single source of truth, `large_lists_i18n_registry.md`; this document keeps only the key names and owners. All nine keys are added in WP-18 (0.1.0 (M2)); `error_save_failed` already exists and is reused.
+New locale keys. They are flat, with key parity across de/en/fr/nl. Values that start with `%{` or contain `: ` are double-quoted in YAML. `%{values}` is a comma-joined list of option labels: at most 3, then `, ...`. The colon-list phrasing avoids plural forms. Interpolation variables: `%{parent}` in all hint keys that name the parent, `%{values}` in the three `text_dcf_hint_legacy*` keys, `%{field}` and `%{message}` in `text_dcf_live_message`. The en, de, fr and nl texts have a single source of truth, `large_lists_i18n_registry.md`; this document keeps only the key names and owners. All nine keys are added in WP-18 (0.1.0 (M2)), and the UD-37 key `text_dcf_hint_locked_refused` (no interpolation) with them; `error_save_failed` already exists and is reused.
 
 | key | owner WP | en, de, fr, nl texts |
 |---|---|---|
@@ -257,6 +258,7 @@ New locale keys. They are flat, with key parity across de/en/fr/nl. Values that 
 | `text_dcf_hint_bulk_default` | WP-18 | see large_lists_i18n_registry.md |
 | `text_dcf_hint_bulk_cleared` | WP-18 | see large_lists_i18n_registry.md |
 | `text_dcf_live_message` | WP-18 | see large_lists_i18n_registry.md |
+| `text_dcf_hint_locked_refused` | WP-18 (UD-37) | see large_lists_i18n_registry.md |
 
 Notes:
 - The parenthesised labels match core `label_no_change_option` in each locale.
@@ -458,6 +460,7 @@ Grandchild cascades follow naturally:
 - Only in form context and only the field's own `ctl.closest('p')`, and only when that `<p>` holds no control of another field.
 - Hiding adds class `dcf-hidden` and the `hidden` attribute. Un-hiding removes only what the runtime added.
 - The `<p>` is never hidden while a legacy value is selected.
+- The `<p>` is never hidden while a UD-37 carrier of the field predicts that the server refuses its current values, so the warning under it stays visible and is announced (WP-18).
 - Allowed is empty when the parent is blank or not available, so `hide_when_disabled` hides the field (label included) exactly while the current parent selection offers no options.
 
 ### 5.9 Cascade, cycles, events (points 3 and 5)

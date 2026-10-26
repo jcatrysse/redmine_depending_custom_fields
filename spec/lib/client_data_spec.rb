@@ -450,22 +450,83 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
       end
     end
 
-    describe 'user forms (base rule, QA-23)' do
-      # The base rule ignores the roles of a user field: the member holds
-      # the parent's role in a project and still does not see it.
-      it 'manages a child of a role-restricted parent hidden from non-admins for an admin only' do
+    describe 'user forms (base rule, QA-23; UD-39 since WP-18)' do
+      def user_pair(parent_attributes = {})
         parent = dcf_list_field(values: %w[A B], type: UserCustomField)
-        parent.update!(visible: false, role_ids: [role.id])
-        expect(member.roles_for_project(project)).to include(role)
+        parent.update!({ visible: false, role_ids: [role.id] }.merge(parent_attributes))
         child = dcf_list_field(format: 'depending_list', values: %w[a1 b1], type: UserCustomField, parent: parent)
-        child = dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1] })
+        [parent, dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1] })]
+      end
+
+      def user_data(record, child, user)
+        form_data(record, child, user: user, tag_name: tag_name_for(child, 'user'))
+      end
+
+      # The base rule ignores the roles of a user field: the member holds
+      # the parent's role in a project and still does not see it. Flipped
+      # by WP-18 (UD-39): on the member's own record (My account) core
+      # renders the editable parent as a control, so the child is managed
+      # for the member too; was every-field attributes only.
+      it 'manages a child of a hidden parent for an admin, and for the member on the own record where it is editable' do
+        parent, child = user_pair
+        expect(member.roles_for_project(project)).to include(role)
         person = User.find(member.id)
 
-        expect(form_data(person, child, user: member, tag_name: tag_name_for(child, 'user'))).to eq(every_field(child))
-        admin_data = form_data(User.find(member.id), child, user: dcf_admin, tag_name: tag_name_for(child, 'user'))
+        own = user_data(person, child, member)
+        expect(own[:dcf_parent]).to eq(parent.id)
+        expect(own[:dcf_parent_name]).to eq("user[custom_field_values][#{parent.id}]")
+        admin_data = user_data(User.find(member.id), child, dcf_admin)
         expect(admin_data[:dcf_parent]).to eq(parent.id)
         expect(admin_data[:dcf_parent_name]).to eq("user[custom_field_values][#{parent.id}]")
         expect(admin_data[:dcf_stored]).to eq('child' => [], 'parent' => [])
+      end
+
+      it 'keeps the base rule for a parent that is not editable, and on another user record' do
+        _parent, child = user_pair(editable: false)
+        expect(user_data(User.find(member.id), child, member)).to eq(every_field(child))
+
+        _parent, child = user_pair
+        other = dcf_create_user("cd-other-#{SecureRandom.hex(3)}")
+        expect(user_data(User.find(other.id), child, member)).to eq(every_field(child))
+      end
+
+      # Registration (a new User): core renders the field when the setting
+      # shows editable fields or the field is required.
+      it 'manages a child on a new user record only while core renders the hidden parent there' do
+        parent, child = user_pair
+        visitor = User.anonymous
+        allow(Setting).to receive(:show_custom_fields_on_registration?).and_return(true)
+        expect(user_data(User.new, child, visitor)[:dcf_parent]).to eq(parent.id)
+        # The setting shows editable fields only.
+        parent.update!(editable: false)
+        expect(user_data(User.new, CustomField.find(child.id), visitor)).to eq(every_field(child))
+        parent.update!(editable: true)
+
+        allow(Setting).to receive(:show_custom_fields_on_registration?).and_return(false)
+        expect(user_data(User.new, child, visitor)).to eq(every_field(child))
+        parent.update!(is_required: true)
+        expect(user_data(User.new, CustomField.find(child.id), visitor)[:dcf_parent]).to eq(parent.id)
+      end
+
+      it 'counts the parent as not visible when the user form check raises (fail closed)' do
+        _parent, child = user_pair
+        allow(Setting).to receive(:show_custom_fields_on_registration?).and_raise(RuntimeError, 'boom')
+        allow(Rails.logger).to receive(:warn).and_call_original
+
+        expect(user_data(User.new, child, User.anonymous)).to eq(every_field(child))
+        expect(Rails.logger).to have_received(:warn).with(/\A\[DCF\] client data visibility check failed for custom field #\d+: RuntimeError\z/)
+      end
+
+      it 'adds no query for the user form rule' do
+        parent, _child = user_pair
+        person = User.find(member.id)
+        visitor = User.anonymous
+        fresh = User.new
+        Setting.show_custom_fields_on_registration?
+
+        expect(dcf_count_queries { client.user_form_control?(parent, person, member) }).to eq(0)
+        expect(dcf_count_queries { client.user_form_control?(parent, fresh, visitor) }).to eq(0)
+        expect(client.user_form_control?(parent, person, member)).to be(true)
       end
     end
 
@@ -499,21 +560,20 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     end
   end
 
-  # The legacy scripts (untouched until WP-18) read and write their state
-  # through dataset keys and data-* names; no contract or carrier attribute
-  # may map onto one of them. WP-17 renamed the legacy script to
-  # depending_custom_fields_legacy.js (the new runtime took the old name).
-  it 'uses no attribute name the legacy scripts read or write' do
+  # The wizard script reads and writes its state through dataset keys and
+  # data-* names; no contract or carrier attribute may map onto one of them.
+  # WP-18: the legacy script is deleted (it read valueMap and fieldId), so
+  # only context_menu_wizard.js is scanned.
+  it 'uses no attribute name the wizard script reads or writes' do
     names = %w[dcf_field dcf_context dcf_kind dcf_multiple dcf_parent dcf_parent_name dcf_map dcf_defaults dcf_hide
                dcf_parent_values dcf_parent_label dcf_stored dcf_locked_parent dcf_locked_stored dcf_locked_allowed_by]
     root = File.expand_path('../..', __dir__)
-    files = %w[assets/javascripts/depending_custom_fields_legacy.js assets/javascripts/context_menu_wizard.js]
-    legacy = files.map do |path|
-      File.read(File.join(root, path))
-    end.join("\n")
+    expect(File).not_to exist(File.join(root, 'assets/javascripts/depending_custom_fields_legacy.js'))
+    legacy = File.read(File.join(root, 'assets/javascripts/context_menu_wizard.js'))
     keys = legacy.scan(/dataset\.([A-Za-z]+)/).flatten.uniq
     attributes = legacy.scan(/data-([a-z-]+)/).flatten.uniq
-    expect(keys).to include('dcfInit', 'valueMap', 'fieldId')
+    expect(keys).to include('dcfInit', 'templateId')
+    expect(keys).not_to include('valueMap', 'fieldId')
 
     names.each do |name|
       expect(keys).not_to include(name.camelize(:lower)), name
@@ -528,7 +588,8 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     expect { Rails.autoloaders.main.eager_load_dir(lib) }.not_to raise_error
     {
       'client_data.rb' => 'RedmineDependingCustomFields::ClientData',
-      'hooks/read_only_carrier_hook.rb' => 'RedmineDependingCustomFields::Hooks::ReadOnlyCarrierHook'
+      'hooks/read_only_carrier_hook.rb' => 'RedmineDependingCustomFields::Hooks::ReadOnlyCarrierHook',
+      'client_config.rb' => 'RedmineDependingCustomFields::ClientConfig'
     }.each do |file, constant|
       path = File.join(lib, 'redmine_depending_custom_fields', file)
       expect(Rails.autoloaders.main.cpath_expected_at(path)).to eq(constant)

@@ -1016,41 +1016,43 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
         expect(described_class).to have_received(:find_parent).once
       end
 
-      # semantics-r2-1: without an effective parent, parent_state is nil
-      # (UD-08, UD-35) but no_options? keeps the 0.0.16 read (the raw pointer:
-      # any existing field, of any type and family, the field itself
-      # included, its value read from the object) until WP-18 retires the
-      # legacy script, which disables such a field while that parent allows
-      # nothing and posts ''.
-      context 'without an effective parent (0.0.16 read kept until WP-18)' do
+      # Flipped by WP-18 (WP-10 open input, semantics-r2-1): without an
+      # effective parent (UD-08, UD-35) no_options? is false, so core's
+      # required check applies; the 0.0.16 read of the raw pointer
+      # (legacy_parent_state) is removed with the legacy script, which used
+      # to disable such a field and post ''. The new runtime gives these
+      # fields no parent attributes, so the user can pick a value. Was: the
+      # stored parent read from the object (true while it allows nothing).
+      context 'without an effective parent (no bypass since WP-18)' do
         include DcfStoredCycle
 
-        it 'reads the stored parent of a cycle member, a self-parent and a field below a cycle from the object' do
+        it 'is false for a cycle member, a self-parent and a field below a cycle, whatever the stored parent holds' do
           world = dcf_stored_cycles(:list)
           x, self_parent, below = [world.x, world.self_parent, world.child].map { |f| CustomField.find(f.id) }
-          { 'y1' => false, 'y2' => true, '' => true }.each do |y_value, expected|
+          ['y1', 'y2', ''].each do |y_value|
             issue = kit_new_issue(project, world.y => y_value.empty? ? [] : y_value, x => [])
             expect(described_class.parent_state(x, issue)).to be_nil
-            expect(described_class.no_options?(x, issue)).to be(expected), y_value.inspect
+            expect(described_class.no_options?(x, issue)).to be(false), y_value.inspect
           end
-          { 's1' => false, 's2' => true }.each do |own, expected|
+          %w[s1 s2].each do |own|
             issue = kit_new_issue(project, self_parent => own)
             expect(described_class.parent_state(self_parent, issue)).to be_nil
-            expect(described_class.no_options?(self_parent, issue)).to be(expected), own
+            expect(described_class.no_options?(self_parent, issue)).to be(false), own
           end
-          { 'x1' => false, 'x2' => true }.each do |x_value, expected|
+          %w[x1 x2].each do |x_value|
             issue = kit_new_issue(project, world.x => x_value, below => [])
             expect(described_class.parent_state(below, issue)).to be_nil
-            expect(described_class.no_options?(below, issue)).to be(expected), x_value
+            expect(described_class.no_options?(below, issue)).to be(false), x_value
           end
+          expect(described_class.respond_to?(:legacy_parent_state, true)).to be(false)
         end
 
-        it 'reads a parent of another type or family: unavailable or unmapped allows nothing, a mapped value allows' do
+        it 'is false for a parent of another type or family, mapped or not' do
           other_type = dcf_list_field(values: %w[A B C], type: ProjectCustomField)
           field = dcf_store_parent(child, other_type)
           issue = kit_new_issue(project, parent => 'A', field => [])
           expect(described_class.parent_state(field, issue)).to be_nil
-          expect(described_class.no_options?(field, issue)).to be(true)
+          expect(described_class.no_options?(field, issue)).to be(false)
 
           enum = dcf_enum_field(names: %w[A])
           enum_key = kit_key(enum, 'A')
@@ -1059,7 +1061,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
           issue = kit_new_issue(Project.find(project.id), enum => 'A', field => [])
           expect(issue.custom_field_values.map(&:custom_field_id)).to include(enum.id)
           expect(described_class.parent_state(field, issue)).to be_nil
-          expect(described_class.no_options?(field, issue)).to be(true)
+          expect(described_class.no_options?(field, issue)).to be(false)
           store = field.format_store.to_hash.merge('value_dependencies' => { enum_key => %w[a1] })
           CustomField.where(id: field.id).update_all(['format_store = ?', dump(store)])
           expect(described_class.no_options?(CustomField.find(field.id), issue)).to be(false)
@@ -1228,7 +1230,10 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(described_class.defaults(unsaved('depending_list'))).to eq({})
     end
 
-    it 'casts the stored flag like MappingBuilder' do
+    # WP-18: MappingBuilder is deleted (UD-14); the cast table stays, the
+    # comparison with its output is gone (was 'casts the stored flag like
+    # MappingBuilder').
+    it 'casts the stored flag with the Boolean type, as the API does' do
       parent = dcf_list_field
       child = dcf_list_field(format: 'depending_list', parent: parent)
       table = { true => true, '1' => true, 1 => true, 'true' => true, 'on' => true, 't' => true,
@@ -1236,10 +1241,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       table.each do |stored, expected|
         store = { 'parent_custom_field_id' => parent.id, 'hide_when_disabled' => stored }
         CustomField.where(id: child.id).update_all(['format_store = ?', dump(store)])
-        builder = RedmineDependingCustomFields::MappingBuilder.build[child.id.to_s][:hide_when_disabled] ? true : false
 
         expect(described_class.hide_when_disabled?(CustomField.find(child.id))).to be(expected), stored.inspect
-        expect(builder).to be(expected), stored.inspect
       end
     end
   end
@@ -1651,12 +1654,17 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(runs).to eq(2)
     end
 
-    it 'adds dcf_memo only: no new callback and no other public method' do
+    # Flipped by WP-18 (UD-14, server design 11): the after_save dispatch is
+    # deleted, so the patch registers no callback (was
+    # [:dispatch_after_custom_field_save]).
+    it 'adds dcf_memo only: no callback and no other public method' do
       patch = RedmineDependingCustomFields::Patches::CustomFieldPatch
       own = patch.instance_methods(false) + patch.private_instance_methods(false)
       filters = CustomField.__callbacks.values.flat_map(&:to_a).map(&:filter)
 
-      expect(filters.select { |f| f.is_a?(Symbol) && own.include?(f) }).to eq([:dispatch_after_custom_field_save])
+      expect(filters.select { |f| f.is_a?(Symbol) && own.include?(f) }).to eq([])
+      expect(filters).not_to include(:dispatch_after_custom_field_save)
+      expect(CustomField.private_method_defined?(:dispatch_after_custom_field_save)).to be(false)
       expect(patch.public_instance_methods(false)).to match_array([:validate_custom_value, :dcf_memo])
     end
   end

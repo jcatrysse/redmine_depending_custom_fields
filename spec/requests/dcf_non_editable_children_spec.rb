@@ -121,13 +121,12 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
     text.include?(field.name) || text.include?(secret)
   end
 
-  # The HTML page without the pre-existing head script
-  # window.DependingCustomFieldData, which carries every mapping (values
-  # included) until WP-18 removes it; everything else must not leak.
+  # The whole HTML page (FM-20b). WP-18: the head script
+  # window.DependingCustomFieldData that carried every mapping is gone
+  # (SD-15), so nothing is stripped any more; was the page without it.
   def body_without_mapping
-    doc = Nokogiri::HTML(response.body)
-    doc.css('script').select { |s| s.text.include?('window.DependingCustomFieldData') }.each(&:remove)
-    doc.to_html
+    expect(response.body).not_to include('window.DependingCustomFieldData')
+    response.body
   end
 
   def error_box
@@ -802,10 +801,13 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       expect(stored(issue, parent)).to eq('A')
     end
 
-    # Until 0.1.0 (M2) the legacy script clears an editable dependent field
-    # whose stored value its own parent does not allow and posts ''. That
-    # changes the parent of a hidden child below it, which is then judged
-    # strictly: the save is refused (accepted M1 consequence, UD-07).
+    # The legacy script (0.1.0 (M1) and earlier) cleared an editable
+    # dependent field whose stored value its own parent does not allow and
+    # posted ''. That changes the parent of a hidden child below it, which
+    # is then judged strictly: the save is refused (UD-07). WP-18: the new
+    # runtime keeps such a value and posts it unchanged (the notes-only save
+    # is shown by spec/system/depending_fields_frontend_spec.rb); the server
+    # rule for a post that clears it is unchanged.
     it 'refuses a save that clears an editable dependent field above a hidden child (legacy script post)' do
       grand = dcf_list_field(values: %w[G H], name: "Grand#{SecureRandom.hex(4)}")
       middle = dcf_list_field(format: 'depending_list', values: %w[p1 p2], parent: grand,

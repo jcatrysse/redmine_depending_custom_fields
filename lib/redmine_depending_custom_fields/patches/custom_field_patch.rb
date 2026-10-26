@@ -1,17 +1,13 @@
-# Extension for CustomField that triggers a callback on the field format after
-# the record is saved. This allows formats to invalidate caches when their
-# configuration changes.
+# Extension for CustomField: the required bypass of depending fields and the
+# per-record memo. Registers no callback (server design 11; new CustomField
+# callbacks go into CustomFieldValidationPatch).
 
 module RedmineDependingCustomFields
   module Patches
     module CustomFieldPatch
-      def self.prepended(base)
-        base.after_save :dispatch_after_custom_field_save
-      end
-
       # Strips the spurious "blank" error added by CustomField's independent is_required? guard when no child options are available for the current parent value.
-      # The parent read is DependencyRules.no_options? (WP-09): the formats' parent state, or
-      # without an effective parent the 0.0.16 read of the stored parent until WP-18 (WP-10).
+      # The parent read is DependencyRules.no_options? (WP-09): the effective parent's
+      # state only, so a field without one keeps core's required check (WP-18).
       def validate_custom_value(custom_value)
         errs = super
 
@@ -37,14 +33,6 @@ module RedmineDependingCustomFields
         return memo[memo_key] if memo.key?(memo_key)
 
         memo[memo_key] = yield
-      end
-
-      private
-
-      def dispatch_after_custom_field_save
-        if format.respond_to?(:after_custom_field_save)
-          format.after_custom_field_save(self)
-        end
       end
     end
   end

@@ -615,6 +615,8 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Impact.** `ClientData.parent_visible?` for user records (WP-18, which regenerates the `my_account` fixture and turns the WP-16 pins in `spec/requests/issue_form_contract_spec.rb`, 'emits no parent data on My account ...' and 'emits no parent data on the registration form ...', into the decided rule), or the PC-26 and UN-54 wording. No data effect.
 
+**WP-18 (delivered; to be confirmed by the owner with the decision).** `ClientData.user_form_control?` mirrors core's own render predicate instead of the shorthand above. Registration (a new `User`): `(Setting.show_custom_fields_on_registration? && parent.editable?) || parent.is_required?`, as core `account/register.html.erb` selects its fields (5.1 line 31, 7.0 line 36). The shorthand `parent.editable? || parent.is_required?` would write the name and the mapping keys of an editable, not required parent that core does not render while the setting is off. My account: the viewer's own persisted `User` record with `parent.editable?`. The admin user form and another user's record keep the base rule.
+
 **Work packages.** WP-16, WP-18
 
 ## 2. Deviations from the default decisions

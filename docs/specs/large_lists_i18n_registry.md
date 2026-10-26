@@ -74,7 +74,7 @@ This document is the single source of truth for every locale key that the large_
 | WP-10 | 0.1.0 (M1) | server | 3 | `field_parent_custom_field`, `warning_dcf_parent_cycle`, `activerecord.errors.messages.dcf_circular_dependency` | adds `dcf_circular_dependency` inside the block WP-09b created |
 | WP-11 | 0.1.0 (M1) | limits | 4 | `field_value_dependencies`, `activerecord.errors.messages.dcf_storage_too_large`, `text_dcf_storage_usage`, `text_dcf_storage_admin_help` |  |
 | WP-12 | 0.1.0 (M1) | limits | 3 | `error_dcf_values_too_large`, `error_dcf_mapping_too_large`, `error_dcf_value_too_long` |  |
-| WP-18 | 0.1.0 (M2) | frontend (rendered by the server head hook) | 9 | `text_dcf_hint_select_parent`, `text_dcf_hint_no_options`, `text_dcf_hint_no_options_generic`, `text_dcf_hint_legacy`, `text_dcf_hint_legacy_locked`, `text_dcf_hint_legacy_generic`, `text_dcf_hint_bulk_default`, `text_dcf_hint_bulk_cleared`, `text_dcf_live_message` | creates `ClientConfig::I18N` (10 entries incl. existing `error_save_failed`) |
+| WP-18 | 0.1.0 (M2) | frontend (rendered by the server head hook) | 10 | `text_dcf_hint_select_parent`, `text_dcf_hint_no_options`, `text_dcf_hint_no_options_generic`, `text_dcf_hint_legacy`, `text_dcf_hint_legacy_locked`, `text_dcf_hint_legacy_generic`, `text_dcf_hint_bulk_default`, `text_dcf_hint_bulk_cleared`, `text_dcf_live_message`, `text_dcf_hint_locked_refused` (UD-37) | creates `ClientConfig::I18N` (11 entries incl. existing `error_save_failed`) |
 | WP-22 | 0.1.0 (M3) | editor | 3 | `activerecord.errors.messages.dcf_invalid_dependencies_payload`, `activerecord.errors.messages.dcf_stale_dependencies`, `activerecord.errors.messages.dcf_dependencies_too_large_to_send` |  |
 | WP-24 | 0.1.0 (M3) | editor (`text_dcf_storage_estimate` text designed by limits) | 4 | `text_dcf_editor_help`, `text_dcf_editor_noscript`, `text_dcf_editor_select_parent`, `text_dcf_storage_estimate` | creates `DependencyEditorConfig::I18N` |
 | WP-25 | 0.1.0 (M3) | editor | 36 | `error_invalid_dependency_payload`, `error_dcf_dependencies_too_large_to_send`, `error_dcf_editor_form_too_large`, `text_dcf_editor_unavailable`, `text_dcf_editor_no_parent_values`, `text_dcf_editor_no_child_values`, `text_dcf_editor_enumeration_save_first`, `text_dcf_editor_enumeration_values_hint`, `text_dcf_editor_loading`, `error_dcf_editor_load_failed`, `text_dcf_editor_parent_changed`, `text_dcf_editor_orphans`, `text_dcf_editor_format_change_confirm`, `text_dcf_editor_conflict`, `button_dcf_use_my_version`, `button_dcf_keep_current_version`, `button_dcf_export_my_version`, `text_dcf_editor_conflict_mine_loaded`, `label_dcf_filter_parent_values`, `label_dcf_filter_child_values`, `label_dcf_only_parents_without_links`, `label_dcf_show_children`, `label_dcf_show_all`, `label_dcf_show_linked`, `label_dcf_show_not_linked_here`, `label_dcf_show_not_linked_anywhere`, `button_dcf_check_shown`, `button_dcf_uncheck_shown`, `button_dcf_show_more`, `label_dcf_linked_count`, `label_dcf_default_summary`, `label_dcf_inactive`, `text_dcf_status_sections`, `text_dcf_status_parents_without_links`, `text_dcf_status_unlinked_children`, `label_dcf_unlinked_children_list` | also extends `DependencyEditorConfig::I18N` |
@@ -85,7 +85,7 @@ This document is the single source of truth for every locale key that the large_
 | WP-30 | 0.1.0 (M3) | project | 1 | `text_dcf_page_scope_save` |  |
 | WP-31 | 0.1.0 (M3) | project | 3 | `error_dcf_value_length`, `label_dcf_project_storage_ceiling`, `text_dcf_project_storage_ceiling_info` |  |
 
-Totals: 12 new keys in 0.1.0 (M1), 9 in 0.1.0 (M2), 104 in 0.1.0 (M3) (125 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
+Totals: 12 new keys in 0.1.0 (M1), 10 in 0.1.0 (M2), 104 in 0.1.0 (M3) (126 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
 
 ## 4. Registry table
 
@@ -121,6 +121,7 @@ One row per key. Keys under `activerecord.errors.messages.` are nested in YAML a
 | `text_dcf_hint_bulk_default` | WP-18 | 0.1.0 (M2) | issue-form runtime in bulk edit and the wizard (JS `bulkDefault`); the parenthesised label equals core `label_no_change_option` per locale | Set to the default for the selected %{parent}. Choose (No change) to keep the current values. | Auf den Standardwert für den gewählten Wert von %{parent} gesetzt. Wählen Sie (Keine Änderung), um die aktuellen Werte beizubehalten. | Valeur par défaut appliquée pour la valeur choisie dans %{parent}. Choisissez (Pas de changement) pour conserver les valeurs actuelles. | Ingesteld op de standaardwaarde voor de gekozen waarde van %{parent}. Kies (Geen wijziging) om de huidige waarden te behouden. |
 | `text_dcf_hint_bulk_cleared` | WP-18 | 0.1.0 (M2) | issue-form runtime in bulk edit and the wizard (JS `bulkCleared`) | Cleared because the current choice for %{parent} allows no values for this field. | Geleert, weil die aktuelle Auswahl für %{parent} keine Werte für dieses Feld zulässt. | Vidé, car le choix actuel pour %{parent} n'autorise aucune valeur pour ce champ. | Leeggemaakt omdat de huidige keuze voor %{parent} geen waarden voor dit veld toestaat. |
 | `text_dcf_live_message` | WP-18 | 0.1.0 (M2) | issue-form runtime aria-live announcement (JS `liveMessage`); de and nl identical to en: allowlist | %{field}: %{message} | %{field}: %{message} | %{field} : %{message} | %{field}: %{message} |
+| `text_dcf_hint_locked_refused` | WP-18 (UD-37) | 0.1.0 (M2) | issue-form runtime (JS `lockedRefused`): warning under a parent control while a `data-dcf-locked-*` carrier (a visible read-only dependent field, WP-16) predicts that the server refuses the parent's current value; names no field, value or label (the carrier holds none), no interpolation | A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused. | Ein abhängiges Feld, das Sie nicht bearbeiten können, hat einen Wert, den diese Auswahl nicht zulässt; das Speichern wird abgelehnt. | Un champ dépendant que vous ne pouvez pas modifier a une valeur que ce choix n'autorise pas ; l'enregistrement sera refusé. | Een afhankelijk veld dat u niet kunt bewerken, heeft een waarde die deze keuze niet toestaat; opslaan wordt geweigerd. |
 
 ### 4.3 Release 0.1.0 (M3) (editor transport, presenter and editor UI)
 
@@ -249,7 +250,7 @@ One row per key. Keys under `activerecord.errors.messages.` are nested in YAML a
 - **`text_dcf_storage_estimate`.** Owner WP-24 (text designed by the limits area); WP-25 shows it and reuses the key.
 - **`field_value_dependencies`.** Owner WP-11. WP-22 (payload errors), WP-24 and WP-25 (legend, estimate label) reuse it; the server and editor areas do not define it.
 - **`DependencyEditorConfig::I18N`.** WP-24 creates the map with entries for its own keys only (at least `storageEstimate`). WP-25 and WP-26 extend it in the same commit as their locale entries, with the JS keys named in the "used by" column and in `large_lists_editor_design.md` section 9, plus the reused core keys of section 8.3 (WP-25: `collapse_all`, `clear`, `default_value`, `unsaved`, `no_default`; WP-26: `export`, `preview`, `separator`, `comma`, `semicolon`, `yes`, `no`, `status`).
-- **`ClientConfig::I18N`.** WP-18 creates it with exactly 10 entries: the nine WP-18 keys and the existing `error_save_failed` (`saveFailed`).
+- **`ClientConfig::I18N`.** WP-18 creates it with exactly 11 entries: the ten WP-18 keys (the tenth, `text_dcf_hint_locked_refused`, JS `lockedRefused`, added for UD-37) and the existing `error_save_failed` (`saveFailed`).
 - **Nested block.** The single `activerecord.errors.messages` block per file is created by WP-09b (0.1.0 (M1), `dcf_hidden_child_conflict`) and extended by WP-10 and WP-11 (0.1.0 (M1)) and WP-22 (0.1.0 (M3)).
 
 ## 6. Parity allowlist
@@ -270,7 +271,7 @@ Values that are intentionally identical to `en` in a given locale. The WP-02 par
 | nl | `text_dcf_live_message` | %{field}: %{message} | placeholders and a colon only | WP-18 (pre-listed by WP-02) |
 | nl | `label_dcf_tab_char` | Tab | same word in Dutch | WP-26 (pre-listed by WP-02) |
 
-No other key of section 4 is identical to `en` in any locale (checked over all 125 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
+No other key of section 4 is identical to `en` in any locale (checked over all 126 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
 
 ## 7. Keys that must NOT be added
 

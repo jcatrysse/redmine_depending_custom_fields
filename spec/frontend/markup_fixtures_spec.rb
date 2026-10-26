@@ -13,6 +13,9 @@ require 'tmpdir'
 # (DCF_WRITE_JS_FIXTURES=1). Every id that reaches a fixture comes from the
 # fixed ranges (dcf_fixture_record); labels carry no digits. WP-17 reads
 # these files in jsdom; WP-18 and WP-19 regenerate them with this spec.
+# WP-18: the legacy mappings (test/js/fixtures/legacy_mapping) are deleted
+# with the legacy script; wizard_template (UD-11, implicit labels, no
+# data-field-id) and my_account (UD-39) were regenerated.
 RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   include DcfJsFixtures
   include DcfStoredCycle
@@ -400,8 +403,9 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     plain_form(fetch(:get, "/users/#{member.id}/edit", admin), 'user')
   end
 
-  # QA-23: the same fields on My account for the member: the child is left
-  # unmanaged, its parent is shown (editable) but not visible to the member.
+  # QA-23, UD-39 (WP-18): the same fields on My account for the member: the
+  # parent is hidden from non-admins but core renders it there as a control
+  # (editable), so the child is managed.
   def scenario_my_account
     world = fx_world
     member = fx_user_fields(world)
@@ -450,9 +454,12 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     plain_form(page, 'time_entry', id: 'bulk_edit_form')
   end
 
+  # UD-11 (WP-18): the root has a default value; the wizard still opens it
+  # on '(No change)'.
   def scenario_wizard_template
     world = fx_world
     root, middle, leaf = fx_chain(world)
+    root.update!(default_value: 'Beta')
     issue = fx_issue(world, root => 'Alpha', middle => 'Ant', leaf => 'Cub')
     page = fetch(:post, '/issues/context_menu', admin, ids: [issue.id])
     entry = page.at_css("li.cf-parent[data-parent-id='#{root.id}']")
@@ -508,14 +515,13 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     send("scenario_#{name}")
   end
 
-  # One render and its legacy mapping inside a savepoint that is rolled
-  # back, with the fixed ids starting again at the start of each range.
+  # One render inside a savepoint that is rolled back, with the fixed ids
+  # starting again at the start of each range.
   def isolated_render(name)
     html = nil
     ActiveRecord::Base.transaction(requires_new: true) do
       dcf_reset_fixture_ids
       html = dcf_js_normalize(render_scenario(name))
-      html += JSON.generate(legacy_mapping)
       raise ActiveRecord::Rollback
     end
     html
@@ -549,7 +555,8 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(names - every_field - ['data-dcf-multiple']).to eq([]), label
       end
     end
-    expect(fragment.to_html).not_to match(/data-dcf-(state|blank|required-none|wizard-field)/)
+    # WP-18: data-dcf-wizard-field marks the wizard field wrappers.
+    expect(fragment.to_html).not_to match(/data-dcf-(state|blank|required-none)/)
     expect(fragment.css('script')).to be_empty
     fields
   end
@@ -560,15 +567,6 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       label = node.parent.at_css('label, span.field-description')
       control_name && label && label.text.include?(name_part)
     end
-  end
-
-  # The head global the legacy script reads (MappingBuilder, no visibility
-  # or editability filter until WP-18) for the scenario's fields, rendered
-  # or not (every one is in the fixed range and rolled back per example), so
-  # the legacy jsdom suite runs every fixture with its production mapping.
-  def legacy_mapping
-    RedmineDependingCustomFields::MappingBuilder.build.select { |id, _| dcf_in_fixture_range?(id.to_i, DcfJsFixtures::CF) }
-                                                .sort.to_h
   end
 
   def select_labelled(fragment, text)
@@ -653,9 +651,12 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(JSON.parse(node['data-dcf-parent-values'])).to eq(['Alpha'])
         expect(JSON.parse(node['data-dcf-stored'])).to eq('child' => ['Ant'], 'parent' => ['Alpha'])
       end,
+      # UD-39 (WP-18): was only the every-field attributes (base rule).
       'my_account' => lambda do |fragment|
         node = field_named(fragment, 'User child')
-        expect(dcf_names(node)).to eq(every_field)
+        expect(node['data-dcf-parent']).not_to be_nil
+        expect(JSON.parse(node['data-dcf-parent-values'])).to eq(['Alpha'])
+        expect(JSON.parse(node['data-dcf-map'])).to eq('Alpha' => ['Ant'], 'Beta' => ['Bee'])
         expect(node.at_css('option[selected]')['value']).to eq('Ant')
         expect(select_labelled(fragment, 'User parent').at_css('option[selected]')['value']).to eq('Alpha')
       end,
@@ -663,13 +664,26 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(field_named(fragment, 'Child field').css('option').pluck('value')).not_to include('__none__')
       end,
       'radio_required' => ->(fragment) { expect(fragment.css('input[data-dcf-blank]')).to be_empty },
+      # WP-18: implicit labels and data-dcf-wizard-field (UX-13), no
+      # data-field-id, every field on '(No change)' (UD-11, the root has the
+      # default Beta); was a data-field-id on every select.
       'wizard_template' => lambda do |fragment|
         selects = fragment.css('template select')
         expect(selects.size).to eq(3)
         expect(selects.first['data-dcf-field']).to be_nil # the root is a plain list
         expect(selects.drop(1).pluck('data-dcf-context')).to eq(%w[bulk bulk])
-        expect(selects.drop(1).pluck('data-field-id')).to eq(selects.drop(1).pluck('data-dcf-field'))
         expect(selects.drop(1).pluck('data-dcf-parent')).to all(be_present)
+        expect(fragment.css('[data-field-id]')).to be_empty
+        expect(fragment.css('template option[selected]')).to be_empty
+        wrappers = fragment.css('template div.cf-wizard-field[data-dcf-wizard-field]')
+        expect(wrappers.size).to eq(3)
+        wrappers.zip(selects).each do |wrapper, select|
+          expect(wrapper['data-dcf-wizard-field']).to eq(select['name'][/\[(\d+)\]\z/, 1])
+          label = wrapper.at_css('> label.cf-wizard-label')
+          expect(label['for']).to be_nil
+          expect(label.at_css('> span.field-description')).not_to be_nil
+          expect(label.at_css('> select')).to eq(select)
+        end
       end,
       'tricky_values' => lambda do |fragment|
         node = field_named(fragment, 'Child')
@@ -706,7 +720,6 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   scenarios.each do |name|
     it "renders the #{name} scenario as its committed fixture" do
       html = dcf_js_fixture(group, name, render_scenario(name))
-      dcf_js_mapping_fixture('legacy_mapping', name, legacy_mapping)
       fragment = dcf_parse_fragment(html)
       check_contract(name, fragment)
       instance_exec(fragment, &scenario_checks[name]) if scenario_checks.key?(name)
@@ -722,15 +735,15 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     first.each { |name, html| expect(second[name]).to eq(html), name }
   end
 
-  it 'has one committed fixture and one legacy mapping per scenario and no other' do
+  # WP-18: the legacy mappings are gone (was one JSON mapping per scenario too).
+  it 'has one committed fixture per scenario and no other, and no legacy mapping' do
     skip 'compare mode only: the scenario examples are writing the files' if dcf_js_write_fixtures?
-    { group => 'html', 'legacy_mapping' => 'json' }.each do |dir, ext|
-      paths = Dir[File.join(dcf_js_fixture_dir, dir, '*')]
-      files = paths.map { |path| File.basename(path, ".#{ext}").sub(/\.redmine-\d+\.\d+\z/, '') }
+    paths = Dir[File.join(dcf_js_fixture_dir, group, '*')]
+    files = paths.map { |path| File.basename(path, '.html').sub(/\.redmine-\d+\.\d+\z/, '') }
 
-      expect(paths.map { |path| File.extname(path) }.uniq).to eq([".#{ext}"])
-      expect(files.uniq.sort).to eq(self.class.scenarios.sort), dir
-    end
+    expect(paths.map { |path| File.extname(path) }.uniq).to eq(['.html'])
+    expect(files.uniq.sort).to eq(self.class.scenarios.sort)
+    expect(File).not_to exist(File.join(dcf_js_fixture_dir, 'legacy_mapping'))
   end
 
   describe 'the guard' do
@@ -758,17 +771,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       expect(leak('<select data-dcf-map="{&quot;12&quot;:[9200001]}"></select>')).to include('12', 'key')
       expect(leak('<select data-dcf-map="{&quot;a&quot;:[44]}"></select>')).to include('44')
       expect(leak('<span data-dcf-locked-allowed-by="[[&quot;55&quot;]]"></span>')).to include('55')
-    end
-
-    it 'checks the field ids and enumeration ids of a legacy mapping' do
-      inside = { '9100002' => { parent_id: '9100001', map: { '9200001' => ['9200002'], 'a' => ['b'] }, defaults: {} } }
-      expect(dcf_js_guard_mapping!(inside)).to be(true)
-      [{ '12' => { parent_id: '9100001', map: {}, defaults: {} } },
-       { '9100002' => { parent_id: '13', map: {}, defaults: {} } },
-       { '9100002' => { parent_id: '9100001', map: { '14' => [] }, defaults: {} } },
-       { '9100002' => { parent_id: '9100001', map: {}, defaults: { 'a' => '15' } } }].each do |mapping|
-        expect { dcf_js_guard_mapping!(mapping) }.to raise_error(DcfJsFixtures::LeakedId)
-      end
+      expect(leak('<div class="cf-wizard-field" data-dcf-wizard-field="66"></div>')).to include('66', '@data-dcf-wizard-field')
     end
 
     it 'accepts fixed-range ids and values without digits' do
@@ -850,7 +853,6 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
 
       expect { dcf_js_write_or_compare('markup', 'none', "A\n", 'html') }
         .to raise_error(RuntimeError, %r{missing fixture .*markup/none\.html: run with DCF_WRITE_JS_FIXTURES=1})
-      expect { dcf_js_mapping_fixture('legacy_mapping', 'none', {}) }.to raise_error(RuntimeError, /none\.json/)
     end
   end
 
@@ -868,6 +870,25 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       expect(out).to include("{&quot;a?123&quot;:[&quot;#{digest}&quot;,&quot;tab\tin&quot;]}")
       expect(out).to include('<option value="1.0">a: b</option>')
       expect(dcf_js_normalize(out)).to eq(out)
+    end
+
+    # WP-18: the head fixtures hold plugin assets of every version.
+    it 'scrubs a Propshaft digest and the 5.1 asset id and path of plugin assets, and orders link attributes' do
+      plugin = 'redmine_depending_custom_fields'
+      {
+        "/assets/plugin_assets/#{plugin}/depending_custom_fields-1a2b3c4d.js" => "/plugin_assets/#{plugin}/depending_custom_fields.js",
+        "/plugin_assets/#{plugin}/javascripts/context_menu_wizard.js?1700000000" => "/plugin_assets/#{plugin}/context_menu_wizard.js",
+        "/plugin_assets/#{plugin}/stylesheets/depending_custom_fields.css?12" => "/plugin_assets/#{plugin}/depending_custom_fields.css",
+        "/assets/plugin_assets/#{plugin}/depending_custom_fields-0123abcd.css" => "/plugin_assets/#{plugin}/depending_custom_fields.css",
+        '/assets/x-1a2b3c4d.js' => '/assets/x.js'
+      }.each do |url, expected|
+        expect(dcf_js_asset_url(url)).to eq(expected), url
+        expect(dcf_js_asset_url(expected)).to eq(expected)
+      end
+      expect(dcf_js_normalize("<link rel=\"stylesheet\" href=\"/plugin_assets/#{plugin}/stylesheets/a.css?3\">"))
+        .to eq("<link rel=\"stylesheet\" href=\"/plugin_assets/#{plugin}/a.css\">")
+      expect(dcf_js_normalize("<link rel=\"stylesheet\" media=\"screen\" href=\"/a.css\">"))
+        .to eq("<link rel=\"stylesheet\" href=\"/a.css\" media=\"screen\">")
     end
   end
 end

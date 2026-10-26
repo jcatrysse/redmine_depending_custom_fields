@@ -236,12 +236,12 @@ RSpec.describe RedmineDependingCustomFields::ParentDetector do
       expect(counts.uniq.size).to eq(1)
     end
 
-    it 'uses no cache, no MappingBuilder and no CustomField query' do
+    # WP-18: MappingBuilder is deleted (UD-14); its not_to receive line is gone.
+    it 'uses no cache and no CustomField query' do
       root = root_with_child
       issues = [issue]
       issues.each(&:editable_custom_fields)
       expect(Rails.cache).not_to receive(:fetch)
-      expect(RedmineDependingCustomFields::MappingBuilder).not_to receive(:build)
       expect(CustomField).not_to receive(:where)
 
       expect(ids(described_class.for_issues(issues))).to eq([root.id])

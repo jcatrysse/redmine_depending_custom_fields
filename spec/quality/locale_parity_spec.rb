@@ -13,10 +13,12 @@ RSpec.describe 'Plugin locales' do
   # Values that are legitimately identical to English (proper nouns, loanwords).
   # Adding an entry needs a reviewer's OK in the work package report; the full
   # list for planned keys is kept in docs/specs/large_lists_i18n_registry.md.
+  # WP-18: de and nl text_dcf_live_message ('%{field}: %{message}', only
+  # placeholders and a colon; the registry lists both, gap 10).
   identical_allowed = {
-    'de' => %w[label_scope_global label_dcf_position],
+    'de' => %w[label_scope_global label_dcf_position text_dcf_live_message],
     'fr' => %w[label_scope_global label_dcf_position label_dcf_audit_action],
-    'nl' => %w[label_scope_project]
+    'nl' => %w[label_scope_project text_dcf_live_message]
   }
 
   def self.flatten(hash, prefix = nil)
@@ -98,10 +100,43 @@ RSpec.describe 'Plugin locales' do
     expect(used.reject { |key| I18n.exists?(key, :en) }).to eq([])
   end
 
-  it 'resolves every value of the client i18n maps once they exist' do
+  # The keys of the client i18n maps (gap 5) missing from a locale's own
+  # table (no fallback: Redmine falls back to en), as "locale.key".
+  def self.unresolved_map_keys(tables, locales)
     maps = %w[RedmineDependingCustomFields::ClientConfig::I18N RedmineDependingCustomFields::DependencyEditorConfig::I18N]
            .select { |name| Object.const_defined?(name) }.map { |name| Object.const_get(name) }
-    keys = maps.flat_map { |map| map.respond_to?(:values) ? map.values : Array(map) }.map(&:to_s)
-    expect(keys.reject { |key| I18n.exists?(key, :en) }).to eq([])
+    keys = maps.flat_map { |map| map.respond_to?(:values) ? map.values : Array(map) }.map(&:to_s).uniq
+    locales.flat_map do |locale|
+      missing = keys.reject do |key|
+        tables['en'].key?(key) ? tables[locale].key?(key) : core_key?(key, locale)
+      end
+      missing.map { |key| "#{locale}.#{key}" }
+    end
+  end
+
+  # A key core defines in +locale+ (the plugin may reuse it).
+  def self.core_key?(key, locale)
+    I18n.t(key, locale: locale, raise: true, fallback: false)
+    true
+  rescue I18n::MissingTranslationData
+    false
+  end
+
+  it 'resolves every value of the client i18n maps in every locale once they exist' do
+    expect(self.class.unresolved_map_keys(tables, locales)).to eq([])
+    keys = RedmineDependingCustomFields::ClientConfig::I18N.values
+    locales.each do |locale|
+      keys.each { |key| expect { I18n.t(key, locale: locale, raise: true) }.not_to raise_error, "#{locale}.#{key}" }
+    end
+  end
+
+  # WP-18 (gap 5): the check iterates RedmineDependingCustomFields::ClientConfig::I18N.
+  it 'reports a ClientConfig::I18N entry without a locale entry (negative fixture)' do
+    map = RedmineDependingCustomFields::ClientConfig::I18N.merge('missing' => :text_dcf_missing_key).freeze
+    stub_const('RedmineDependingCustomFields::ClientConfig::I18N', map)
+
+    expect(self.class.unresolved_map_keys(tables, locales)).to eq(locales.map { |locale| "#{locale}.text_dcf_missing_key" })
+    without_de = tables.merge('de' => tables['de'].except('text_dcf_hint_no_options'))
+    expect(self.class.unresolved_map_keys(without_de, locales)).to include('de.text_dcf_hint_no_options')
   end
 end

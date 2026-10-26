@@ -27,8 +27,10 @@
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
   <%= render partial: 'custom_fields/formats/default_dependencies',
              locals: {parent_field: parent_cf, custom_field: @custom_field} %>
-  <%# The required bypass (DependencyRules.no_options?) reads the stored parent as in 0.0.16, also without an effective parent (until WP-18), so no chain walk here. %>
-  <% if @custom_field.is_required? && parent_cf %>
+  <%# The required bypass (DependencyRules.no_options?) reads only the effective parent (WP-18), taken from this render's index; a new record has none and walks from its chosen parent, which may be in or below a stored cycle. %>
+  <% if @custom_field.is_required? && parent_cf &&
+        (dcf_index ? dcf_index.effective_parent_id_for(@custom_field.id, @custom_field.type, @custom_field.field_format, @custom_field.parent_custom_field_id)
+                   : RedmineDependingCustomFields::DependencyRules.effective_parent_id(@custom_field)) %>
     <% dcf_mapping    = @custom_field.value_dependencies.to_h %>
     <% dcf_uncovered  = parent_cf.possible_values_options
                                   .map { |pv| (pv.is_a?(Array) ? pv[1] : pv).to_s }
