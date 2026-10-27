@@ -99,6 +99,12 @@ fr:
   text_dcf_live_message: "%{field} : %{message}"
   text_dcf_hint_locked_refused: "Un champ dépendant que vous ne pouvez pas modifier a une valeur que ce choix n'autorise pas ; l'enregistrement sera refusé."
 
+  # Éditeur de dépendances (partiel partagé, DependencyEditorConfig::I18N)
+  text_dcf_editor_help: "Ouvrez une valeur parente pour choisir les valeurs enfants autorisées avec elle et, éventuellement, sa valeur enfant par défaut. Utilisez les filtres pour trouver des valeurs dans les longues listes."
+  text_dcf_editor_noscript: "JavaScript est nécessaire pour modifier le mappage des dépendances."
+  text_dcf_editor_select_parent: "Choisissez le champ dont dépend ce champ pour modifier les dépendances."
+  text_dcf_storage_estimate: "%{label} : environ %{size} des %{limit} octets pouvant être enregistrés pour ce champ (%{percent} %). Au-delà de cette limite, l'enregistrement est refusé."
+
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:
     errors:

@@ -99,6 +99,12 @@ de:
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "Ein abhängiges Feld, das Sie nicht bearbeiten können, hat einen Wert, den diese Auswahl nicht zulässt; das Speichern wird abgelehnt."
 
+  # Abhängigkeitseditor (gemeinsames Partial, DependencyEditorConfig::I18N)
+  text_dcf_editor_help: "Öffnen Sie einen übergeordneten Wert, um die damit erlaubten untergeordneten Werte und optional seinen untergeordneten Standardwert zu wählen. Mit den Filtern finden Sie Werte in langen Listen."
+  text_dcf_editor_noscript: "Zum Bearbeiten der Abhängigkeitszuordnung wird JavaScript benötigt."
+  text_dcf_editor_select_parent: "Wählen Sie das Feld, von dem dieses Feld abhängt, um die Abhängigkeiten zu bearbeiten."
+  text_dcf_storage_estimate: "%{label}: etwa %{size} der %{limit} Bytes, die für dieses Feld gespeichert werden können (%{percent} %). Oberhalb des Limits wird das Speichern abgelehnt."
+
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:
     errors:

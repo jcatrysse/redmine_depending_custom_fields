@@ -99,6 +99,12 @@ en:
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused."
 
+  # Dependency editor (shared partial, DependencyEditorConfig::I18N)
+  text_dcf_editor_help: "Open a parent value to choose the child values allowed with it and, optionally, its default child value. Use the filters to find values in long lists."
+  text_dcf_editor_noscript: "JavaScript is required to edit the dependency mapping."
+  text_dcf_editor_select_parent: "Choose the field this field depends on to edit the dependencies."
+  text_dcf_storage_estimate: "%{label}: about %{size} of the %{limit} bytes that can be stored for this field (%{percent}%). Saving is refused above the limit."
+
   # Model errors, shown after the field name
   activerecord:
     errors:

@@ -92,8 +92,9 @@ module DcfJsFixtures
 
   # Rewrites only known volatile positions: the authenticity token input and
   # the CSRF meta, state hashes, and the timestamp and digest of asset src
-  # and href attributes (dcf_js_asset_url). Values, labels, option values and
-  # data-dcf JSON are never touched. Returns the serialized fragment.
+  # and href attributes (dcf_js_asset_url; script, link, img and, WP-24, svg
+  # use). Values, labels, option values and data-dcf JSON are never touched.
+  # Returns the serialized fragment.
   def dcf_js_normalize(html)
     fragment = html.is_a?(String) ? dcf_parse_fragment(html) : html
     fragment.css('input[name="authenticity_token"]').each { |input| input['value'] = TOKEN }
@@ -106,7 +107,7 @@ module DcfJsFixtures
       node.attribute_nodes.each do |attr|
         attr.value = STATE_HASH if attr.name.match?(/state[-_]hash/)
       end
-      next unless %w[script link img].include?(node.name)
+      next unless %w[script link img use].include?(node.name)
 
       %w[src href].each do |name|
         next unless node[name]
@@ -134,8 +135,10 @@ module DcfJsFixtures
   # hex of Propshaft on 6.x/7.0) and its 5.1 asset id, and a plugin asset in
   # the version-independent form /plugin_assets/<plugin>/<file> (5.1 adds
   # javascripts/ or stylesheets/, Propshaft serves it below /assets).
+  # WP-24 (editor fixtures): also the href of an svg sprite use element
+  # (sprite_icon, 6.0 and later), whose digest is followed by #icon--<name>.
   def dcf_js_asset_url(url)
-    url = url.sub(/-(?:[0-9a-f]{64}|[0-9a-f]{8})(?=\.\w+(\?|\z))/, '').sub(/\?\d+\z/, '')
+    url = url.sub(/-(?:[0-9a-f]{64}|[0-9a-f]{8})(?=\.\w+(\?|#|\z))/, '').sub(/\?\d+\z/, '')
     url.sub(%r{\A(?:/assets)?/plugin_assets/([^/]+)/(?:javascripts/|stylesheets/)?}, '/plugin_assets/\\1/')
   end
 

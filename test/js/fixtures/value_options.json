@@ -1,0 +1,64 @@
+{
+  "list": [
+    {
+      "key": "Belgium"
+    },
+    {
+      "key": "[x]"
+    },
+    {
+      "key": "a]"
+    },
+    {
+      "key": "say \"hi\""
+    },
+    {
+      "key": "<b>&\""
+    },
+    {
+      "key": "O'Brien"
+    },
+    {
+      "key": "</script>"
+    },
+    {
+      "key": "\"><script>alert(1)</script>"
+    },
+    {
+      "key": "__proto__"
+    },
+    {
+      "key": "constructor"
+    },
+    {
+      "key": "10"
+    },
+    {
+      "key": "é"
+    },
+    {
+      "key": "é"
+    },
+    {
+      "key": "Ünïcødé ñ"
+    }
+  ],
+  "enumeration": [
+    {
+      "key": "9200001",
+      "label": "North"
+    },
+    {
+      "key": "9200002",
+      "label": "South"
+    },
+    {
+      "key": "9200003",
+      "label": "Old",
+      "active": false
+    },
+    {
+      "key": "9200004"
+    }
+  ]
+}

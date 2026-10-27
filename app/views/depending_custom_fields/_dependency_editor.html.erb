@@ -1,0 +1,10 @@
+<%# The shared dependency editor (editor design 5.2, WP-24), local editor from DependencyEditorConfig.for_admin or .for_project. The hidden input is the only named control and always blank; the editor script builds the UI inside the app element from the data attributes. -%>
+<%= content_tag :fieldset, class: 'dcf-dep-editor', data: editor.data_attributes do %>
+  <legend><%= l(:field_value_dependencies) %></legend>
+  <%= hidden_field_tag editor.input_name, '', id: editor.input_id, autocomplete: 'off', data: { dcf_editor_input: 1 } %>
+  <p class="dcf-dep-editor__help"><em class="info"><%= l(:text_dcf_editor_help) %></em></p>
+  <noscript><p class="warning"><%= l(:text_dcf_editor_noscript) %></p></noscript>
+  <p class="dcf-dep-editor__placeholder<%= ' dcf-hidden' if editor.parent %>" data-dcf-editor-placeholder><em class="info"><%= l(:text_dcf_editor_select_parent) %></em></p>
+  <p class="dcf-dep-editor__required<%= ' dcf-hidden' unless editor.required_warning? %>" data-dcf-editor-required-warning><%= editor.required_warning_html %></p>
+  <div class="dcf-dep-editor__app" data-dcf-editor-app hidden></div>
+<% end %>

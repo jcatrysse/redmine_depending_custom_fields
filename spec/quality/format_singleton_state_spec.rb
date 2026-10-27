@@ -17,13 +17,14 @@ RSpec.describe 'Format singleton state' do
   # (module_function) and the read-only carrier hook (a singleton listener).
   # WP-18 adds ClientConfig (module_function) and the head hook (a singleton
   # listener). WP-21 adds DependencyPayload (module_function); only its
-  # Invalid exception sets instance variables.
+  # Invalid exception sets instance variables. WP-24 adds
+  # DependencyEditorConfig (module_function; its Editor is a Struct).
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
                dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
                patches/issue_validation_patch.rb patches/project_validation_patch.rb
                client_data.rb hooks/read_only_carrier_hook.rb
                client_config.rb hooks/view_layouts_base_html_head_hook.rb
-               dependency_payload.rb]
+               dependency_payload.rb dependency_editor_config.rb]
             .map { |name| File.join(lib_dir, name) }
   allowed_writes = { 'dependency_payload.rb' => %w[@reason @bytes] }
 
@@ -162,6 +163,17 @@ RSpec.describe 'Format singleton state' do
       RedmineDependingCustomFields::DependencyPayload.parse('{"value_dependencies":{"a/b":["c"]}}')
       RedmineDependingCustomFields::DependencyPayload.digest({ 'a' => ['b'] }, nil)
       expect(RedmineDependingCustomFields::DependencyPayload.instance_variables).to eq([])
+      # WP-24: the editor presenter in both modes and the wire shape.
+      editor_controller = CustomFieldsController.new
+      editor_controller.request = ActionDispatch::TestRequest.create
+      editor_controller.response = ActionDispatch::TestResponse.new
+      editor_view = editor_controller.view_context
+      editor_config = RedmineDependingCustomFields::DependencyEditorConfig
+      parent, child = build_kit(:enumeration)
+      editor_config.for_admin(CustomField.find(child.id), editor_view)
+      editor_config.for_project(field: CustomField.find(child.id), parent: parent, view: editor_view)
+      editor_config.wire_values([['a', 'b', false]])
+      expect(editor_config.instance_variables).to eq([])
       I18n.with_locale(:de) { RedmineDependingCustomFields::ClientConfig.payload }
       listener = RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook.instance
       listener.view_layouts_base_html_head({})

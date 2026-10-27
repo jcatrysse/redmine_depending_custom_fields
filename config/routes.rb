@@ -46,4 +46,9 @@ RedmineApp::Application.routes.draw do
   # Admin-only global audit view (read-only). Separate controller guarded by
   # require_admin, NOT the project permission.
   get 'dcf_config_audit', to: 'dcf_config_audit#index', as: 'dcf_config_audit'
+
+  # Admin-only values of a candidate parent for the dependency editor (WP-24):
+  # session only, so no json format default (a .json request ignores the
+  # session); outside depending_custom_fields/:id, which would shadow it.
+  get 'dcf_dependency_editor/values', to: 'dcf_dependency_editor#values', as: 'dcf_dependency_editor_values'
 end

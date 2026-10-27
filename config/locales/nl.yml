@@ -99,6 +99,12 @@ nl:
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "Een afhankelijk veld dat u niet kunt bewerken, heeft een waarde die deze keuze niet toestaat; opslaan wordt geweigerd."
 
+  # Afhankelijkheidseditor (gedeelde partial, DependencyEditorConfig::I18N)
+  text_dcf_editor_help: "Open een bovenliggende waarde om de onderliggende waarden te kiezen die ermee toegelaten zijn en eventueel de standaard onderliggende waarde. Gebruik de filters om waarden in lange lijsten te vinden."
+  text_dcf_editor_noscript: "Voor het bewerken van de afhankelijkheidskoppeling is JavaScript nodig."
+  text_dcf_editor_select_parent: "Kies het veld waarvan dit veld afhankelijk is om de afhankelijkheden te bewerken."
+  text_dcf_storage_estimate: "%{label}: ongeveer %{size} van de %{limit} bytes die voor dit veld kunnen worden opgeslagen (%{percent}%). Boven de limiet wordt opslaan geweigerd."
+
   # Modelfouten, getoond na de veldnaam
   activerecord:
     errors:

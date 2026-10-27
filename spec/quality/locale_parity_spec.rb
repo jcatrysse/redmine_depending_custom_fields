@@ -122,9 +122,11 @@ RSpec.describe 'Plugin locales' do
     false
   end
 
+  # WP-24: DependencyEditorConfig::I18N (the editor map) is resolved too.
   it 'resolves every value of the client i18n maps in every locale once they exist' do
     expect(self.class.unresolved_map_keys(tables, locales)).to eq([])
-    keys = RedmineDependingCustomFields::ClientConfig::I18N.values
+    keys = RedmineDependingCustomFields::ClientConfig::I18N.values +
+           RedmineDependingCustomFields::DependencyEditorConfig::I18N.values
     locales.each do |locale|
       keys.each { |key| expect { I18n.t(key, locale: locale, raise: true) }.not_to raise_error, "#{locale}.#{key}" }
     end
@@ -138,5 +140,17 @@ RSpec.describe 'Plugin locales' do
     expect(self.class.unresolved_map_keys(tables, locales)).to eq(locales.map { |locale| "#{locale}.text_dcf_missing_key" })
     without_de = tables.merge('de' => tables['de'].except('text_dcf_hint_no_options'))
     expect(self.class.unresolved_map_keys(without_de, locales)).to include('de.text_dcf_hint_no_options')
+  end
+
+  # WP-24 (gap 5): the check iterates RedmineDependingCustomFields::DependencyEditorConfig::I18N
+  # too, a map of its own (never merged with ClientConfig::I18N), loaded at boot.
+  it 'reports a DependencyEditorConfig::I18N entry without a locale entry (negative fixture)' do
+    name = 'RedmineDependingCustomFields::DependencyEditorConfig::I18N'
+    expect(Object.const_defined?(name)).to be(true)
+    without_de = tables.merge('de' => tables['de'].except('text_dcf_storage_estimate'))
+    expect(self.class.unresolved_map_keys(without_de, locales)).to eq(['de.text_dcf_storage_estimate'])
+
+    stub_const(name, Object.const_get(name).merge('missing' => :text_dcf_missing_key).freeze)
+    expect(self.class.unresolved_map_keys(tables, locales)).to eq(locales.map { |locale| "#{locale}.text_dcf_missing_key" })
   end
 end
