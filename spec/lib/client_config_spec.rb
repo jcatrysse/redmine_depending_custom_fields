@@ -80,4 +80,38 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       expect(text).not_to include('%{'), locale
     end
   end
+
+  # WP-25 (editor design 5.1, quality H3): the editor assets come only from
+  # the head hook, on the two editor controllers, compared by class name.
+  describe 'editor pages' do
+    it 'names the two editor controllers as frozen Strings' do
+      expect(described_class::EDITOR_CONTROLLERS).to eq(%w[CustomFieldsController ProjectCustomFieldConfigurationController])
+      expect(described_class::EDITOR_CONTROLLERS).to be_frozen
+      expect(described_class::EDITOR_CONTROLLERS).to all(be_frozen)
+    end
+
+    it 'is an editor page for those two controllers only, by class name, and never for nil' do
+      expect(described_class.editor_page?(CustomFieldsController.new)).to be(true)
+      expect(described_class.editor_page?(ProjectCustomFieldConfigurationController.new)).to be(true)
+      expect(described_class.editor_page?(IssuesController.new)).to be(false)
+      expect(described_class.editor_page?(Class.new(CustomFieldsController).new)).to be(false)
+      expect(described_class.editor_page?(nil)).to be(false)
+    end
+
+    it 'returns the model script, the editor script and the editor stylesheet, in this order' do
+      view = RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook.send(:new)
+      tags = described_class.editor_asset_tags(view)
+      fragment = Nokogiri::HTML5.fragment(tags.join)
+      asset = ->(name, ext) { /#{name}(-[0-9a-f]{7,}\.#{ext}|\.#{ext}\?\d+)\z/ }
+
+      expect(tags.size).to eq(3)
+      expect(fragment.element_children.map(&:name)).to eq(%w[script script link])
+      srcs = fragment.css('script').map { |s| s['src'] }
+      expect(srcs[0]).to match(asset.call('dcf_dependency_editor_model', 'js'))
+      expect(srcs[1]).to match(asset.call('dcf_dependency_editor', 'js'))
+      expect(fragment.at_css('link')['href']).to match(asset.call('dcf_dependency_editor', 'css'))
+      expect(described_class.instance_variables).to eq([])
+      expect(described_class::I18N.size).to eq(11)
+    end
+  end
 end

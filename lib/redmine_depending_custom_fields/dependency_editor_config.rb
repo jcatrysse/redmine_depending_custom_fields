@@ -16,8 +16,54 @@ module RedmineDependingCustomFields
   module DependencyEditorConfig
     # JS key => locale key, sent as data-dcf-editor-i18n. Its own map, never
     # merged with ClientConfig::I18N; WP-25 and WP-26 extend it together with
-    # their locale entries (gap 8).
-    I18N = { 'storageEstimate' => :text_dcf_storage_estimate }.freeze
+    # their locale entries (gap 8). The JS keys of editor design 9; the two
+    # label_* keys are the %{label} texts of storageEstimate.
+    I18N = {
+      'storageEstimate' => :text_dcf_storage_estimate,
+      'too_large_to_send' => :error_dcf_dependencies_too_large_to_send,
+      'form_too_large' => :error_dcf_editor_form_too_large,
+      'unavailable' => :text_dcf_editor_unavailable,
+      'no_parent_values' => :text_dcf_editor_no_parent_values,
+      'no_child_values' => :text_dcf_editor_no_child_values,
+      'enumeration_save_first' => :text_dcf_editor_enumeration_save_first,
+      'enumeration_hint' => :text_dcf_editor_enumeration_values_hint,
+      'loading' => :text_dcf_editor_loading,
+      'load_failed' => :error_dcf_editor_load_failed,
+      'parent_changed' => :text_dcf_editor_parent_changed,
+      'orphans' => :text_dcf_editor_orphans,
+      'format_change_confirm' => :text_dcf_editor_format_change_confirm,
+      'conflict' => :text_dcf_editor_conflict,
+      'use_mine' => :button_dcf_use_my_version,
+      'keep_current' => :button_dcf_keep_current_version,
+      'export_mine' => :button_dcf_export_my_version,
+      'mine_loaded' => :text_dcf_editor_conflict_mine_loaded,
+      'filter_parents' => :label_dcf_filter_parent_values,
+      'filter_children' => :label_dcf_filter_child_values,
+      'only_parents_without_links' => :label_dcf_only_parents_without_links,
+      'show' => :label_dcf_show_children,
+      'show_all' => :label_dcf_show_all,
+      'show_linked' => :label_dcf_show_linked,
+      'show_not_linked' => :label_dcf_show_not_linked_here,
+      'show_unlinked' => :label_dcf_show_not_linked_anywhere,
+      'check_shown' => :button_dcf_check_shown,
+      'uncheck_shown' => :button_dcf_uncheck_shown,
+      'show_more' => :button_dcf_show_more,
+      'linked_count' => :label_dcf_linked_count,
+      'default_summary' => :label_dcf_default_summary,
+      'inactive' => :label_dcf_inactive,
+      'no_matches' => :text_dcf_no_matches,
+      'status_sections' => :text_dcf_status_sections,
+      'status_parents_without_links' => :text_dcf_status_parents_without_links,
+      'status_unlinked_children' => :text_dcf_status_unlinked_children,
+      'unlinked_list' => :label_dcf_unlinked_children_list,
+      'collapse_all' => :button_collapse_all,
+      'clear' => :button_clear,
+      'default_value' => :field_default_value,
+      'unsaved' => :text_warn_on_leaving_unsaved,
+      'no_default' => :text_dcf_no_default,
+      'label_value_dependencies' => :field_value_dependencies,
+      'label_possible_values' => :field_possible_values
+    }.freeze
     # Rack request body limits minus margins (multipart buffer 16 MiB,
     # urlencoded body 4 MiB; editor design 0.3, P6).
     MAX_FORM_BYTES = { 'multipart' => 16_252_928, 'urlencoded' => 4_128_768 }.freeze
@@ -51,8 +97,11 @@ module RedmineDependingCustomFields
     # the transport applied, dirty against the stored digest); after a stale
     # refusal the stored row and the refused version (conflict-mapping). The
     # parent is the raw lookup DependencyRules.parent_of (nil for a blank,
-    # dangling, own, other type or other family pointer).
-    def for_admin(field, view)
+    # dangling, own, other type or other family pointer). +index+: the
+    # format partial's FieldIndex.load (nil for a new record), so the
+    # required warning reads the effective parent without a query per chain
+    # level (WP-25).
+    def for_admin(field, view, index: nil)
       parent = DependencyRules.parent_of(field)
       list = DependencyRules.kind(field) == 'list'
       parent_options = parent ? DependencyRules.value_options(parent) : []
@@ -79,7 +128,7 @@ module RedmineDependingCustomFields
       data[:dcf_editor_allow_add_values] = '1' if list
       values_limit = list ? StorageLimits.column_limit('possible_values') : nil
       data.update(shared(field, StorageLimits.column_limit('format_store'), values_limit))
-      editor(data, ADMIN_INPUT, field, parent, parent_options, mapping, view)
+      editor(data, ADMIN_INPUT, field, parent, parent_options, mapping, view, index)
     end
 
     # The project page (WP-27): +parent+ is the caller's decision (never
@@ -142,21 +191,27 @@ module RedmineDependingCustomFields
       data
     end
 
-    def editor(data, input, field, parent, parent_options, mapping, view)
+    def editor(data, input, field, parent, parent_options, mapping, view, index = nil)
       Editor.new(data_attributes: data, input_name: input[0], input_id: input[1], parent: parent,
-                 required_warning: required_warning?(field, parent, parent_options, mapping),
+                 required_warning: required_warning?(field, parent, parent_options, mapping, index),
                  required_warning_html: required_warning_html(view))
     end
 
     # The rule of the current format partials: a required field whose
     # effective parent (not in or below a stored cycle) has an active value
     # without links in the rendered mapping.
-    def required_warning?(field, parent, parent_options, mapping)
+    def required_warning?(field, parent, parent_options, mapping, index)
       return false unless field.is_required? && parent
-      return false unless DependencyRules.effective_parent_id(field, { parent.id => parent }) == parent.id
+      return false unless effective_parent_id(field, parent, index) == parent.id
 
       links = mapping['value_dependencies']
       parent_options.any? { |key, _label, active| active && Array(links[key]).empty? }
+    end
+
+    def effective_parent_id(field, parent, index)
+      return DependencyRules.effective_parent_id(field, { parent.id => parent }) unless index
+
+      index.effective_parent_id_for(field.id, field.type, field.field_format, parent.id)
     end
 
     # Always rendered (the partial hides it), so the editor can toggle it.
@@ -195,7 +250,8 @@ module RedmineDependingCustomFields
       StorageLimits.column_limit('format_store')
     end
 
-    private_class_method :identity, :flags, :shared, :editor, :required_warning?, :required_warning_html,
+    private_class_method :identity, :flags, :shared, :editor, :required_warning?, :effective_parent_id,
+                         :required_warning_html,
                          :current_mapping, :stored_mapping, :result_mapping, :ok_result?, :project_storage_limit
   end
 end

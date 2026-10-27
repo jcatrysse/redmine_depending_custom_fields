@@ -8,9 +8,10 @@ require 'logger'
 # custom field form accepts the dependency mapping as one JSON field,
 # custom_field[dependencies_json]. Absent or blank keeps the mapping, '{}'
 # clears it, an unreadable, oversize or stale payload re-renders the form
-# with the error on "Dependency mapping" and writes nothing. The rendered form
-# still posts the matrix params until WP-25; these examples post the field
-# directly.
+# with the error on "Dependency mapping" and writes nothing. Changed by
+# WP-25: the form renders the editor (one blank hidden input, the mapping in
+# data-dcf-editor-mapping) instead of the matrix; most examples still post the
+# field directly, the WP-25 block below drives the rendered form.
 RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
   fixtures :users
 
@@ -92,10 +93,17 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
     expect(raw_store(field)).to eq(raw_before)
   end
 
-  def matrix_box(parent_value, child_value)
-    page.css('table.dependencies-matrix input').detect do |box|
-      box['name'] == "custom_field[value_dependencies][#{parent_value}][]" && box['value'] == child_value
-    end
+  # Changed by WP-25 (was matrix_box): the editor root of the page.
+  def editor_root
+    page.at_css('fieldset.dcf-dep-editor[data-dcf-editor]')
+  end
+
+  def editor_json(name)
+    JSON.parse(editor_root["data-dcf-editor-#{name}"])
+  end
+
+  def hidden_inputs
+    page.css('[name="custom_field[dependencies_json]"]')
   end
 
   def multipart
@@ -179,8 +187,9 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       get "/custom_fields/#{field.id}/edit"
       expect(response).to have_http_status(200)
       expect(response.body).not_to include('<script>alert(1)')
-      box = matrix_box('"><script>alert(1)</script>', ordered['"><script>alert(1)</script>'].first)
-      expect(box['checked']).to eq('checked')
+      # Changed by WP-25: the editor mapping attribute instead of a matrix box.
+      expect(editor_json('mapping')['value_dependencies']).to eq(ordered)
+      expect(editor_json('mapping')['default_value_dependencies']).to eq(defaults)
     end
 
     it 'saves 5,000 links sent in the one form param' do
@@ -307,7 +316,9 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
         get '/custom_fields/new', params: params
         expect(response).to have_http_status(200)
         expect(response.body).not_to include(marker)
-        expect(page.css('[name="custom_field[dependencies_json]"]')).to be_empty
+        # Changed by WP-25: the editor's one blank hidden input (was: none).
+        expect(hidden_inputs.map { |i| i['value'] }).to eq([''])
+        expect(editor_root['data-dcf-editor-dirty']).to be_nil
 
         get '/custom_fields/new.js', params: params, xhr: true
         expect(response).to have_http_status(200)
@@ -379,7 +390,10 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       expect(stored(CustomField.order(:id).last)).to eq([{ 'B' => %w[b1 a1] }, { 'B' => 'b1' }])
     end
 
-    it 'keeps the pruned posted mapping on the form after a save refused for another reason (gap 1, WP-22 part)' do
+    # Changed by WP-25 (gap 1): the editor attributes instead of the matrix
+    # boxes; the hidden input renders blank, the mapping attribute holds the
+    # pruned posted mapping and the editor starts dirty.
+    it 'keeps the pruned posted mapping on the form after a save refused for another reason (gap 1)' do
       raw_before = raw_store(child)
       marker = "MARK#{SecureRandom.hex(8)}"
 
@@ -391,27 +405,69 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       expect(response).to have_http_status(200)
       expect(payload).to have_received(:parse).once
       expect(page.css('#errorExplanation li').size).to eq(1)
-      expect(matrix_box('A', 'a1')['checked']).to eq('checked')
-      expect(matrix_box('A', 'c1')['checked']).to eq('checked')
-      expect(matrix_box('A', 'b1')['checked']).to be_nil
-      expect(matrix_box('B', 'b1')['checked']).to be_nil
-      expect(matrix_box('C', 'b1')['checked']).to eq('checked')
-      expect(page.at_css('select[name="custom_field[default_value_dependencies][C]"] option[selected]')['value'])
-        .to eq('b1')
-      expect(page.css('[name="custom_field[dependencies_json]"]')).to be_empty
+      expect(hidden_inputs.map { |i| i['value'] }).to eq([''])
+      expect(editor_json('mapping')).to eq('value_dependencies' => { 'A' => %w[a1 c1], 'C' => %w[b1] },
+                                           'default_value_dependencies' => { 'C' => 'b1' })
+      expect(editor_root['data-dcf-editor-dirty']).to eq('1')
+      expect(editor_root['data-dcf-editor-echo']).to be_nil
+      expect(editor_root['data-dcf-editor-conflict-mapping']).to be_nil
       ['"value_dependencies"', marker, 'JSON::', 'unexpected token'].each do |text|
         expect(response.body).not_to include(text)
       end
       expect(raw_store(child)).to eq(raw_before)
     end
 
-    it 'escapes markup of an unreadable or stale payload nowhere into the page' do
+    it 'shows the stored mapping, not dirty, after a refused payload (unreadable or too large)' do
+      raw_before = raw_store(child)
+      stored_mapping = { 'value_dependencies' => { 'A' => %w[a1], 'B' => %w[b1] },
+                         'default_value_dependencies' => { 'A' => 'a1' } }
+      [['{"value_dependencies":{"C":', {}], ['x' * (max_bytes + 1), { headers: multipart }]].each do |raw, options|
+        put_field(child, { dependencies_json: raw }, options)
+
+        expect(response).to have_http_status(200)
+        expect(error_box.size).to eq(1)
+        expect(hidden_inputs.map { |i| i['value'] }).to eq([''])
+        expect(editor_json('mapping')).to eq(stored_mapping)
+        expect(editor_root['data-dcf-editor-dirty']).to be_nil
+        expect(response.body).not_to include('xxxxxxxxxx')
+      end
+      expect(raw_store(child)).to eq(raw_before)
+    end
+
+    it 'shows the stored mapping, the refused version and the fresh base after a stale refusal (UD-17)' do
+      raw_before = raw_store(child)
+      put_field(child, dependencies_json: json({ 'C' => %w[c1] }, { 'C' => 'c1' }, 'base' => '0' * 64))
+
+      expect_refused(child, raw_before, messages[:en][:stale])
+      expect(editor_json('mapping')).to eq('value_dependencies' => { 'A' => %w[a1], 'B' => %w[b1] },
+                                           'default_value_dependencies' => { 'A' => 'a1' })
+      expect(editor_json('conflict-mapping')).to eq('value_dependencies' => { 'C' => %w[c1] },
+                                                    'default_value_dependencies' => { 'C' => 'c1' },
+                                                    'source' => 'editor', 'import' => nil)
+      expect(editor_root['data-dcf-editor-base']).to eq(payload.stored_digest(CustomField.find(child.id)))
+      expect(editor_root['data-dcf-editor-dirty']).to be_nil
+      expect(hidden_inputs.map { |i| i['value'] }).to eq([''])
+    end
+
+    # Changed by WP-25: the stale re-render carries the refused version in
+    # data-dcf-editor-conflict-mapping, JSON-encoded and escaped once; the
+    # markup never appears as markup (was: the text nowhere in the page).
+    it 'escapes markup of an unreadable or stale payload nowhere into the page as markup' do
       markup = '<img src=x onerror=alert(1)>'
       raw_before = raw_store(child)
-      [json({ markup => [markup] }, nil, 'base' => '0' * 64), "{\"#{markup}\":"].each do |raw|
+      [json({ markup => [markup] }, nil, 'base' => '0' * 64), "{\"#{markup}\":"].each_with_index do |raw, i|
         put_field(child, dependencies_json: raw)
         expect(response).to have_http_status(200)
-        expect(response.body).not_to include('onerror=alert(1)')
+        expect(response.body).not_to include('<img src=x')
+        expect(response.body).not_to include('&lt;img')
+        expect(response.body).not_to include('&amp;quot;')
+        expect(page.css('img[src=x]')).to be_empty
+        if i.zero?
+          expect(editor_json('conflict-mapping')['value_dependencies']).to eq(markup => [markup])
+        else
+          expect(editor_root['data-dcf-editor-conflict-mapping']).to be_nil
+          expect(response.body).not_to include('onerror=alert(1)')
+        end
       end
       expect(raw_store(child)).to eq(raw_before)
     end
@@ -538,6 +594,225 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       expect(raw_store(child)).to eq(raw_before)
     ensure
       Setting.rest_api_enabled = with_settings
+    end
+  end
+
+  # WP-25 (editor design 5.2, 5.9, 3.4; UD-16; compat 2.2): the admin form
+  # renders the editor last, posts one blank field until the editor is
+  # dirty, and saves the mapping through the rendered form.
+  describe 'the admin form with the dependency editor (WP-25)' do
+    before { allow(User).to receive(:current).and_return(admin) }
+
+    # The [name, value] entries a browser submits for +form+ as rendered.
+    def browser_entries(form)
+      skipped = %w[submit button image file reset]
+      form.css('input, select, textarea').each_with_object([]) do |control, entries|
+        next if control['name'].to_s.empty? || control.key?('disabled')
+
+        name = control['name']
+        case control.name
+        when 'select'
+          options = control.css('option')
+          chosen = options.select { |o| o.key?('selected') }
+          chosen = options.first(1) if chosen.empty? && !control.key?('multiple')
+          chosen.each { |o| entries << [name, o['value'] || o.text] }
+        when 'textarea' then entries << [name, control.text.sub(/\A\r?\n/, '')]
+        else
+          type = (control['type'] || 'text').downcase
+          checkable = type == 'checkbox' || type == 'radio'
+          next if skipped.include?(type) || (checkable && !control.key?('checked'))
+
+          entries << [name, control['value'] || (checkable ? 'on' : '')]
+        end
+      end
+    end
+
+    def edit_form(field)
+      get "/custom_fields/#{field.id}/edit"
+      expect(response).to have_http_status(200)
+      page.at_css('form#custom_field_form')
+    end
+
+    def submit_urlencoded(form)
+      post form['action'], params: URI.encode_www_form(browser_entries(form)),
+                           headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+    end
+
+    def positions(body, needles)
+      needles.map { |needle| body.index(needle) }
+    end
+
+    it 'renders the editor last, after the default value row, url_pattern, the parent select and the options' do
+      enum_parent = dcf_enum_field(name: "EP-#{SecureRandom.hex(3)}", names: %w[X Y])
+      enum_child = dcf_enum_field(format: 'depending_enumeration', names: %w[x1 y1], parent: enum_parent)
+      [[child, 'id="custom_field_possible_values"'], [enum_child, "/custom_fields/#{enum_child.id}/enumerations"]]
+        .each do |field, first|
+        get "/custom_fields/#{field.id}/edit"
+        expect(response).to have_http_status(200)
+        body = response.body
+        order = positions(body, [first, 'data-dcf-default-value-row', 'id="custom_field_url_pattern"',
+                                 'id="custom_field_parent_custom_field_id"', 'custom_field[hide_when_disabled]',
+                                 'id="custom_field_edit_tag_style"', 'data-dcf-editor="1"'])
+        expect(order).to all(be_an(Integer)), order.inspect
+        expect(order).to eq(order.sort), field.field_format
+        expect(page.css('table.dependencies-matrix, .dependencies-defaults, .dependencies-defaults-container')).to be_empty
+        expect(page.css('[name^="custom_field[value_dependencies]"], [name^="custom_field[default_value_dependencies]"]'))
+          .to be_empty
+        expect(hidden_inputs.map { |i| [i['type'], i['value'], i['id'], i['autocomplete']] })
+          .to eq([['hidden', '', 'custom_field_dependencies_json', 'off']])
+        expect(page.at_css('form#custom_field_form')['enctype']).to be_nil
+        expect(page.css('p[data-dcf-editor-required-warning]').size).to eq(1)
+        expect(body.scan(I18n.t(:warning_required_child_no_options)).size).to eq(1)
+        expect(page.css('p[data-dcf-default-value-row]').map { |p| p['class'] }).to eq(['dcf-hidden'])
+        expect(page.css('form#custom_field_form script:not([src])').map(&:text).join).not_to include('dcf')
+        expect(body).not_to match(/translation[ _]missing/i)
+      end
+    end
+
+    it 'renders the default value row visible without a parent and hidden with one, and still clears the default' do
+      get '/custom_fields/new', params: { type: 'IssueCustomField', custom_field: { field_format: 'depending_list' } }
+      expect(response).to have_http_status(200)
+      row = page.at_css('p[data-dcf-default-value-row]')
+      expect(row['class'].to_s).not_to include('dcf-hidden')
+      expect(row.at_css('#custom_field_default_value')).not_to be_nil
+      expect(editor_root.at_css('[data-dcf-editor-placeholder]')['class']).not_to include('dcf-hidden')
+
+      put_field(child, default_value: 'a1')
+      expect_saved(child)
+      expect(CustomField.find(child.id).default_value).to be_nil
+      get "/custom_fields/#{child.id}/edit"
+      expect(page.at_css('p[data-dcf-default-value-row]')['class']).to eq('dcf-hidden')
+    end
+
+    it 'renders the editor in de, fr and nl without a missing translation' do
+      %w[de fr nl].each do |locale|
+        admin.update_column(:language, locale)
+        get "/custom_fields/#{child.id}/edit"
+        expect(response).to have_http_status(200)
+        expect(response.body).not_to match(/translation[ _]missing/i), locale
+        expect(editor_json('i18n')['show_more']).to eq(I18n.t(:button_dcf_show_more, locale: locale)), locale
+      end
+    ensure
+      admin.update_column(:language, 'en')
+    end
+
+    it 'renders warn-unsaved 0 when the user turned the warning off' do
+      admin.pref.update!(warn_on_leaving_unsaved: '0')
+      get "/custom_fields/#{child.id}/edit"
+      expect(editor_root['data-dcf-editor-warn-unsaved']).to eq('0')
+    end
+
+    it 'saves the rendered form as is (no JavaScript): the mapping stays byte-identical, the name is saved' do
+      # A first save writes the form's own store keys (url_pattern and the others).
+      submit_urlencoded(edit_form(child))
+      expect_saved(child)
+      raw_before = raw_store(child)
+      form = edit_form(child)
+      form.at_css('input[name="custom_field[name]"]')['value'] = 'Renamed'
+
+      submit_urlencoded(form)
+
+      expect_saved(child)
+      expect(CustomField.find(child.id).name).to eq('Renamed')
+      expect(stored(child)).to eq([{ 'A' => %w[a1], 'B' => %w[b1] }, { 'A' => 'a1' }])
+      expect(raw_store(child)).to eq(raw_before)
+    end
+
+    it 'keeps the old keys under a parent changed without JavaScript (documented, compat 2.2)' do
+      second = dcf_list_field(name: "Second-#{SecureRandom.hex(3)}", values: %w[C B])
+      form = edit_form(child)
+      select = form.at_css('select#custom_field_parent_custom_field_id')
+      select.css('option[selected]').each { |o| o.remove_attribute('selected') }
+      option = select.at_css("option[value='#{second.id}']")
+      option ||= select.add_child("<option value=\"#{second.id}\">x</option>").first
+      option['selected'] = 'selected'
+
+      submit_urlencoded(form)
+
+      expect_saved(child)
+      expect(CustomField.find(child.id).parent_custom_field_id).to eq(second.id)
+      expect(stored(child)).to eq([{ 'A' => %w[a1], 'B' => %w[b1] }, { 'A' => 'a1' }])
+    end
+
+    it 'saves the editor payload written into the rendered form, against the rendered base' do
+      form = edit_form(child)
+      root = form.at_css('fieldset[data-dcf-editor]')
+      body = { 'version' => 1, 'source' => 'editor', 'base' => root['data-dcf-editor-base'],
+               'value_dependencies' => { 'C' => %w[c1 a1] }, 'default_value_dependencies' => { 'C' => 'a1' } }
+      form.at_css('input[name="custom_field[dependencies_json]"]')['value'] = JSON.generate(body)
+
+      submit_urlencoded(form)
+
+      expect_saved(child)
+      expect(stored(child)).to eq([{ 'C' => %w[a1 c1] }, { 'C' => 'a1' }])
+    end
+
+    it 'saves a multipart PUT with a 3 MB dependencies_json (UD-16)' do
+      big_parent = dcf_list_field(values: (1..130).map { |i| "Parent value #{i}" })
+      children = (1..1_000).map { |i| "Child value number #{i}" }
+      field = dcf_list_field(format: 'depending_list', values: children, parent: big_parent)
+      links = (1..130).to_h { |i| ["Parent value #{i}", children] }
+      raw = json(links)
+      expect(raw.bytesize).to be_between(3_000_000, max_bytes)
+
+      put_field(field, { dependencies_json: raw }, headers: multipart)
+
+      expect_saved(field)
+      expect(stored(field)[0]).to eq(links)
+    end
+
+    # Rack refuses an urlencoded body above its query parser limit before
+    # routing (documents the multipart switch and the client pre-check):
+    # Rack 3 (6.0 and later) drops _method=put, so the browser POST matches
+    # no route (404); Rack 2.2 (5.1) raises the limit error out of
+    # MethodOverride (500). The limit is 4 MiB with Rack's defaults; core
+    # config/boot.rb of the tested 5.1, 6.0, 6.1 and 7.0 releases raises it
+    # to 32 MiB (RACK_QUERY_PARSER_BYTESIZE_LIMIT).
+    it 'refuses an urlencoded form body above the Rack query parser limit before routing, row unchanged' do
+      raw_before = raw_store(child)
+      limit = Rack::Utils.default_query_parser.bytesize_limit
+      expect(limit).to be >= max_bytes
+      body = URI.encode_www_form([['_method', 'put'], ['custom_field[name]', 'Renamed'],
+                                  ['custom_field[dependencies_json]', 'a' * (limit + 10)]])
+      expect(body.bytesize).to be > limit
+
+      post "/custom_fields/#{child.id}", params: body, headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+
+      expect(response).to have_http_status(Gem::Version.new(Rack::RELEASE) >= Gem::Version.new('3') ? 404 : 500)
+      expect(raw_store(child)).to eq(raw_before)
+      expect(CustomField.find(child.id).name).to eq(child.name)
+    end
+
+    it 'refuses a multipart PUT without the authenticity token (CSRF) and saves one with it' do
+      raw_before = raw_store(child)
+      ActionController::Base.allow_forgery_protection = true
+      put_field(child, { name: 'Forged', dependencies_json: '{}' }, headers: multipart)
+      expect(response).to have_http_status(422)
+      expect(raw_store(child)).to eq(raw_before)
+
+      token = edit_form(child).at_css('input[name="authenticity_token"]')['value']
+      expect(token).to be_present
+      put "/custom_fields/#{child.id}", params: { authenticity_token: token, custom_field: { dependencies_json: '{}' } },
+                                        headers: multipart
+      expect_saved(child)
+      expect(stored(child)).to eq([{}, {}])
+    ensure
+      ActionController::Base.allow_forgery_protection = false
+    end
+
+    it 'keeps dirty and a blank input after a storage refusal (failed-save rule, limits 4.10)' do
+      raw_before = raw_store(child)
+      allow(limits).to receive(:column_limit).and_call_original
+      allow(limits).to receive(:column_limit).with('format_store').and_return(1)
+
+      put_field(child, dependencies_json: json('C' => %w[c1]))
+
+      expect(response).to have_http_status(200)
+      expect(error_box.size).to eq(1)
+      expect(editor_root['data-dcf-editor-dirty']).to eq('1')
+      expect(editor_json('mapping')['value_dependencies']).to eq('C' => %w[c1])
+      expect(hidden_inputs.map { |i| i['value'] }).to eq([''])
+      expect(raw_store(child)).to eq(raw_before)
     end
   end
 end

@@ -22,6 +22,15 @@ const ADMIN_ONLY = ['data-dcf-editor-base', 'data-dcf-editor-values-url', 'data-
   'data-dcf-editor-multiple-source', 'data-dcf-editor-required-source', 'data-dcf-editor-format-source',
   'data-dcf-editor-default-value-row', 'data-dcf-editor-values-source', 'data-dcf-editor-allow-add-values'];
 
+// WP-25: DependencyEditorConfig::I18N (was ['storageEstimate'] only).
+const I18N_KEYS = ['storageEstimate', 'too_large_to_send', 'form_too_large', 'unavailable', 'no_parent_values',
+  'no_child_values', 'enumeration_save_first', 'enumeration_hint', 'loading', 'load_failed', 'parent_changed', 'orphans',
+  'format_change_confirm', 'conflict', 'use_mine', 'keep_current', 'export_mine', 'mine_loaded', 'filter_parents',
+  'filter_children', 'only_parents_without_links', 'show', 'show_all', 'show_linked', 'show_not_linked', 'show_unlinked',
+  'check_shown', 'uncheck_shown', 'show_more', 'linked_count', 'default_summary', 'inactive', 'no_matches',
+  'status_sections', 'status_parents_without_links', 'status_unlinked_children', 'unlinked_list', 'collapse_all', 'clear',
+  'default_value', 'unsaved', 'no_default', 'label_value_dependencies', 'label_possible_values'];
+
 const files = () => (fs.existsSync(DIR) ? fs.readdirSync(DIR).sort() : []);
 
 function load(file) {
@@ -72,7 +81,7 @@ test('the value lists, mappings and base decode with the editor model', () => {
     if (root.hasAttribute('data-dcf-editor-base')) assert.ok(M.isDigest(root.getAttribute('data-dcf-editor-base')), file);
     assert.equal(parents.items.length > 0, root.hasAttribute('data-dcf-editor-parent-id'), file);
     assert.ok(state.links instanceof Map, file);
-    assert.deepEqual(Object.keys(json(root, 'i18n')), ['storageEstimate'], file);
+    assert.deepEqual(Object.keys(json(root, 'i18n')), I18N_KEYS, file);
     assert.deepEqual(json(root, 'max-form-bytes'), { multipart: 16252928, urlencoded: 4128768 }, file);
     assert.equal(root.getAttribute('data-dcf-editor-max-payload-bytes'), '4194304', file);
   });

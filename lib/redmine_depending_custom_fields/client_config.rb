@@ -24,11 +24,26 @@ module RedmineDependingCustomFields
       'saveFailed' => :error_save_failed,
       'lockedRefused' => :text_dcf_hint_locked_refused
     }.freeze
+    # Compared with controller.class.name; nothing is constantized.
+    EDITOR_CONTROLLERS = %w[CustomFieldsController ProjectCustomFieldConfigurationController].freeze
+    PLUGIN = 'redmine_depending_custom_fields'
 
     module_function
 
     def payload
       I18N.transform_values { |key| ::I18n.t(key) }
+    end
+
+    def editor_page?(controller)
+      !controller.nil? && EDITOR_CONTROLLERS.include?(controller.class.name)
+    end
+
+    # The editor model, the editor script and its stylesheet, in this order
+    # (the model first: the editor builds every ValueList and State with it).
+    def editor_asset_tags(view)
+      [view.javascript_include_tag('dcf_dependency_editor_model', plugin: PLUGIN),
+       view.javascript_include_tag('dcf_dependency_editor', plugin: PLUGIN),
+       view.stylesheet_link_tag('dcf_dependency_editor', plugin: PLUGIN)]
     end
   end
 end

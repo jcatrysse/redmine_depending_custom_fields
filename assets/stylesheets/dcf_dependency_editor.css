@@ -1,0 +1,61 @@
+/* Dependency editor (editor design 5.12, WP-25), loaded by the head hook on
+   the custom field and project custom field configuration pages only.
+   Logical properties for right-to-left layouts; core classes do the rest
+   (box, tabular, flash, icon icon-warning, badge, em.info,
+   hidden-for-sighted). */
+.dcf-dep-editor { margin: .6em 0; padding: 4px 8px 8px; min-inline-size: 0; }
+.dcf-dep-editor > legend { font-weight: bold; padding: 0 4px; }
+.tabular .dcf-dep-editor p:not(.warning):not(.nodata):not(.icon) { padding-inline-start: 0; }
+/* core flash padding; .tabular p would win */
+.tabular .dcf-dep-editor p.warning,
+.tabular .dcf-dep-editor p.nodata { padding-inline-start: 30px; }
+.tabular .dcf-dep-editor label {
+  float: none;
+  margin-inline-start: 0;
+  inline-size: auto;
+  font-weight: normal;
+  text-align: start;
+  line-height: inherit;
+}
+.dcf-dep-editor .dcf-hidden,
+.tabular p.dcf-hidden { display: none !important; }
+.dcf-dep-editor__toolbar,
+.dcf-dep-section__tools,
+.dcf-dep-editor__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-block: 4px;
+}
+.dcf-dep-editor__status { font-size: .9em; color: var(--oc-gray-7, #555); margin-block: 4px; }
+.dcf-dep-editor__sections { border: 1px solid var(--oc-gray-3, #e4e4e4); border-radius: 3px; }
+.dcf-dep-section + .dcf-dep-section { border-block-start: 1px solid var(--oc-gray-3, #e4e4e4); }
+.dcf-dep-section > summary { cursor: pointer; padding: 4px 6px; }
+.dcf-dep-section[open] > summary { background-color: var(--oc-gray-1, #f6f7f8); }
+.dcf-dep-section__counts,
+.dcf-dep-section__default { margin-inline-start: .8em; font-size: .9em; color: var(--oc-gray-7, #555); }
+.dcf-dep-section__counts--none { color: var(--oc-red-9, #c22); }
+.dcf-dep-section__body { padding-block: 4px 8px; padding-inline: 22px 8px; }
+.dcf-dep-section__rows {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14em, 1fr));
+  gap: 0 1em;
+  max-block-size: 24em;
+  overflow-y: auto;
+}
+.dcf-dep-section__rows label { display: block; overflow-wrap: anywhere; }
+.dcf-dep-editor .badge { inset-block-end: 0; margin-inline-start: .4em; }
+.dcf-dep-editor__unlinked { margin-block-start: 8px; }
+.dcf-dep-editor__unlinked > summary { cursor: pointer; }
+.dcf-dep-editor__panel { margin-block-start: 8px; }
+.dcf-dep-editor__panel > summary { cursor: pointer; font-weight: bold; }
+.dcf-dep-editor__panel textarea { inline-size: 95%; font-family: monospace; }
+.dcf-dep-editor__panel textarea:disabled { opacity: .6; }
+.dcf-dep-editor__preview table.list td { text-align: start; }
+.dcf-dep-editor__notices .flash,
+.dcf-dep-editor__conflict { margin-block: 4px; }
+.dcf-dep-editor__notices .flash svg.icon-svg { vertical-align: middle; margin-inline-end: 4px; }

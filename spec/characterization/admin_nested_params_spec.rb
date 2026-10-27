@@ -25,19 +25,18 @@ RSpec.describe 'Admin custom field form dependency params (characterization)', t
     Nokogiri::HTML(response.body).at_css('form#custom_field_form')
   end
 
-  def matrix_boxes(form, parent_value)
-    form.css('table.dependencies-matrix input')
-        .select { |box| box['name'] == "custom_field[value_dependencies][#{parent_value}][]" }
+  # Flipped by WP-25: the matrix is gone; the editor posts the mapping as
+  # one JSON field with the base of the rendered page. Nokogiri runs no JS,
+  # so the payload is written here as the editor serializes it.
+  def editor_payload(form, links, defaults = {})
+    root = form.at_css('fieldset[data-dcf-editor]')
+    payload = { 'version' => 1, 'source' => 'editor', 'base' => root['data-dcf-editor-base'],
+                'value_dependencies' => links, 'default_value_dependencies' => defaults }
+    form.at_css('input[name="custom_field[dependencies_json]"]')['value'] = JSON.generate(payload)
   end
 
-  def set_ticks(form, parent_value, ticked)
-    matrix_boxes(form, parent_value).each do |box|
-      if ticked
-        box['checked'] = 'checked'
-      else
-        box.remove_attribute('checked')
-      end
-    end
+  def rendered_mapping(form)
+    JSON.parse(form.at_css('fieldset[data-dcf-editor]')['data-dcf-editor-mapping'])
   end
 
   # The [name, value] entries a browser submits for +form+ as rendered: named,
@@ -87,32 +86,28 @@ RSpec.describe 'Admin custom field form dependency params (characterization)', t
     [field.value_dependencies, field.default_value_dependencies]
   end
 
-  def rack3?
-    Gem::Version.new(Rack::RELEASE) >= Gem::Version.new('3')
-  end
-
-  describe 'what the matrix posts' do
-    it 'renders each cell as a bare checkbox named after the raw parent value, with no hidden companion' do
+  # Flipped by WP-25 (was: 'renders each cell as a bare checkbox named
+  # after the raw parent value, with no hidden companion'): the editor
+  # replaces the matrix (editor design 5.2).
+  describe 'what the editor posts' do
+    it 'renders one blank hidden dependencies_json input and no nested dependency control' do
       form = edit_form(child)
 
-      controls = form.css('[name^="custom_field[value_dependencies]"]')
-      expect(controls.map { |c| [c.name, c['type'], c['name'], c['value'], c.key?('checked')] }).to eq(
-        [
-          ['input', 'checkbox', 'custom_field[value_dependencies][A][]', 'a1', true],
-          ['input', 'checkbox', 'custom_field[value_dependencies][A][]', 'b1', false],
-          ['input', 'checkbox', 'custom_field[value_dependencies][B][]', 'a1', false],
-          ['input', 'checkbox', 'custom_field[value_dependencies][B][]', 'b1', true]
-        ]
-      )
+      expect(form.css('[name^="custom_field[value_dependencies]"], [name^="custom_field[default_value_dependencies]"]'))
+        .to be_empty
+      controls = form.css('[name="custom_field[dependencies_json]"]')
+      expect(controls.map { |c| [c.name, c['type'], c['value']] }).to eq([['input', 'hidden', '']])
+      expect(rendered_mapping(form)).to eq('value_dependencies' => { 'A' => %w[a1], 'B' => %w[b1] },
+                                           'default_value_dependencies' => { 'A' => 'a1' })
     end
   end
 
   describe 'saving the form' do
+    # Flipped by WP-25: sent through the editor payload instead of a matrix
+    # cell and a per-parent default select; same stored result.
     it 'stores a newly ticked cell and a newly chosen per-parent default' do
       form = edit_form(child)
-      matrix_boxes(form, 'A').detect { |box| box['value'] == 'b1' }['checked'] = 'checked'
-      default_b = form.at_css('select[name="custom_field[default_value_dependencies][B]"]')
-      default_b.at_css('option[value="b1"]')['selected'] = 'selected'
+      editor_payload(form, { 'A' => %w[a1 b1], 'B' => %w[b1] }, { 'A' => 'a1', 'B' => 'b1' })
 
       submit(form)
 
@@ -120,64 +115,71 @@ RSpec.describe 'Admin custom field form dependency params (characterization)', t
       expect(stored(child)).to eq([{ 'A' => %w[a1 b1], 'B' => %w[b1] }, { 'A' => 'a1', 'B' => 'b1' }])
     end
 
-    it 'ignores a matrix with every cell unticked: no value_dependencies entry is posted and the mapping is kept' do
+    # Flipped by WP-25 (was: 'ignores a matrix with every cell unticked: no
+    # value_dependencies entry is posted and the mapping is kept'): the
+    # editor posts the empty mapping, which clears it.
+    it 'clears the mapping when every link is unticked' do
       form = edit_form(child)
-      set_ticks(form, 'A', false)
-      set_ticks(form, 'B', false)
-      expect(browser_entries(form).map(&:first).grep(/\Acustom_field\[value_dependencies\]/)).to be_empty
+      editor_payload(form, {})
 
       submit(form)
 
       expect(response).to redirect_to("/custom_fields/#{child.id}/edit")
-      expect(stored(child)).to eq([{ 'A' => %w[a1], 'B' => %w[b1] }, { 'A' => 'a1' }])
+      expect(stored(child)).to eq([{}, {}])
     end
 
-    it 'drops a fully unticked parent row but keeps its default while another row stays ticked' do
+    # Flipped by WP-25 (was: 'drops a fully unticked parent row but keeps
+    # its default while another row stays ticked'): unlinking a child drops
+    # it from that parent's defaults in the editor, so the default goes too.
+    it 'drops a fully unticked parent row and its default while another row stays ticked' do
       form = edit_form(child)
-      set_ticks(form, 'A', false)
+      editor_payload(form, { 'B' => %w[b1] })
 
       submit(form)
 
       expect(response).to redirect_to("/custom_fields/#{child.id}/edit")
-      expect(stored(child)).to eq([{ 'B' => %w[b1] }, { 'A' => 'a1' }])
+      expect(stored(child)).to eq([{ 'B' => %w[b1] }, {}])
     end
 
-    # Rack 3 (and Rails 8 ParamBuilder) keep "D][]" as a key and the last
-    # checkbox wins; Rack 2.2 (Redmine 5.1) nests a "D" array. Either way the
-    # Sanitizer stringifies the nested pair under the key "C".
-    it 'stores a corrupted entry under the text before "]" for a parent value containing "]"' do
+    # Flipped by WP-25 (was: 'stores a corrupted entry under the text before
+    # "]" for a parent value containing "]"'): the JSON field carries the
+    # key as it is.
+    it 'stores a parent value containing "]" byte for byte' do
       bracket_parent = dcf_list_field(name: 'Bracket', values: ['A', 'C]D'])
       bracket_child = dcf_list_field(format: 'depending_list', values: %w[a1 b1], parent: bracket_parent)
       dcf_set_dependencies(bracket_child, value_dependencies: { 'A' => %w[a1] })
       form = edit_form(bracket_child)
-      set_ticks(form, 'C]D', true)
+      editor_payload(form, { 'A' => %w[a1], 'C]D' => %w[a1 b1] })
 
       submit(form)
 
       expect(response).to redirect_to("/custom_fields/#{bracket_child.id}/edit")
-      corrupted = rack3? ? ['["D][]", "b1"]'] : ['["D", ["a1", "b1"]]']
-      expect(stored(bracket_child)).to eq([{ 'A' => %w[a1], 'C' => corrupted }, {}])
+      expect(stored(bracket_child)).to eq([{ 'A' => %w[a1], 'C]D' => %w[a1 b1] }, {}])
     end
 
-    # The body cannot be parsed (A is both an array and a hash), so
-    # Rack::MethodOverride drops _method=put and the POST matches no route.
-    it 'turns the save into an unrouted POST (404) when a "]" value starts with another ticked parent value' do
+    # Flipped by WP-25 (was: 'turns the save into an unrouted POST (404)
+    # when a "]" value starts with another ticked parent value'): the body
+    # parses, the name change and the link are saved.
+    it 'saves a "]" value that starts with another ticked parent value, and the name change' do
       bracket_parent = dcf_list_field(name: 'Bracket', values: ['A', 'A]B'])
       bracket_child = dcf_list_field(format: 'depending_list', name: 'Before', values: %w[a1 b1],
                                      parent: bracket_parent)
       dcf_set_dependencies(bracket_child, value_dependencies: { 'A' => %w[a1] })
       form = edit_form(bracket_child)
-      set_ticks(form, 'A]B', true)
+      editor_payload(form, { 'A' => %w[a1], 'A]B' => %w[b1] })
       form.at_css('input[name="custom_field[name]"]')['value'] = 'After'
 
       submit(form)
 
-      expect(response).to have_http_status(:not_found)
-      expect(bracket_child.reload.name).to eq('Before')
-      expect(stored(bracket_child)).to eq([{ 'A' => %w[a1] }, {}])
+      expect(response).to redirect_to("/custom_fields/#{bracket_child.id}/edit")
+      expect(bracket_child.reload.name).to eq('After')
+      expect(stored(bracket_child)).to eq([{ 'A' => %w[a1], 'A]B' => %w[b1] }, {}])
     end
 
-    it 'drops links to and from inactive enumerations and a default naming an inactive child on an unchanged save' do
+    # Flipped by WP-25 (was: 'drops links to and from inactive enumerations
+    # and a default naming an inactive child on an unchanged save'): the
+    # editor renders and posts them (inactive values are in its lists).
+    it 'keeps links to and from inactive enumerations and a default naming an inactive child on an unchanged save' do
       enum_parent = dcf_enum_field(name: 'EnumParent', names: %w[X Y Z])
       enum_child = dcf_enum_field(format: 'depending_enumeration', names: %w[x1 y1 z1], parent: enum_parent)
       x, y, z = enum_parent.enumerations.order(:position).map { |e| e.id.to_s }
@@ -185,11 +187,22 @@ RSpec.describe 'Admin custom field form dependency params (characterization)', t
       dcf_set_dependencies(enum_child, value_dependencies: { x => [x1, z1], y => [y1], z => [x1] },
                                        default_value_dependencies: { x => z1, y => y1, z => x1 })
       CustomFieldEnumeration.where(id: [z, z1]).update_all(active: false)
+      mapping = [{ x => [x1, z1], y => [y1], z => [x1] }, { x => z1, y => y1, z => x1 }]
 
       submit(edit_form(enum_child))
 
       expect(response).to redirect_to("/custom_fields/#{enum_child.id}/edit")
-      expect(stored(enum_child)).to eq([{ x => [x1], y => [y1] }, { y => y1 }])
+      expect(stored(enum_child)).to eq(mapping)
+
+      form = edit_form(enum_child)
+      rendered = rendered_mapping(form)
+      expect([rendered['value_dependencies'], rendered['default_value_dependencies']]).to eq(mapping)
+      editor_payload(form, rendered['value_dependencies'], rendered['default_value_dependencies'])
+
+      submit(form)
+
+      expect(response).to redirect_to("/custom_fields/#{enum_child.id}/edit")
+      expect(stored(enum_child)).to eq(mapping)
     end
   end
 end

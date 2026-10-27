@@ -65,7 +65,8 @@ RSpec.describe 'custom_fields/formats/_depending_enumeration', type: :view do
       other = dcf_enum_field(name: 'Other')
       do_render
       expect(select_choices).to eq([['Root', root.id.to_s], ['Other', other.id.to_s]])
-      expect(rendered).not_to include('icon-warning')
+      # Changed by WP-25: the editor's hidden required warning carries icon-warning.
+      expect(Nokogiri::HTML.fragment(rendered).css('p.icon.icon-warning')).to be_empty
     end
 
     it 'renders the cycle warning as plain text with the classic icon class' do
@@ -117,7 +118,8 @@ RSpec.describe 'custom_fields/formats/_depending_enumeration', type: :view do
       root
       do_render
       expect(select_choices).to eq([['Root', root.id.to_s]])
-      expect(rendered).not_to include('icon-warning')
+      # Changed by WP-25: the editor's hidden required warning carries icon-warning.
+      expect(Nokogiri::HTML.fragment(rendered).css('p.icon.icon-warning')).to be_empty
     end
   end
 end

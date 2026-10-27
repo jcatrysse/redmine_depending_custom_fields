@@ -186,9 +186,10 @@ RSpec.describe 'Custom field storage limit', type: :request do
 
       entries = submit_edit_form(field) { |form| form.at_css('input[name="custom_field[name]"]')['value'] = 'Renamed' }
 
+      # Changed by WP-25: the editor posts one blank field (was the matrix params).
       expect(entries).to include(['custom_field[parent_custom_field_id]', parent.id.to_s],
-                                 ['custom_field[value_dependencies][A][]', 'a1'],
-                                 ['custom_field[value_dependencies][B][]', 'b1'])
+                                 ['custom_field[dependencies_json]', ''])
+      expect(entries.map(&:first).grep(/value_dependencies/)).to be_empty
       expect(response).to have_http_status(302), error_box.inspect
       expect(CustomField.find(field.id).name).to eq('Renamed')
       expect(%w[possible_values format_store].map { |column| raw(field, column) }).to eq(before)
@@ -203,7 +204,13 @@ RSpec.describe 'Custom field storage limit', type: :request do
       stub_limits('possible_values' => 1, 'format_store' => 1)
       captured = capture_bytes
 
-      submit_edit_form(field) { |form| form.at_css('input[name="custom_field[value_dependencies][A][]"][value="b1"]')['checked'] = 'checked' }
+      # Changed by WP-25: the change goes through the editor payload (was a matrix tick).
+      submit_edit_form(field) do |form|
+        base = form.at_css('fieldset[data-dcf-editor]')['data-dcf-editor-base']
+        form.at_css('input[name="custom_field[dependencies_json]"]')['value'] =
+          JSON.generate('version' => 1, 'source' => 'editor', 'base' => base,
+                        'value_dependencies' => { 'A' => %w[a1 b1], 'B' => %w[b1] }, 'default_value_dependencies' => {})
+      end
 
       expect(response).to have_http_status(200)
       expect(error_box).to eq([storage_message(:value_dependencies, captured.fetch('format_store'), 1)])

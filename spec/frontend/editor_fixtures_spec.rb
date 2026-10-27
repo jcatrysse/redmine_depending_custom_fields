@@ -237,7 +237,9 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
     %w[parent-values mapping max-form-bytes i18n].each do |attr|
       expect { JSON.parse(root["data-dcf-editor-#{attr}"]) }.not_to raise_error, "#{name}: #{attr}"
     end
-    expect(JSON.parse(root['data-dcf-editor-i18n']).keys).to eq(['storageEstimate']), name
+    # WP-25: the map holds the editor keys too (was ['storageEstimate']).
+    expect(JSON.parse(root['data-dcf-editor-i18n']).keys).to eq(config::I18N.keys), name
+    expect(config::I18N.keys.first).to eq('storageEstimate')
     root
   end
 

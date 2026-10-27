@@ -136,8 +136,56 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
   end
 
   describe 'constants' do
-    it 'has its own frozen I18N map with only the WP-24 key, separate from ClientConfig::I18N' do
-      expect(config::I18N).to eq('storageEstimate' => :text_dcf_storage_estimate)
+    # WP-25 extends the map with the editor keys of editor design 9 (changed
+    # from 'only the WP-24 key'); WP-26 adds the import and export keys.
+    it 'has its own frozen I18N map with the WP-24 and WP-25 keys, separate from ClientConfig::I18N' do
+      expect(config::I18N).to eq(
+        'storageEstimate' => :text_dcf_storage_estimate,
+        'too_large_to_send' => :error_dcf_dependencies_too_large_to_send,
+        'form_too_large' => :error_dcf_editor_form_too_large,
+        'unavailable' => :text_dcf_editor_unavailable,
+        'no_parent_values' => :text_dcf_editor_no_parent_values,
+        'no_child_values' => :text_dcf_editor_no_child_values,
+        'enumeration_save_first' => :text_dcf_editor_enumeration_save_first,
+        'enumeration_hint' => :text_dcf_editor_enumeration_values_hint,
+        'loading' => :text_dcf_editor_loading,
+        'load_failed' => :error_dcf_editor_load_failed,
+        'parent_changed' => :text_dcf_editor_parent_changed,
+        'orphans' => :text_dcf_editor_orphans,
+        'format_change_confirm' => :text_dcf_editor_format_change_confirm,
+        'conflict' => :text_dcf_editor_conflict,
+        'use_mine' => :button_dcf_use_my_version,
+        'keep_current' => :button_dcf_keep_current_version,
+        'export_mine' => :button_dcf_export_my_version,
+        'mine_loaded' => :text_dcf_editor_conflict_mine_loaded,
+        'filter_parents' => :label_dcf_filter_parent_values,
+        'filter_children' => :label_dcf_filter_child_values,
+        'only_parents_without_links' => :label_dcf_only_parents_without_links,
+        'show' => :label_dcf_show_children,
+        'show_all' => :label_dcf_show_all,
+        'show_linked' => :label_dcf_show_linked,
+        'show_not_linked' => :label_dcf_show_not_linked_here,
+        'show_unlinked' => :label_dcf_show_not_linked_anywhere,
+        'check_shown' => :button_dcf_check_shown,
+        'uncheck_shown' => :button_dcf_uncheck_shown,
+        'show_more' => :button_dcf_show_more,
+        'linked_count' => :label_dcf_linked_count,
+        'default_summary' => :label_dcf_default_summary,
+        'inactive' => :label_dcf_inactive,
+        'no_matches' => :text_dcf_no_matches,
+        'status_sections' => :text_dcf_status_sections,
+        'status_parents_without_links' => :text_dcf_status_parents_without_links,
+        'status_unlinked_children' => :text_dcf_status_unlinked_children,
+        'unlinked_list' => :label_dcf_unlinked_children_list,
+        'collapse_all' => :button_collapse_all,
+        'clear' => :button_clear,
+        'default_value' => :field_default_value,
+        'unsaved' => :text_warn_on_leaving_unsaved,
+        'no_default' => :text_dcf_no_default,
+        'label_value_dependencies' => :field_value_dependencies,
+        'label_possible_values' => :field_possible_values
+      )
+      expect(config::I18N.values).not_to include(:error_invalid_dependency_payload)
       expect(config::I18N).to be_frozen
       expect(RedmineDependingCustomFields::ClientConfig::I18N.size).to eq(11)
       expect(RedmineDependingCustomFields::ClientConfig::I18N).not_to have_key('storageEstimate')
@@ -230,7 +278,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       expect(root['data-dcf-editor-csv-separator']).to eq(',')
       expect(root['data-dcf-editor-csv-encoding']).to eq('ISO-8859-1')
       expect(root['data-dcf-editor-warn-unsaved']).to eq('1')
-      expect(json(root, 'i18n')).to eq('storageEstimate' => I18n.t(:text_dcf_storage_estimate))
+      expect(json(root, 'i18n')).to eq(config::I18N.transform_values { |key| I18n.t(key) })
     end
 
     it 'renders child-values for an enumeration child and no list-only attribute' do
@@ -418,7 +466,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       I18n.with_locale(:de) do
         root = admin_root(fresh(list_child))
         expect(root['data-dcf-editor-csv-separator']).to eq(';')
-        expect(json(root, 'i18n')).to eq('storageEstimate' => I18n.t(:text_dcf_storage_estimate))
+        expect(json(root, 'i18n')).to eq(config::I18N.transform_values { |key| I18n.t(key) })
+        expect(json(root, 'i18n')['show_more']).to eq('Mehr anzeigen (noch %{count})')
         expect(json(root, 'i18n')['storageEstimate']).to include('%{label}', '%{size}', '%{limit}', '%{percent}')
       end
     end
@@ -469,6 +518,27 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       editor = editor_for(child)
       expect(editor.parent).to eq(a)
       expect(editor.required_warning?).to be(false)
+    end
+
+    # WP-25: the admin format partials pass their FieldIndex.load, so the
+    # effective parent costs no query per chain level (index: nil walks as
+    # before, for new records).
+    it 'reads the effective parent from a given index without a query per chain level' do
+      root = dcf_list_field(name: 'Top', values: %w[t1])
+      upper = dcf_list_field(format: 'depending_list', name: 'Upper', values: %w[u1], parent: root)
+      middle = dcf_list_field(format: 'depending_list', name: 'Middle', values: %w[m1 m2], parent: upper)
+      field = dcf_list_field(format: 'depending_list', name: 'Deep', values: %w[a1], parent: middle)
+      field = fresh(field)
+      field.is_required = true
+      view = view_for
+      index = RedmineDependingCustomFields::FieldIndex.load
+      config.for_admin(fresh(field).tap { |f| f.is_required = true }, view, index: index)
+
+      queries = dcf_count_queries { expect(config.for_admin(field, view, index: index).required_warning?).to be(true) }
+      fresh_field = fresh(field)
+      fresh_field.is_required = true
+      without = dcf_count_queries { expect(config.for_admin(fresh_field, view).required_warning?).to be(true) }
+      expect(queries).to be < without
     end
 
     it 'renders the warning text in an icon span, with the sprite only when the view has sprite_icon' do
@@ -573,7 +643,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       expect { config.for_project(field: fresh(list_child), view: view) }.to raise_error(ArgumentError)
       expect(config.method(:for_project).parameters)
         .to eq([[:keyreq, :field], [:keyreq, :parent], [:keyreq, :view], [:key, :posted], [:key, :conflict]])
-      expect(config.method(:for_admin).parameters).to eq([[:req, :field], [:req, :view]])
+      # Changed by WP-25: for_admin takes the format partial's FieldIndex as index:.
+      expect(config.method(:for_admin).parameters).to eq([[:req, :field], [:req, :view], [:key, :index]])
     end
   end
 

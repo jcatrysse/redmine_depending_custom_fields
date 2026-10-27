@@ -53,8 +53,11 @@ RSpec.describe 'Admin custom field form parent select and cycle warning', type: 
     I18n.t(:warning_dcf_parent_cycle, fields: names.join(', '), locale: locale)
   end
 
+  # Changed by WP-25: the editor partial always renders the warning
+  # paragraph and hides it with dcf-hidden; shown means without that class.
   def required_warnings(page)
-    page.css('p.icon.icon-warning').select { |p| p.text.include?(I18n.t(:warning_required_child_no_options)) }
+    page.css('p[data-dcf-editor-required-warning]').reject { |p| p['class'].to_s.split.include?('dcf-hidden') }
+        .select { |p| p.text.include?(I18n.t(:warning_required_child_no_options)) }
   end
 
   def make_required(field)

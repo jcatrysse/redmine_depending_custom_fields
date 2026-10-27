@@ -18,7 +18,8 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Parent lists can depend on other lists or depending lists of the same object type
    - Key/value lists can depend on enumerations or depending key/value lists of the same object type
    - `Parent` and `Child` relationships between fields
-   - Relation between `Parent` and `Child` values is configurable in a matrix
+   - Relation between `Parent` and `Child` values is edited in the dependency
+     editor of the custom field form (see [Dependency editor](#dependency-editor))
    - Dependent fields are never disabled. The values the parent value does not
      allow are hidden and cannot be chosen (options, radio buttons and check
      boxes, never the field itself), so while the parent has no value only the
@@ -96,6 +97,57 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      form, for example "Model is invalid: #12". Without JavaScript, choosing
      "(none)" on a required dependent field while the parent value allows
      values is refused for each such issue with "cannot be blank"
+
+## Dependency editor
+
+The administration form of a `List (depending)` or `Key/Value list
+(depending)` field shows the dependency editor after 'Hide when no valid
+options' and the edit style:
+
+- one collapsible section per parent value (100 at a time, then 'Show more'),
+  a search box and 'Only parent values without links';
+- in each section a filter for the child values, a view (all, linked to this
+  value, not linked to this value, not linked to any parent value), 'Check
+  all shown' and 'Uncheck all shown' (also for rows not shown yet; 200 rows at
+  a time) and the per-parent default value;
+- counters, and the list of child values not linked to any parent value;
+- inactive Key/Value list entries with an 'inactive' badge; their links are
+  kept.
+
+The editor needs JavaScript. Without it the form shows a notice and saving
+the form keeps the mapping unchanged. While the editor is active the form is
+sent as `multipart/form-data` and the mapping as one field,
+`custom_field[dependencies_json]`; it stays empty until you change a link or
+a default, so saving the form for another change leaves the mapping as it
+is. The form warns before you leave it with unsaved dependency changes and
+asks before a format change on a new field would discard them.
+
+- Changing the parent field loads the values of the new parent and removes
+  the links that do not match them; when the values cannot be loaded, the
+  server removes them on save.
+- When someone else changed the mapping after you opened the page, the save
+  is refused. The editor then shows the current version and offers 'Use my
+  version', 'Keep the current version' and 'Export my version (CSV)'.
+- Links to values that no longer exist are counted and removed at the next
+  save from the editor. This includes links stored by earlier versions under
+  parent values containing `[` or `]`, which were saved under corrupted keys
+  and must be linked again once.
+- A copy of a `Key/Value list (depending)` field (Copy in the administration
+  or `copy_from`) keeps the links to the entries of the source field: the
+  entry ids are not remapped. The editor shows them as such links to values
+  that no longer exist and removes them at the first save from the editor.
+  A copy of a `List (depending)` field keeps its mapping.
+
+Sizes: the editor refuses to send a mapping above 4,194,304 bytes (4 MiB,
+the server limit) and a form above fixed bounds: 16,252,928 bytes (15.5 MiB)
+as multipart, below the 16 MiB Rack buffers
+(`RACK_MULTIPART_BUFFERED_UPLOAD_BYTESIZE_LIMIT`), and 4,128,768 bytes
+(about 3.9 MiB) when sent urlencoded. Raising a `RACK_*` variable does not
+change these bounds. On the server, Redmine's `config/boot.rb` sets
+`RACK_QUERY_PARSER_BYTESIZE_LIMIT` to 32 MiB. Reverse proxies may limit
+request bodies earlier, for example nginx `client_max_body_size` (1 MB by
+default): raise it for very large mappings. Restart Redmine after upgrading
+(new asset files).
 
 ## Context menu wizard
 

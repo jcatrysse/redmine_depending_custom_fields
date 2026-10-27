@@ -14,10 +14,11 @@ RSpec.describe 'Plugin locales' do
   # Adding an entry needs a reviewer's OK in the work package report; the full
   # list for planned keys is kept in docs/specs/large_lists_i18n_registry.md.
   # WP-18: de and nl text_dcf_live_message ('%{field}: %{message}', only
-  # placeholders and a colon; the registry lists both, gap 10).
+  # placeholders and a colon; the registry lists both, gap 10). WP-25: fr
+  # label_dcf_inactive ('inactive', registry gap 10).
   identical_allowed = {
     'de' => %w[label_scope_global label_dcf_position text_dcf_live_message],
-    'fr' => %w[label_scope_global label_dcf_position label_dcf_audit_action],
+    'fr' => %w[label_scope_global label_dcf_position label_dcf_audit_action label_dcf_inactive],
     'nl' => %w[label_scope_project text_dcf_live_message]
   }
 

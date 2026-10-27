@@ -1,3 +1,6 @@
+<%# WP-10: same type and family, without the field and its descendants (the current parent stays); one topology load per render, also read by the editor's required warning (WP-25). -%>
+<% dcf_index = @custom_field.new_record? ? nil : RedmineDependingCustomFields::FieldIndex.load %>
+<% dcf_editor = RedmineDependingCustomFields::DependencyEditorConfig.for_admin(@custom_field, self, index: dcf_index) %>
 <% unless @custom_field.new_record? %>
 <p>
   <label><%= l(:field_possible_values) %></label>
@@ -7,14 +10,12 @@
     <%= link_to l(:button_edit), custom_field_enumerations_path(@custom_field), :class => 'icon icon-edit' %>
   <% end %>
 </p>
-  <% if @custom_field.parent_custom_field_id.blank? && @custom_field.enumerations.active.any? %>
-    <p><%= f.select :default_value, @custom_field.enumerations.active.map { |v| [v.name, v.id.to_s] }, include_blank: true %></p>
+  <%# WP-25 (UX-11): rendered whenever core offers the select, hidden while a parent is set; the editor toggles it live. -%>
+  <% if @custom_field.enumerations.active.any? %>
+    <p data-dcf-default-value-row<%= ' class="dcf-hidden"'.html_safe if dcf_editor.parent %>><%= f.select :default_value, @custom_field.enumerations.active.map { |v| [v.name, v.id.to_s] }, include_blank: true %></p>
   <% end %>
 <% end %>
-
 <p><%= f.text_field :url_pattern, :size => 50, :label => :label_link_values_to %></p>
-<%# WP-10: same type and family, without the field and its descendants (the current parent stays); one topology load per render. %>
-<% dcf_index = @custom_field.new_record? ? nil : RedmineDependingCustomFields::FieldIndex.load %>
 <p>
   <%= f.select :parent_custom_field_id,
                RedmineDependingCustomFields::DependencyRules.parent_candidates(@custom_field, index: dcf_index)
@@ -28,25 +29,6 @@
   <% dcf_cycle_warning = l(:warning_dcf_parent_cycle, fields: dcf_cycle_ids.map { |id| dcf_cycle_names[id] }.compact.join(', ')) %>
   <p class="icon icon-warning"><%= respond_to?(:sprite_icon) ? sprite_icon('warning', dcf_cycle_warning) : dcf_cycle_warning %></p>
 <% end %>
-<% if @custom_field.parent_custom_field_id.present? %>
-  <% parent_cf = CustomField.find_by(id: @custom_field.parent_custom_field_id) %>
-  <%= render partial: 'custom_fields/formats/dependencies_matrix',
-             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
-  <%= render partial: 'custom_fields/formats/default_dependencies',
-             locals: {parent_field: parent_cf, custom_field: @custom_field} %>
-  <%# The required bypass (DependencyRules.no_options?) reads only the effective parent (WP-18), taken from this render's index; a new record has none and walks from its chosen parent, which may be in or below a stored cycle. %>
-  <% if @custom_field.is_required? && parent_cf &&
-        (dcf_index ? dcf_index.effective_parent_id_for(@custom_field.id, @custom_field.type, @custom_field.field_format, @custom_field.parent_custom_field_id)
-                   : RedmineDependingCustomFields::DependencyRules.effective_parent_id(@custom_field)) %>
-    <% dcf_mapping    = @custom_field.value_dependencies.to_h %>
-    <% dcf_uncovered  = parent_cf.possible_values_options
-                                  .map { |pv| (pv.is_a?(Array) ? pv[1] : pv).to_s }
-                                  .reject(&:blank?)
-                                  .select { |pv| Array(dcf_mapping[pv]).empty? } %>
-    <% if dcf_uncovered.any? %>
-      <p class="icon icon-warning"><%= l(:warning_required_child_no_options) %></p>
-    <% end %>
-  <% end %>
-<% end %>
 <p><%= f.check_box :hide_when_disabled, label: :field_hide_when_disabled %></p>
 <p><%= edit_tag_style_tag f %></p>
+<%= render 'depending_custom_fields/dependency_editor', editor: dcf_editor %>

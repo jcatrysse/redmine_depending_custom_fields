@@ -333,22 +333,25 @@ RSpec.describe 'GET /dcf_dependency_editor/values (WP-24)', type: :request do
     end
   end
 
-  # No production view renders the editor before WP-25 (admin form) and WP-27 (project page).
+  # Changed by WP-25: the admin format partials render the editor (was:
+  # 'is rendered by no production view yet'); WP-27 adds the project page.
   describe 'the editor partial' do
-    it 'is rendered by no production view yet' do
+    it 'is rendered by the admin format partials' do
       log_in(admin, 'admin')
       child = dcf_list_field(format: 'depending_list', name: 'Wired child', values: %w[c1], parent: list_parent)
       get "/custom_fields/#{child.id}/edit"
 
       expect(response).to have_http_status(200)
-      expect(response.body).not_to include('data-dcf-editor')
+      expect(Nokogiri::HTML(response.body).css('fieldset[data-dcf-editor]').size).to eq(1)
       root = File.expand_path('../..', __dir__)
       users = Dir[File.join(root, 'app', '**', '*.{rb,erb}')].select do |path|
         File.read(path).match?(/dependency_editor|DependencyEditorConfig/)
       end
       expect(users.map { |path| path.delete_prefix("#{root}/") })
         .to contain_exactly('app/controllers/dcf_dependency_editor_controller.rb',
-                            'app/views/depending_custom_fields/_dependency_editor.html.erb')
+                            'app/views/depending_custom_fields/_dependency_editor.html.erb',
+                            'app/views/custom_fields/formats/_depending_list.html.erb',
+                            'app/views/custom_fields/formats/_depending_enumeration.html.erb')
     end
   end
 

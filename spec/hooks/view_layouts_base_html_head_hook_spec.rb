@@ -126,4 +126,46 @@ RSpec.describe RedmineDependingCustomFields::Hooks::ViewLayoutsBaseHtmlHeadHook 
     expect(render(controller: nil)).to eq(render)
     expect(hook.view_layouts_base_html_head).to eq(render)
   end
+
+  # WP-25 (editor design 5.1, quality H3): on the two editor controllers the
+  # editor model, the editor script and the editor stylesheet follow the base
+  # assets, once each; nowhere else.
+  describe 'editor assets' do
+    let(:editor_names) do
+      [asset_pattern('dcf_dependency_editor_model', 'js'), asset_pattern('dcf_dependency_editor', 'js')]
+    end
+
+    [CustomFieldsController, ProjectCustomFieldConfigurationController].each do |controller_class|
+      it "adds the model, the editor script and the editor stylesheet after the base assets on #{controller_class}" do
+        html = render(controller: controller_class.new)
+        nodes = fragment(html).element_children
+        srcs = fragment(html).css('script[src]').pluck('src')
+        hrefs = fragment(html).css('link[rel=stylesheet]').pluck('href')
+
+        expect(nodes.map(&:name)).to eq(%w[meta script script link script script link])
+        expect(srcs.size).to eq(4)
+        model = srcs.grep(editor_names[0])
+        editor = srcs.grep(editor_names[1])
+        expect([model.size, editor.size]).to eq([1, 1])
+        expect(hrefs.size).to eq(2)
+        expect(hrefs.last).to match(asset_pattern('dcf_dependency_editor', 'css'))
+        needles = ['name="dcf-i18n"', srcs[0], srcs[1], hrefs.first, model.first, editor.first, hrefs.last]
+        positions = needles.map { |needle| html.index(needle) }
+        expect(positions).to all(be_an(Integer))
+        expect(positions).to eq(positions.sort)
+        expect(fragment(html).css('script:not([src])')).to be_empty
+        # invariance form (R16): the editor branch adds no query
+        expect(dcf_count_queries { render(controller: controller_class.new) }).to eq(dcf_count_queries { render })
+      end
+    end
+
+    it 'adds nothing on an issue page, without a controller or for a subclass' do
+      base = render
+      [IssuesController.new, nil, Class.new(CustomFieldsController).new].each do |controller|
+        html = render(controller: controller)
+        expect(html).to eq(base)
+        expect(html).not_to include('dcf_dependency_editor')
+      end
+    end
+  end
 end
