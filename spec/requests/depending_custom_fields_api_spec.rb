@@ -538,4 +538,61 @@ RSpec.describe "DependingCustomFields API", type: :request do
       expect(CustomField.find(field.id).possible_values).to eq(values)
     end
   end
+
+  # WP-22 (editor design 3.2, compat 2.2): the plugin API does not permit the
+  # admin transport field. A posted dependencies_json is dropped by the strong
+  # parameters: nothing is parsed, cleared, pruned or refused, and the
+  # response keys stay the same.
+  describe "dependencies_json (WP-22)" do
+    let(:dependency_payload) { RedmineDependingCustomFields::DependencyPayload }
+    let(:root) { dcf_list_field(values: %w[A B]) }
+    let(:field) do
+      record = dcf_list_field(format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, values: %w[a1 b1],
+                              parent: root)
+      dcf_set_dependencies(record, value_dependencies: { "B" => %w[b1], "A" => %w[a1 nope], "ZZ" => %w[nope] },
+                                   default_value_dependencies: { "ZZ" => "nope" })
+    end
+
+    def raw_store(record)
+      CustomField.connection.select_value(CustomField.where(id: record.id).select(:format_store).to_sql)
+    end
+
+    it "ignores it on update: no clear, no error and the same response keys" do
+      get "/depending_custom_fields/#{field.id}.json"
+      keys = JSON.parse(response.body).keys
+      raw_before = raw_store(field)
+      allow(dependency_payload).to receive(:parse).and_call_original
+
+      ["{}", "{", "{\"value_dependencies\":{\"A\":[#{'9' * 100_000}]}}", { "value_dependencies" => "1" }]
+        .each_with_index do |raw, i|
+        put "/depending_custom_fields/#{field.id}.json",
+            params: { custom_field: { name: "#{field.name}-#{i}", dependencies_json: raw } }
+
+        expect(response).to have_http_status(:ok), response.body
+        body = JSON.parse(response.body)
+        expect(body.keys).to eq(keys)
+        expect(body).not_to have_key("dependencies_json")
+        expect(CustomField.find(field.id).name).to eq("#{field.name}-#{i}")
+        expect(raw_store(field)).to eq(raw_before)
+      end
+      expect(dependency_payload).not_to have_received(:parse)
+    end
+
+    it "ignores it on create and stores the nested mapping sanitize-only" do
+      allow(dependency_payload).to receive(:parse).and_call_original
+
+      post "/depending_custom_fields.json", params: { custom_field: {
+        name: "api-#{SecureRandom.hex(3)}", type: "IssueCustomField",
+        field_format: RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_LIST, possible_values: %w[a1 b1],
+        parent_custom_field_id: root.id.to_s, value_dependencies: { "ZZ" => %w[nope], "A" => %w[a1] },
+        dependencies_json: "{}"
+      } }
+
+      expect(response).to have_http_status(:created), response.body
+      body = JSON.parse(response.body)
+      expect(body).not_to have_key("dependencies_json")
+      expect(CustomField.find(body["id"]).value_dependencies.to_hash).to eq("ZZ" => %w[nope], "A" => %w[a1])
+      expect(dependency_payload).not_to have_received(:parse)
+    end
+  end
 end

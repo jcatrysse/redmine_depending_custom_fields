@@ -53,6 +53,7 @@ CustomField.safe_attributes(
   'parent_custom_field_id',
   'value_dependencies',
   'default_value_dependencies',
+  'dependencies_json',
   'hide_when_disabled'
 )
 

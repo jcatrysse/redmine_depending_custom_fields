@@ -106,3 +106,6 @@ nl:
         dcf_hidden_child_conflict: "kan niet worden gewijzigd, omdat een afhankelijk veld dat u niet kunt zien een waarde heeft die niet bij de nieuwe waarde past"
         dcf_circular_dependency: "verwijst naar dit veld of naar een van zijn afhankelijke velden, wat een circulaire afhankelijkheid zou veroorzaken"
         dcf_storage_too_large: "is te groot om op te slaan (%{size} bytes, de database staat maximaal %{limit} bytes toe)"
+        dcf_invalid_dependencies_payload: "kon niet worden gelezen. Herlaad de pagina en probeer het opnieuw."
+        dcf_stale_dependencies: "is door iemand anders gewijzigd nadat u deze pagina opende. Uw wijzigingen zijn niet opgeslagen. De editor toont de huidige versie en uw versie, zodat u kunt kiezen welke u bewaart."
+        dcf_dependencies_too_large_to_send: "is te groot om te verzenden (%{size} bytes, maximaal %{limit} bytes). Verwijder koppelingen en probeer het opnieuw."

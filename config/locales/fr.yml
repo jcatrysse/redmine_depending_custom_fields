@@ -106,3 +106,6 @@ fr:
         dcf_hidden_child_conflict: "ne peut pas être modifié(e), car un champ dépendant que vous ne pouvez pas voir a une valeur qui ne correspond pas à la nouvelle valeur"
         dcf_circular_dependency: "désigne ce champ ou l'un de ses champs dépendants, ce qui créerait une dépendance circulaire"
         dcf_storage_too_large: "est trop volumineux pour être enregistré (%{size} octets, la base de données autorise au plus %{limit} octets)"
+        dcf_invalid_dependencies_payload: "n'a pas pu être lu. Rechargez la page et réessayez."
+        dcf_stale_dependencies: "a été modifié par quelqu'un d'autre après l'ouverture de cette page. Vos modifications n'ont pas été enregistrées. L'éditeur affiche la version actuelle et votre version pour que vous puissiez choisir celle à conserver."
+        dcf_dependencies_too_large_to_send: "est trop volumineux pour être envoyé (%{size} octets, au maximum %{limit} octets). Supprimez des liens et réessayez."

@@ -113,9 +113,18 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
       # @_routes is the url_helpers cache every ViewListener gets from Rails.
       expect(hook.instance_variables - [:@_routes]).to eq([])
       lib = File.expand_path('../../lib/redmine_depending_custom_fields', __dir__)
-      %w[storage_limits.rb patches/custom_field_validation_patch.rb hooks/custom_field_storage_hook.rb].each do |file|
+      %w[storage_limits.rb hooks/custom_field_storage_hook.rb].each do |file|
         expect(File.read(File.join(lib, file))).not_to match(/@\w+\s*(\|\|)?=|@@/), file
       end
+      # Changed by WP-22: the patch file holds the admin transport state on
+      # the CustomField record (limits 9.5 rule 3) and drops the transport's
+      # dcf_memo entries; it names no other instance variable and no class
+      # variable, and the module itself keeps none.
+      source = File.read(File.join(lib, 'patches/custom_field_validation_patch.rb'))
+      expect(source).not_to include('@@')
+      expect(source.scan(/@\w+/).uniq)
+        .to match_array(%w[@dcf_dependencies_json @dcf_dependencies_round @dcf_dependencies_error @dcf_memo])
+      expect(patch.instance_variables).to eq([])
     end
 
     it 'loads its new files under the eager loader with the constants their names give' do
@@ -565,11 +574,19 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
   end
 
   describe 'registration' do
+    # Changed by WP-22: the patch also carries the admin transport (public
+    # writer, reader and conflict reader, private callbacks and their parse,
+    # digest and reset helpers); was private [:dcf_validate_storage_limits]
+    # and public [].
     it 'registers one Symbol validation from CustomFieldValidationPatch, prepended after CustomFieldPatch' do
       expect(validate_callbacks(CustomField)).to eq(1)
       expect(validate_callbacks(IssueCustomField)).to eq(1)
-      expect(patch.private_instance_methods(false)).to eq([:dcf_validate_storage_limits])
-      expect(patch.instance_methods(false)).to eq([])
+      expect(patch.private_instance_methods(false))
+        .to match_array([:dcf_validate_storage_limits, :dcf_apply_dependencies_json, :dcf_validate_dependencies_json,
+                         :dcf_reset_dependencies_json, :dcf_dependencies_payload, :dcf_stored_dependencies_digest,
+                         :dcf_forget_dependencies_json])
+      expect(patch.instance_methods(false))
+        .to match_array([:dependencies_json=, :dependencies_json, :dcf_dependencies_conflict])
       ancestors = CustomField.ancestors
       expect(ancestors.index(patch)).to be < ancestors.index(CustomField)
       expect(ancestors.index(RedmineDependingCustomFields::Patches::CustomFieldPatch)).to be < ancestors.index(CustomField)
@@ -582,15 +599,29 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
 
     it 'keeps one callback and one error per column when the patch is prepended again (init.rb run twice)',
        :aggregate_failures do
-      # The second prepend runs self.prepended again, which moves the callback
-      # to the end of every validate chain; the chains are put back afterwards.
-      saved = ([CustomField] + CustomField.descendants).map { |klass| [klass, klass.send(:get_callbacks, :validate)] }
+      # The second prepend runs self.prepended again, which moves the callbacks
+      # to the end of their chains; the chains are put back afterwards.
+      # Changed by WP-22: the :validation and :save chains are saved and
+      # restored too, and the transport callbacks keep one entry each and
+      # their order (was the :validate chain only).
+      kinds = [:validate, :validation, :save]
+      saved = ([CustomField] + CustomField.descendants).flat_map do |klass|
+        kinds.map { |kind| [klass, kind, klass.send(:get_callbacks, kind)] }
+      end
       begin
         CustomField.prepend(patch)
         expect(validate_callbacks(CustomField)).to eq(1)
         expect(validate_callbacks(IssueCustomField)).to eq(1)
+        [CustomField, IssueCustomField].each do |klass|
+          validate = klass._validate_callbacks.map(&:filter)
+          expect(validate.count(:dcf_validate_dependencies_json)).to eq(1)
+          expect(validate.index(:dcf_validate_dependencies_json)).to be < validate.index(:dcf_validate_storage_limits)
+          expect(klass._validation_callbacks.count { |c| c.filter == :dcf_apply_dependencies_json }).to eq(1)
+          expect(klass._save_callbacks.count { |c| c.filter == :dcf_reset_dependencies_json }).to eq(1)
+        end
 
         field = guarded_record('depending_list')
+        transport = guarded_record('depending_list')
         stub_limits('possible_values' => 1, 'format_store' => 1)
         # Rails merges identical errors (autosave errors.uniq!), so the
         # measurement itself must run once.
@@ -599,10 +630,18 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
         expect(limits).to have_received(:validate).once
         expect(storage_details(field, :possible_values).size).to eq(1)
         expect(storage_details(field, :value_dependencies).size).to eq(1)
+
+        dependency_payload = RedmineDependingCustomFields::DependencyPayload
+        allow(dependency_payload).to receive(:parse).and_call_original
+        transport.dependencies_json = '{'
+        expect(transport.valid?).to be(false)
+        expect(dependency_payload).to have_received(:parse).once
+        expect(transport.errors.details[:value_dependencies].map { |d| d[:error] })
+          .to contain_exactly(:dcf_invalid_dependencies_payload, :dcf_storage_too_large)
       ensure
-        saved.each { |klass, chain| klass.send(:set_callbacks, :validate, chain) }
+        saved.each { |klass, kind, chain| klass.send(:set_callbacks, kind, chain) }
       end
-      saved.each { |klass, chain| expect(klass.send(:get_callbacks, :validate)).to equal(chain), klass.name }
+      saved.each { |klass, kind, chain| expect(klass.send(:get_callbacks, kind)).to equal(chain), "#{klass.name} #{kind}" }
     end
   end
 

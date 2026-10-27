@@ -106,3 +106,6 @@ en:
         dcf_hidden_child_conflict: "cannot be changed because a dependent field you cannot see has a value that does not match the new value"
         dcf_circular_dependency: "refers to this field or to one of its dependent fields, which would create a circular dependency"
         dcf_storage_too_large: "is too large to store (%{size} bytes, the database allows at most %{limit} bytes)"
+        dcf_invalid_dependencies_payload: "could not be read. Reload the page and try again."
+        dcf_stale_dependencies: "was changed by someone else after you opened this page. Your changes were not saved. The editor shows the current version and your version so that you can choose which one to keep."
+        dcf_dependencies_too_large_to_send: "is too large to be sent (%{size} bytes, at most %{limit} bytes). Remove links and try again."

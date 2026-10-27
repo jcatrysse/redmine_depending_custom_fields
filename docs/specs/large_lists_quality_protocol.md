@@ -278,7 +278,7 @@ Evidence rule: PASS is declared only from observed output. The report quotes the
   - wizard `POST /depending_custom_fields/save`: still requires login, issue visibility and editability (pinning spec, SP-07; the write-scope fix itself is SD-01, UD-03).
 - Strong params: no `permit!`; every new `CustomField.safe_attributes` entry listed in the review. BC-04 (gap 12, WP-22): a spec asserts `CustomField.safe_attribute_names` includes `value_dependencies`, `default_value_dependencies` and `dependencies_json`.
 - Payload input (SP-01, SP-02, SP-20b): for the admin path (validation error) and the project path (audited 422), never a 500:
-  - a 1,000,000-digit integer, a 20-digit integer and a negative integer are rejected without `JSON.parse` being called (spy `expect(JSON).not_to receive(:parse)`), plus a loose smoke bound of 1 s (the vulnerable path took 5.7 s);
+  - a 1,000,000-digit integer and a 20-digit integer are rejected without `JSON.parse` being called (spy `expect(JSON).not_to receive(:parse)`), plus a loose smoke bound of 1 s (the vulnerable path took 5.7 s); a negative integer is rejected after `JSON.parse` by the schema step (WP-21 `scalar`: `:invalid_links`, or `:invalid_defaults` in a default), so no spy applies to it (amended by WP-22);
   - floats, booleans, `null`, unknown top-level keys, non-object, nesting deeper than 3, more than 4 MiB are rejected with their specific error;
   - an unauthorized `PATCH update_dependencies` with a malformed or 1M-digit payload gives 403 with an `authorization_failed` audit row and `DependencyPayload.parse` is never called (SP-20b, gap 12, WP-27);
   - `batch_scope=page` with a foreign enumeration id gives 422 and nothing changes (SP-20c).
