@@ -1,0 +1,1 @@
+{"version":1,"source":"import","import":{"mode":"replace","rows":5},"base":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","value_dependencies":{"Belgium":["Antwerp","Ghent"],"France":["Lyon"],"Germany":["Berlin"],"Netherlands":["Utrecht"]},"default_value_dependencies":{"Belgium":["Ghent"]}}

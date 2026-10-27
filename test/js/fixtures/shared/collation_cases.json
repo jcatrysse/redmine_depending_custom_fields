@@ -1,0 +1,22 @@
+[
+  ["Émile", "emile"],
+  ["emile", "emile"],
+  ["EMILE", "emile"],
+  ["Straße", "strasse"],
+  ["Łódź", "lodz"],
+  ["Øresund", "oresund"],
+  ["Đakovo", "dakovo"],
+  ["Æble", "aeble"],
+  ["Cœur", "coeur"],
+  ["Þórshöfn", "thorshofn"],
+  ["Iğdır", "igdir"],
+  ["İstanbul", "istanbul"],
+  ["São  Paulo", "sao paulo"],
+  ["  Rio\tde   Janeiro ", "rio de janeiro"],
+  ["ﬁnal", "final"],
+  ["Ⅻ", "xii"],
+  ["\u0301", ""],
+  ["Ångström", "angstrom"],
+  ["Ñandú", "nandu"],
+  ["Kraków", "krakow"]
+]
