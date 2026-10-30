@@ -1,5 +1,6 @@
-/* Dependency editor (editor design 5.12, WP-25), loaded by the head hook on
-   the custom field and project custom field configuration pages only.
+/* Dependency editor (editor design 5.12, WP-25 and WP-26), loaded by the
+   head hook on the custom field and project custom field configuration
+   pages only.
    Logical properties for right-to-left layouts; core classes do the rest
    (box, tabular, flash, icon icon-warning, badge, em.info,
    hidden-for-sighted). */
@@ -56,6 +57,13 @@
 .dcf-dep-editor__panel textarea { inline-size: 95%; font-family: monospace; }
 .dcf-dep-editor__panel textarea:disabled { opacity: .6; }
 .dcf-dep-editor__preview table.list td { text-align: start; }
+/* WP-26: import preview and file line */
+.dcf-dep-editor__preview > .flash,
+.dcf-dep-editor__preview > ul,
+.dcf-dep-editor__preview > table { margin-block: 4px; }
+.dcf-dep-editor__preview table.list { inline-size: auto; }
+.dcf-dep-editor__preview td { overflow-wrap: anywhere; }
+.dcf-dep-editor__file-info { font-size: .9em; color: var(--oc-gray-7, #555); }
 .dcf-dep-editor__notices .flash,
 .dcf-dep-editor__conflict { margin-block: 4px; }
 .dcf-dep-editor__notices .flash svg.icon-svg { vertical-align: middle; margin-inline-end: 4px; }

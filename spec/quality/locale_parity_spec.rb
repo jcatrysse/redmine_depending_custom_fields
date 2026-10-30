@@ -15,11 +15,13 @@ RSpec.describe 'Plugin locales' do
   # list for planned keys is kept in docs/specs/large_lists_i18n_registry.md.
   # WP-18: de and nl text_dcf_live_message ('%{field}: %{message}', only
   # placeholders and a colon; the registry lists both, gap 10). WP-25: fr
-  # label_dcf_inactive ('inactive', registry gap 10).
+  # label_dcf_inactive ('inactive', registry gap 10). WP-26: fr
+  # label_dcf_import_mode ('Mode') and nl label_dcf_tab_char ('Tab'), the
+  # registry's reviewed entries that were not pre-listed here.
   identical_allowed = {
     'de' => %w[label_scope_global label_dcf_position text_dcf_live_message],
-    'fr' => %w[label_scope_global label_dcf_position label_dcf_audit_action label_dcf_inactive],
-    'nl' => %w[label_scope_project text_dcf_live_message]
+    'fr' => %w[label_scope_global label_dcf_position label_dcf_audit_action label_dcf_inactive label_dcf_import_mode],
+    'nl' => %w[label_scope_project text_dcf_live_message label_dcf_tab_char]
   }
 
   def self.flatten(hash, prefix = nil)

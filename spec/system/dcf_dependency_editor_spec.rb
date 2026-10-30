@@ -24,9 +24,11 @@ RSpec.describe 'Admin dependency editor in the browser (WP-25)', type: :system d
                                 default_value_dependencies: { 'Belgium' => 'Brussels' })
   end
 
-  def shot(name)
-    page.execute_script("var e = document.querySelector('fieldset.dcf-dep-editor'); if (e) e.scrollIntoView();")
-    dir = Rails.root.join('tmp', 'capybara', 'dcf', 'wp-25')
+  # WP-26: the directory and the element scrolled into view are parameters
+  # (were wp-25 and the editor fieldset).
+  def shot(name, dir_name = 'wp-25', anchor = 'fieldset.dcf-dep-editor')
+    page.execute_script('var e = document.querySelector(arguments[0]); if (e) e.scrollIntoView();', anchor)
+    dir = Rails.root.join('tmp', 'capybara', 'dcf', dir_name)
     FileUtils.mkdir_p(dir)
     path = dir.join("#{name}-#{version}.png").to_s
     page.driver.browser.save_screenshot(path)
@@ -192,5 +194,44 @@ RSpec.describe 'Admin dependency editor in the browser (WP-25)', type: :system d
 
     expect(page).to have_css('#flash_notice')
     expect(stored(field)[0]).to eq('Region 007' => children)
+  end
+
+  # WP-26 (editor design 6.4 and 6.5, D6): pasted links with 'Add missing
+  # child values' are previewed, applied and saved; the new value and its
+  # links are stored, the other links stay, no audit row.
+  it 'imports pasted links with Add missing child values and saves the new value and the links' do
+    dcf_login
+    edit(child)
+    panel = find('details.dcf-dep-editor__import')
+    panel.find('summary').click
+    panel.find('textarea[data-dcf-ed-import-text]').set("Ed country,Ed city\nBelgium,Ghent\nGermany,Lyon\nGermany,ghent")
+    panel.find('input[type=checkbox][data-dcf-ed-import-add-missing]').click
+    panel.find('button[data-dcf-ed-import-preview]').click
+    expect(panel).to have_css('li[data-dcf-ed-summary=new_values]', text: I18n.t(:text_dcf_import_new_values, count: 1))
+    expect(panel).to have_css('li[data-dcf-ed-summary=to_add]', text: I18n.t(:text_dcf_import_to_add, count: 3))
+    expect(panel).to have_css('.flash.warning', text: I18n.t(:text_dcf_import_header_skipped, cells: 'Ed country, Ed city'))
+    expect(panel).to have_css('table.list tbody tr', count: 3)
+    shot('admin-import-preview', 'wp-26', '.dcf-dep-editor__preview')
+    panel.find('button[data-dcf-ed-import-apply]').click
+    expect(page).to have_css('[data-dcf-ed-notice=import_applied]',
+                             text: I18n.t(:text_dcf_import_applied, added: 3, removed: 0))
+    # a notice takes core's 'checked' sprite (notice_icon) from 6.1, the class background before
+    sprite = Gem::Version.new(version) >= Gem::Version.new('6.1')
+    expect(page).to have_css('[data-dcf-ed-notice=import_applied] svg use[href$="#icon--checked"]',
+                             visible: :all, count: sprite ? 1 : 0)
+    expect(page).to have_no_css('[data-dcf-ed-notice=import_applied] svg use[href$="#icon--warning"]', visible: :all)
+    expect(find('#custom_field_possible_values').value).to eq("Antwerp\nBrussels\nParis\nLyon\nGhent")
+    expect(section('Germany')).to have_css('.dcf-dep-section__counts', text: linked(2, 5))
+    expect(wants_warning).to be(true)
+    shot('admin-import-applied', 'wp-26', '[data-dcf-ed-notice=import_applied]')
+    audits = RedmineDependingCustomFields::ConfigAuditEvent.count
+    save
+
+    expect(page).to have_css('#flash_notice')
+    expect(CustomField.find(child.id).possible_values).to eq(%w[Antwerp Brussels Paris Lyon Ghent])
+    expect(stored(child)).to eq([{ 'Belgium' => %w[Antwerp Brussels Ghent], 'France' => %w[Paris],
+                                   'Germany' => %w[Lyon Ghent] },
+                                 { 'Belgium' => 'Brussels' }])
+    expect(RedmineDependingCustomFields::ConfigAuditEvent.count).to eq(audits)
   end
 end

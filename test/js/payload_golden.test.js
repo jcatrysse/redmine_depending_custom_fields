@@ -5,8 +5,9 @@
 // DCF_WRITE_JS_FIXTURES=1 node --test test/js/payload_golden.test.js writes them.
 // spec/requests/dependency_payload_contract_spec.rb posts each one to the admin
 // form (and, from WP-27, to the project page) with fields holding the same
-// lists, so these lists and that spec change together. WP-26 regenerates
-// import_*.json with the real import.
+// lists, so these lists and that spec change together. WP-26: import_*.json
+// come from the real import (planImport over the CSV text of the pairs, then
+// applyImport) instead of the WP-23 stand-in; the files stayed byte-identical.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -44,20 +45,14 @@ function linked(pairs, reversed) {
   return state;
 }
 
-// Stand-in for the WP-26 apply: merge adds the pairs, replace keeps only
-// them and drops the defaults whose link went; source and import are set.
-function applyPairs(state, pairs, mode) {
-  if (mode === 'replace') {
-    const defaults = state.defaults;
-    state.links = new Map();
-    state.defaults = new Map();
-    pairs.forEach(([p, c]) => state.link(p, c, true));
-    defaults.forEach((keys, p) => state.setDefaults(p, keys));
-  } else {
-    pairs.forEach(([p, c]) => state.link(p, c, true));
-  }
-  state.source = 'import';
-  state.importMeta = { mode, rows: pairs.length };
+// The WP-26 import: one ';' line per pair, no header, then applyImport
+// (merge adds the pairs, replace keeps only them and drops the defaults
+// whose link went; source and import are set, rows counts the distinct pairs).
+function applyPairs(state, pairs, mode, parents, children) {
+  const text = pairs.map(([p, c]) => `${p};${c}`).join('\n');
+  const plan = M.planImport(text, state, parents, children, { separator: ';', header: 'no', mode });
+  assert.deepEqual(plan.errors, []);
+  M.applyImport(state, plan);
 }
 
 const BUILDERS = {
@@ -89,18 +84,20 @@ const BUILDERS = {
   import_merge(reversed) {
     const state = new M.State({ value_dependencies: { Belgium: ['Brussels'] }, default_value_dependencies: { Belgium: 'Brussels' } });
     const pairs = [['Belgium', 'Ghent'], ['France', 'Paris'], ['Netherlands', 'Utrecht'], ['Belgium', 'Brussels']];
-    applyPairs(state, reversed ? pairs.slice().reverse() : pairs, 'merge');
-    return M.serialize(state, M.ValueList.fromWire(wire(COUNTRIES)), M.ValueList.fromWire(wire(CITIES)),
-                       { multiple: false, base: BASE });
+    const P = M.ValueList.fromWire(wire(COUNTRIES));
+    const C = M.ValueList.fromWire(wire(CITIES));
+    applyPairs(state, reversed ? pairs.slice().reverse() : pairs, 'merge', P, C);
+    return M.serialize(state, P, C, { multiple: false, base: BASE });
   },
   import_replace(reversed) {
     const state = new M.State({ value_dependencies: { Belgium: ['Brussels', 'Ghent'], France: ['Paris'] },
                                 default_value_dependencies: { Belgium: ['Ghent'], France: ['Paris'] } });
     const pairs = [['Belgium', 'Antwerp'], ['Belgium', 'Ghent'], ['Germany', 'Berlin'], ['Netherlands', 'Utrecht'],
       ['France', 'Lyon']];
-    applyPairs(state, reversed ? pairs.slice().reverse() : pairs, 'replace');
-    return M.serialize(state, M.ValueList.fromWire(wire(COUNTRIES)), M.ValueList.fromWire(wire(CITIES)),
-                       { multiple: true, base: BASE });
+    const P = M.ValueList.fromWire(wire(COUNTRIES));
+    const C = M.ValueList.fromWire(wire(CITIES));
+    applyPairs(state, reversed ? pairs.slice().reverse() : pairs, 'replace', P, C);
+    return M.serialize(state, P, C, { multiple: true, base: BASE });
   },
   tricky_values(reversed) {
     const pairs = [['__proto__', '__proto__'], ['constructor', 'b'], ['hasOwnProperty', 'b'], ['toString', 'toString'],

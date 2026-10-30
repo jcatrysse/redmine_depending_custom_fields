@@ -23,13 +23,21 @@ const ADMIN_ONLY = ['data-dcf-editor-base', 'data-dcf-editor-values-url', 'data-
   'data-dcf-editor-default-value-row', 'data-dcf-editor-values-source', 'data-dcf-editor-allow-add-values'];
 
 // WP-25: DependencyEditorConfig::I18N (was ['storageEstimate'] only).
+// WP-26: plus the import and export keys and the reused core keys.
 const I18N_KEYS = ['storageEstimate', 'too_large_to_send', 'form_too_large', 'unavailable', 'no_parent_values',
   'no_child_values', 'enumeration_save_first', 'enumeration_hint', 'loading', 'load_failed', 'parent_changed', 'orphans',
   'format_change_confirm', 'conflict', 'use_mine', 'keep_current', 'export_mine', 'mine_loaded', 'filter_parents',
   'filter_children', 'only_parents_without_links', 'show', 'show_all', 'show_linked', 'show_not_linked', 'show_unlinked',
   'check_shown', 'uncheck_shown', 'show_more', 'linked_count', 'default_summary', 'inactive', 'no_matches',
   'status_sections', 'status_parents_without_links', 'status_unlinked_children', 'unlinked_list', 'collapse_all', 'clear',
-  'default_value', 'unsaved', 'no_default', 'label_value_dependencies', 'label_possible_values'];
+  'default_value', 'unsaved', 'no_default', 'label_value_dependencies', 'label_possible_values',
+  'import_title', 'import_help', 'import_paste', 'import_file', 'file_used', 'auto', 'tab', 'import_header', 'import_mode',
+  'mode_merge', 'mode_replace', 'add_missing', 'unprotect', 'apply', 'undo', 'applied', 'lines', 'to_add', 'existing',
+  'to_remove', 'new_values', 'duplicates', 'header_skipped', 'separator_used', 'decoded_as', 'preview_rows', 'status_new',
+  'status_existing', 'errors_intro', 'more_errors', 'nothing', 'err_columns', 'err_blank_value', 'err_unknown_parent',
+  'err_unknown_child', 'err_ambiguous_parent', 'err_ambiguous_child', 'err_unterminated_quote', 'err_bad_quote',
+  'err_too_large', 'err_too_many_lines', 'err_multiline_value', 'err_nul_value', 'err_unreadable', 'warn_inactive',
+  'export_title', 'export_help', 'protect', 'export', 'preview', 'separator', 'comma', 'semicolon', 'yes', 'no', 'status'];
 
 const files = () => (fs.existsSync(DIR) ? fs.readdirSync(DIR).sort() : []);
 

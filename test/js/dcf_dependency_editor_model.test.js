@@ -36,11 +36,14 @@ const warmMinimum = (fn) => {
 
 // ---------------------------------------------------------------- module
 
+// WP-26: the import and export functions and strip join the API list.
 test('loads under CommonJS without a DOM and exports the model API', () => {
   assert.equal(typeof globalThis.window, 'undefined');
   assert.equal(typeof globalThis.DcfDependencyEditorModel, 'undefined');
   ['fold', 'tokens', 'matchesTokens', 'isBlank', 'isDigest', 'listValuesFromText', 'State', 'serialize',
-    'stringify', 'utf8Bytes', 'conflictCounts'].forEach((name) => assert.equal(typeof M[name], 'function', name));
+    'stringify', 'utf8Bytes', 'conflictCounts', 'strip', 'parseRecords', 'planImport', 'applyImport',
+    'buildCsv'].forEach((name) => assert.equal(typeof M[name], 'function', name));
+  assert.equal(typeof M.ValueList.prototype.match, 'function');
   assert.equal(typeof M.ValueList.fromWire, 'function');
   assert.equal(M.VERSION, 1);
 });
@@ -652,4 +655,652 @@ test('scale: serialize 27 x 5,570 under 500 ms (S1, S1-full single and multiple,
 
   [s1Ms, fullMs, allMs, s2Ms].forEach((ms) => assert.ok(ms < 500, `serialize took ${ms} ms`));
   console.log(`# perf ${report.join(' ')}`);
+});
+
+// ---------------------------------------------------------------- WP-26 import and export
+// Editor design 6.1 to 6.7, UD-18, UD-19, QA-11, SP-13, SP-14. Cells are
+// [line, cells] pairs, errors [line, code] pairs unless the test needs more.
+
+const recs = (parsed) => parsed.records.map((r) => [r.line, r.cells]);
+const codes = (list) => list.map((e) => [e.line, e.code]);
+const COUNTRY = list(['Belgium', 'France', 'Germany']);
+const CITY = list(['Antwerp', 'Brussels', 'Paris', 'Lyon']);
+const NAMES = { parentName: 'Country', childName: 'City' };
+const plan = (text, state, P, C, opts) => M.planImport(text, state || new M.State(null), P || COUNTRY, C || CITY,
+  Object.assign({ separator: ';' }, NAMES, opts || {}));
+const snapshotState = (state) => JSON.stringify([[...state.links].map(([k, s]) => [k, [...s]]), [...state.defaults],
+  state.source, state.importMeta]);
+
+test('strip is Ruby strip (NUL and ASCII white space) and linear; listValuesFromText keeps its behaviour', () => {
+  assert.equal(M.strip(' \t\u0000a b\r\n\v\f '), 'a b');
+  assert.equal(M.strip('\u00a0a\u3000'), '\u00a0a\u3000');
+  assert.equal(M.strip(''), '');
+  assert.deepEqual(M.listValuesFromText(' A \n\u0000B\u0000\r\n\u00a0C\u00a0\n\n'), [{ key: 'A' }, { key: 'B' }, { key: '\u00a0C\u00a0' }]);
+  const big = 'a' + ' '.repeat(1000000) + 'b';
+  const [ms1, keys] = elapsed(() => M.listValuesFromText(big));
+  assert.deepEqual(keys, [{ key: big }]);
+  const [ms2, parsed] = elapsed(() => M.parseRecords('x;' + big, ';'));
+  assert.deepEqual(recs(parsed), [[1, ['x', big]]]);
+  console.log(`# perf strip_list_ms=${ms1.toFixed(1)} strip_parse_ms=${ms2.toFixed(1)}`);
+  assert.ok(ms1 < 1000 && ms2 < 1000, `${ms1} ${ms2}`);
+});
+
+test('parseRecords: RFC 4180 cells, quotes and start lines', () => {
+  const cases = [
+    ['"a;b";c', [[1, ['a;b', 'c']]]],
+    ['"say ""hi""";x', [[1, ['say "hi"', 'x']]]],
+    ['say "hi";x', [[1, ['say "hi"', 'x']]]],
+    ['"a""";x', [[1, ['a"', 'x']]]],
+    ['"multi\r\nline";c\r\nd;e', [[1, ['multi\r\nline', 'c']], [3, ['d', 'e']]]],
+    ['a;b\rc;d\ne;f\r\ng;h', [[1, ['a', 'b']], [2, ['c', 'd']], [3, ['e', 'f']], [4, ['g', 'h']]]],
+    ['a;b\n\rc;d', [[1, ['a', 'b']], [3, ['c', 'd']]]],
+    ['\ufeffa;b', [[1, ['a', 'b']]]],
+    ['\ufeff\ufeffa;b', [[1, ['\ufeffa', 'b']]]],
+    ['  "a"  ;b', [[1, ['a', 'b']]]],
+    ['\t"a";b', [[1, ['a', 'b']]]],
+    [' a ; b ', [[1, ['a', 'b']]]],
+    ['" a ";b', [[1, [' a ', 'b']]]],
+    ['\n\na;b\n\n', [[3, ['a', 'b']]]]
+  ];
+  cases.forEach(([text, expected]) => {
+    const parsed = M.parseRecords(text, ';');
+    assert.deepEqual(recs(parsed), expected, JSON.stringify(text));
+    assert.deepEqual(parsed.errors, [], JSON.stringify(text));
+    assert.equal(parsed.separator, ';');
+  });
+  assert.deepEqual(recs(M.parseRecords('a,"b\nc"\nd,e', ',')), [[1, ['a', 'b\nc']], [3, ['d', 'e']]]);
+  assert.deepEqual(recs(M.parseRecords('a\t"b\tc"\n', '\t')), [[1, ['a', 'b\tc']]]);
+});
+
+test('parseRecords: unterminated and bad quotes, recovery in one pass', () => {
+  let parsed = M.parseRecords('x,y\na,"b', ',');
+  assert.deepEqual(recs(parsed), [[1, ['x', 'y']]]);
+  assert.deepEqual(codes(parsed.errors), [[2, 'unterminated_quote']]);
+  parsed = M.parseRecords('"a"x,b\nc,d', ',');
+  assert.deepEqual(codes(parsed.errors), [[1, 'bad_quote']]);
+  assert.deepEqual(recs(parsed), [[2, ['c', 'd']]]);
+  assert.deepEqual([parsed.first.cells, parsed.first.code], [['a'], 'bad_quote'], 'the bad-quoted cell is kept for the header warning');
+  parsed = M.parseRecords('"open\n' + 'a;b\n'.repeat(1000), ';');
+  assert.deepEqual(codes(parsed.errors), [[1, 'unterminated_quote']]);
+  assert.deepEqual(parsed.records, []);
+  parsed = M.parseRecords('"a"x;"b\nc";d', ';');
+  assert.deepEqual(codes(parsed.errors), [[1, 'bad_quote']]);
+  assert.deepEqual(recs(parsed), [[2, ['c"', 'd']]]);
+  parsed = M.parseRecords('"a\nb"x;c\nd;e', ';');
+  assert.deepEqual(codes(parsed.errors), [[2, 'bad_quote']]);
+  assert.deepEqual(recs(parsed), [[3, ['d', 'e']]]);
+  const [ms, many] = elapsed(() => M.parseRecords('"a"x;b\n'.repeat(100000), ';'));
+  assert.equal(many.errors.length, 200);
+  assert.equal(many.errorCount, 100000);
+  assert.deepEqual(codes(many.errors.slice(0, 2)), [[1, 'bad_quote'], [2, 'bad_quote']]);
+  console.log(`# perf bad_quote_100k_ms=${ms.toFixed(1)}`);
+  assert.ok(ms < 2000, `${ms} ms`);
+});
+
+test('parseRecords: trailing empty cells, blank lines, column counts and blank values', () => {
+  const one = (text) => {
+    const parsed = M.parseRecords(text, ';');
+    return [recs(parsed), parsed.errors.map((e) => [e.line, e.code, e.count])];
+  };
+  assert.deepEqual(one('a;b;;'), [[[1, ['a', 'b']]], []]);
+  assert.deepEqual(one('a;;b'), [[], [[1, 'columns', 3]]]);
+  assert.deepEqual(one(';a;b'), [[], [[1, 'columns', 3]]]);
+  assert.deepEqual(one('a;""'), [[], [[1, 'columns', 1]]]);
+  assert.deepEqual(one('a;b;c'), [[], [[1, 'columns', 3]]]);
+  assert.deepEqual(one('x'), [[], [[1, 'columns', 1]]]);
+  assert.deepEqual(one(';;\n  ;  \n\t'), [[], []]);
+  assert.equal(M.parseRecords(';;\n  ;  ', ';').lines, 0);
+  assert.deepEqual(one('"\u3000";b'), [[], [[1, 'blank_value', undefined]]]);
+  assert.deepEqual(one(' ;b'), [[], [[1, 'blank_value', undefined]]]);
+  assert.deepEqual(one('"";b'), [[], [[1, 'blank_value', undefined]]]);
+  assert.equal(M.parseRecords('a;b\nc;d;e\n\nf;g', ';').lines, 3);
+});
+
+test('parseRecords: separator auto detection on the first 64 KB and 20 records, tie order tab ; ,', () => {
+  const sep = (text, fallback) => M.parseRecords(text, 'auto', fallback === undefined ? {} : { fallback }).separator;
+  assert.equal(sep('a\tsemi;colon\nd\tcomma, value'), '\t');
+  assert.equal(sep('"a;b",c\n'.repeat(20)), ',');
+  assert.equal(sep('a;b,c'), ';');
+  assert.equal(sep('x\ty;z,w'), '\t');
+  assert.equal(sep('"a;b";"c;d"\n"e;f";"g;h"'), ';');
+  assert.equal(sep('Paris,"Nord;Ost"\nLyon,"Sud;Est"'), ',', 'a quote inside an unquoted cell breaks the tie');
+  // Review fix: such a record still scores (design 6.1), the quote only breaks ties.
+  assert.equal(sep('x" a\tb\n'.repeat(3)), '\t');
+  assert.equal(sep('x" a;b\n'.repeat(3), ','), ';');
+  assert.equal(sep('12" pipe\tPlumbing\n', ','), '\t');
+  assert.equal(sep('12" pipe\tPlumbing\n', ';'), '\t');
+  const inch = M.parseRecords('3/4" valve;Plumbing\n3/4" valve;Heating', 'auto', { fallback: ',' });
+  assert.deepEqual([inch.separator, inch.errors, recs(inch)],
+    [';', [], [[1, ['3/4" valve', 'Plumbing']], [2, ['3/4" valve', 'Heating']]]]);
+  assert.equal(sep('abc\ndef'), ',');
+  assert.equal(sep('abc\ndef', ';'), ';');
+  assert.equal(sep('abc\ndef', '.'), ',');
+  const long = M.parseRecords('"' + 'x'.repeat(100000) + '",y\na,b', 'auto');
+  assert.equal(long.separator, ',');
+  assert.deepEqual(long.errors, []);
+  assert.deepEqual(long.records.map((r) => r.line), [1, 2]);
+  // Only the first 20 records count (review round 2: each input flips one
+  // record above or below the limit).
+  assert.equal(sep('c;d\n'.repeat(10) + 'a,b\n'.repeat(11)), ';', 'the 21st record is not read');
+  assert.equal(sep('a,b\n'.repeat(10) + 'c;d\n'.repeat(10) + 'e,f\n'), ';', 'the 20th record is read');
+  // Only the first 65,536 characters count: a record ending exactly at the
+  // boundary is read, one ending a character later is cut.
+  assert.equal(sep('p,q\na;b\n' + 'x'.repeat(65536 - 11) + ',y\ntail\n'), ',', 'ends at character 65,536');
+  assert.equal(sep('p;q\na,b\n' + 'x'.repeat(65537 - 11) + ',y\ntail\n'), ';', 'ends at character 65,537');
+  assert.equal(M.parseRecords('a;b', ';').separator, ';');
+  assert.equal(M.parseRecords('a\tb', '\t').separator, '\t');
+});
+
+test('parseRecords: 10,000,000 characters and 200,000 records caps, 200 kept errors', () => {
+  let parsed = M.parseRecords('x'.repeat(10000001), ';');
+  assert.deepEqual(parsed.errors, [{ line: null, code: 'too_large', max: 10000000 }]);
+  assert.deepEqual(parsed.records, []);
+  parsed = M.parseRecords('\ufeff' + 'x'.repeat(10000000), ';');
+  assert.deepEqual(parsed.errors, [{ line: null, code: 'too_large', max: 10000000 }], 'the BOM counts');
+  parsed = M.parseRecords('"' + 'x'.repeat(9999998) + '"', ';');
+  assert.deepEqual(parsed.errors.map((e) => [e.code, e.count]), [['columns', 1]]);
+  parsed = M.parseRecords('P1;C1\n'.repeat(200000), ';');
+  assert.equal(parsed.records.length, 200000);
+  assert.deepEqual(parsed.errors, []);
+  parsed = M.parseRecords('P1;C1\n'.repeat(200001), ';');
+  assert.deepEqual(parsed.errors, [{ line: null, code: 'too_many_lines', max: 200000 }]);
+  assert.equal(parsed.errorCount, 1);
+  assert.deepEqual(parsed.records, []);
+  parsed = M.parseRecords('a;b;c\n'.repeat(250), ';');
+  assert.equal(parsed.errors.length, 200);
+  assert.equal(parsed.errorCount, 250);
+  assert.equal(parsed.errors[199].line, 200);
+});
+
+test('parseRecords is linear on adversarial input of 10,000,000 characters (G6)', () => {
+  const shapes = [
+    ['quoted_cell', '"' + 'x'.repeat(9999998) + '"', (p) => assert.equal(p.errors[0].code, 'columns')],
+    ['escaped_quotes', '"' + '""'.repeat(4999999) + '"', (p) => assert.equal(p.errors[0].count, 1)],
+    ['newlines', '\n'.repeat(10000000), (p) => assert.deepEqual([p.records.length, p.errors.length, p.lines], [0, 0, 0])],
+    ['separators', ';'.repeat(10000000), (p) => assert.deepEqual([p.records.length, p.errors.length], [0, 0])],
+    ['filled_separators', 'x' + ';'.repeat(9999998) + 'y', (p) => assert.deepEqual(p.errors.map((e) => e.count), [9999999])],
+    ['quote_newline', '"\n'.repeat(5000000), (p) => assert.equal(p.errors[0].code, 'too_many_lines')]
+  ];
+  const report = [];
+  shapes.forEach(([name, text, check]) => {
+    const [ms, parsed] = elapsed(() => M.parseRecords(text, ';'));
+    check(parsed);
+    report.push(`${name}_ms=${ms.toFixed(1)}`);
+    // single cold runs: 10x the 555 ms measured at most (G6); a quadratic parser takes minutes
+    assert.ok(ms < 6000, `${name}: ${ms} ms`);
+  });
+  console.log(`# perf parse ${report.join(' ')}`);
+});
+
+test('ValueList.match: exact, exact NFC, unique NFC lowercase; accents and special letters significant', () => {
+  const L1 = list(['Paris', 'PARIS', 'Montr\u00e9al', 'Caf\u00e9', 'Stra\u00dfe', 'Ghent']);
+  const keys = (cell) => L1.match(cell).map((i) => i.key);
+  assert.deepEqual(keys('Paris'), ['Paris']);
+  assert.deepEqual(keys('PARIS'), ['PARIS']);
+  assert.deepEqual(keys('paris'), ['Paris', 'PARIS']);
+  assert.deepEqual(keys('Montre\u0301al'), ['Montr\u00e9al']);
+  assert.deepEqual(keys('MONTR\u00c9AL'), ['Montr\u00e9al']);
+  assert.deepEqual(keys('MONTRE\u0301AL'), ['Montr\u00e9al']);
+  assert.deepEqual(keys('cafe'), []);
+  assert.deepEqual(keys('STRASSE'), []);
+  assert.deepEqual(keys('stra\u00dfe'), ['Stra\u00dfe']);
+  assert.deepEqual(keys('Gh\u00e8nt'), []);
+  const twins = list(['\u00e9', 'e\u0301']);
+  assert.deepEqual(twins.match('\u00e9').map((i) => i.key), ['\u00e9']);
+  assert.deepEqual(twins.match('e\u0301').map((i) => i.key), ['e\u0301']);
+  assert.deepEqual(twins.match('\u00c9').map((i) => i.key), ['\u00e9', 'e\u0301']);
+  const plain = list(['a']);
+  ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf'].forEach((n) => assert.deepEqual(plain.match(n), [], n));
+  assert.deepEqual(list(['__proto__', 'constructor']).match('constructor').map((i) => i.key), ['constructor']);
+  const enums = M.ValueList.fromWire([{ key: '1', label: 'A' }, { key: '2', label: 'A', active: false }, { key: '3', label: 'B' }]);
+  assert.deepEqual(enums.match('A').map((i) => i.key), ['1', '2']);
+  assert.deepEqual(enums.match('b').map((i) => i.key), ['3']);
+  assert.deepEqual(enums.match('3'), []);
+  // the lookup lives on the list, not on its items (serialize compares the items)
+  assert.equal(JSON.stringify(enums.items), JSON.stringify(M.ValueList.fromWire([{ key: '1', label: 'A' },
+    { key: '2', label: 'A', active: false }, { key: '3', label: 'B' }]).items));
+});
+
+const REGIONS = M.ValueList.fromWire([{ key: '9200001', label: 'North' }, { key: '9200002', label: 'South' },
+  { key: '9200003', label: 'Old', active: false }]);
+const PRODUCTS = (extra) => M.ValueList.fromWire([{ key: '9200004', label: 'Alpha' }, { key: '9200005', label: 'Beta' },
+  { key: '9200006', label: 'Gamma' }, { key: '9200007', label: 'Retired', active: false }].concat(extra || []));
+
+test('planImport: enumerations by name only, inactive included, duplicates ambiguous, no #id syntax (UD-19)', () => {
+  const C = PRODUCTS([{ key: '9200008', label: 'Alpha', active: false }, { key: '9200009', label: 'Beta' },
+    { key: '9200010', label: '12' }, { key: '12', label: 'Twelve' }]);
+  const opts = { kind: 'enumeration', parentName: 'Region', childName: 'Product', header: 'no' };
+  const run = (text, extra) => plan(text, null, REGIONS, C, Object.assign({}, opts, extra || {}));
+  let p = run('North;Alpha');
+  assert.deepEqual(p.errors, [{ line: 1, code: 'ambiguous_child', value: 'Alpha' }]);
+  assert.equal(p.ok, false);
+  p = run('North;beta');
+  assert.deepEqual(codes(p.errors), [[1, 'ambiguous_child']]);
+  p = run('North;Retired\nOld;Gamma');
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.warnings, [{ line: 1, code: 'inactive', value: 'Retired' }, { line: 2, code: 'inactive', value: 'Old' }]);
+  assert.deepEqual(p.pairs.map((x) => [x.parent, x.child]), [['9200001', '9200007'], ['9200003', '9200006']]);
+  assert.equal(p.ok, true);
+  p = run('North;#9200004\nNorth;9200004\nnorth;GAMMA');
+  assert.deepEqual(p.errors, [{ line: 1, code: 'unknown_child', value: '#9200004' },
+    { line: 2, code: 'unknown_child', value: '9200004' }]);
+  assert.deepEqual(Object.keys(p.errors[0]).sort(), ['code', 'line', 'value']);
+  p = run('North;12');
+  assert.deepEqual(p.pairs.map((x) => x.child), ['9200010']);
+  p = run('North;Zeta', { addMissing: true });
+  assert.deepEqual(codes(p.errors), [[1, 'unknown_child']]);
+  assert.deepEqual(p.newValues, []);
+  // the same rule on the parent side: an active and an inactive North are ambiguous
+  const twins = M.ValueList.fromWire([{ key: '9200001', label: 'North' }, { key: '9200011', label: 'North', active: false },
+    { key: '9200002', label: 'South' }]);
+  p = plan('North;Alpha\nnorth;Alpha\nSouth;Alpha', null, twins, PRODUCTS(), opts);
+  assert.deepEqual(p.errors, [{ line: 1, code: 'ambiguous_parent', value: 'North' },
+    { line: 2, code: 'ambiguous_parent', value: 'north' }]);
+  assert.equal(p.ok, false);
+  assert.deepEqual(p.pairs.map((x) => [x.parent, x.child]), [['9200002', '9200004']]);
+});
+
+test('planImport: header auto, yes and no; the skipped cells are reported', () => {
+  let p = plan('Country;City\nBelgium;Paris', null, null, null, { header: 'auto' });
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.pairs.length, p.lines, p.errors], [true, ['Country', 'City'], 1, 1, []]);
+  p = plan('country;CITY\nBelgium;Paris');
+  assert.equal(p.headerSkipped, true);
+  p = plan('parent;child\nBelgium;Paris');
+  assert.equal(p.headerSkipped, true);
+  p = plan('Belgium;Brussels\nFrance;Paris');
+  assert.deepEqual([p.headerSkipped, p.pairs.length, p.headerCells], [false, 2, []]);
+  p = plan('Belgum;Brusels\nFrance;Paris');
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors], [true, ['Belgum', 'Brusels'], []]);
+  p = plan('Belgium;Brusels\nFrance;Paris');
+  assert.deepEqual([p.headerSkipped, codes(p.errors)], [false, [[1, 'unknown_child']]]);
+  p = plan('Country;City;Extra\nBelgium;Paris');
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors, p.errorCount], [true, ['Country', 'City', 'Extra'], [], 0]);
+  p = plan('Belgium;Brussels\nFrance;Paris', null, null, null, { header: 'yes' });
+  assert.deepEqual([p.headerSkipped, p.pairs.length, p.lines], [true, 1, 1]);
+  p = plan('Country;City\nBelgium;Paris', null, null, null, { header: 'no' });
+  assert.deepEqual(codes(p.errors), [[1, 'unknown_parent'], [1, 'unknown_child']]);
+  p = plan('Country;City\nBelgium;Paris', null, list(['Country', 'Belgium']), list(['City', 'Paris']));
+  assert.deepEqual([p.headerSkipped, p.pairs.length], [false, 2]);
+  // unprotect runs before the header rule
+  const towns = list(['City', 'Paris']);
+  p = plan("'=Country;City\nBelgium;Paris", null, null, towns, { parentName: '=Country', childName: 'Town', unprotect: true });
+  assert.equal(p.headerSkipped, true);
+  p = plan("'=Country;City\nBelgium;Paris", null, null, towns, { parentName: '=Country', childName: 'Town' });
+  assert.deepEqual([p.headerSkipped, codes(p.errors)], [false, [[1, 'unknown_parent']]]);
+  // the first record after blank lines is row 1
+  p = plan('\n\nCountry;City\nBelgium;Paris');
+  assert.deepEqual([p.headerSkipped, p.pairs[0].line], [true, 4]);
+  // each auto rule on its own, the other cell being a known value
+  for (const text of ['parent;Paris', 'Belgium;CHILD', 'Belgium;city', 'COUNTRY;Paris']) {
+    p = plan(`${text}\nBelgium;Antwerp`);
+    assert.deepEqual([p.headerSkipped, p.errors, p.pairs.length], [true, [], 1], text);
+  }
+  // 'both unknown' needs two non-blank cells: a one-cell or blank-cell first
+  // record keeps its error (review round 2), the name rules still skip it
+  const linked = () => new M.State({ value_dependencies: { Belgium: ['Brussels', 'Antwerp'], France: ['Paris'] } });
+  p = plan('Belgum', linked(), null, null, { mode: 'replace' });
+  assert.deepEqual([p.headerSkipped, p.errors, p.ok], [false, [{ line: 1, code: 'columns', count: 1 }], false]);
+  p = plan(';;', linked(), null, null, { separator: 'auto', defaultSeparator: ',', mode: 'replace' });
+  assert.deepEqual([p.headerSkipped, p.separator, codes(p.errors), p.ok], [false, ',', [[1, 'columns']], false]);
+  p = plan('Belgum\nBelgium;Antwerp');
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.ok], [false, [[1, 'columns']], false]);
+  p = plan(' ,Typo\nBelgium,Antwerp', null, null, null, { separator: ',' });
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.ok], [false, [[1, 'blank_value']], false]);
+  p = plan('Typo;　\nBelgium;Antwerp');
+  assert.deepEqual([p.headerSkipped, codes(p.errors)], [false, [[1, 'blank_value']]]);
+  p = plan('Country\nBelgium;Antwerp');
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors, p.pairs.length], [true, ['Country'], [], 1]);
+  p = plan(' ;City\nBelgium;Antwerp');
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors, p.pairs.length], [true, ['', 'City'], [], 1]);
+  // auto never reads a quote error as a header
+  p = plan('"a"x;b\nBelgium;Paris');
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.ok], [false, [[1, 'bad_quote']], false]);
+  p = plan('"open;b');
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.ok], [false, [[1, 'unterminated_quote']], false]);
+  // yes skips a first record with a bad quote (its error goes, matched on the
+  // line of the quote), not an unterminated one (it holds the rest of the input)
+  const yes = { header: 'yes' };
+  p = plan('"Country"x;City\nBelgium;Lyon', null, null, null, yes);
+  assert.deepEqual([p.headerSkipped, p.errors, p.errorCount, p.pairs.length, p.lines, p.ok], [true, [], 0, 1, 1, true]);
+  // the warning names the cells read up to and including the bad-quoted one
+  assert.deepEqual(p.headerCells, ['Country']);
+  p = plan('"Country"x,City\nBelgium,Paris', null, null, null, { separator: ',', header: 'yes' });
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors], [true, ['Country'], []]);
+  p = plan('Country,"City"x\nBelgium,Paris', null, null, null, { separator: ',', header: 'yes' });
+  assert.deepEqual([p.headerSkipped, p.headerCells, p.errors], [true, ['Country', 'City'], []]);
+  p = plan('"Coun\ntry"x;City\nBelgium;Lyon\n"a"x;b', null, null, null, yes);
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.errorCount, p.pairs.map((x) => x.line)],
+    [true, [[4, 'bad_quote']], 1, [3]]);
+  p = plan('"open;b\nBelgium;Lyon', null, null, null, yes);
+  assert.deepEqual([p.headerSkipped, codes(p.errors), p.ok], [false, [[1, 'unterminated_quote']], false]);
+});
+
+test('planImport: matching order, NFD input against NFC values, unique case-insensitive, ambiguous', () => {
+  const P = list(['Belgium']);
+  const C = list(['Paris', 'PARIS', 'Montr\u00e9al', 'Li\u00e8ge']);
+  const p = plan('Belgium;Paris\nBelgium;paris\nBelgium;Montre\u0301al\nBELGIUM;li\u00e8ge\nBelgium;Liege', null, P, C,
+    { header: 'no' });
+  assert.deepEqual(p.errors, [{ line: 2, code: 'ambiguous_child', value: 'paris' },
+    { line: 5, code: 'unknown_child', value: 'Liege' }]);
+  assert.deepEqual(p.pairs.map((x) => x.child), ['Paris', 'Montr\u00e9al', 'Li\u00e8ge']);
+  // separator auto with nothing found: the locale separator (defaultSeparator) when given, else ','
+  const local = plan('a;b;c', null, list(['a']), list(['b']), { separator: 'auto', defaultSeparator: ';', header: 'no' });
+  assert.deepEqual([local.separator, local.errors], [';', [{ line: 1, code: 'columns', count: 3 }]]);
+  const none = plan('a;b;c', null, list(['a']), list(['b']), { separator: 'auto', header: 'no' });
+  assert.deepEqual([none.separator, none.errors], [',', [{ line: 1, code: 'columns', count: 1 }]]);
+});
+
+test('planImport: merge and replace counts; the plan changes neither the state nor the lists', () => {
+  // Gone is no current child: its links are never counted as removed
+  const state = new M.State({ value_dependencies: { Belgium: ['Antwerp', 'Brussels', 'Gone'], France: ['Paris'],
+                                                    Atlantis: ['Gone'] },
+                              default_value_dependencies: { Belgium: 'Brussels' } });
+  const before = snapshotState(state);
+  const lists = JSON.stringify([COUNTRY.items, CITY.items]);
+  const text = 'Belgium;Paris\nBelgium;Antwerp\nGermany;Lyon\nBelgium;Paris';
+  const merge = plan(text, state, null, null, { header: 'no' });
+  assert.deepEqual([merge.ok, merge.mode, merge.added, merge.existing, merge.removed, merge.duplicates, merge.pairs.length,
+    merge.lines], [true, 'merge', 2, 1, 0, 1, 3, 4]);
+  assert.deepEqual(merge.pairs.map((x) => [x.line, x.parent, x.child, x.existing]),
+    [[1, 'Belgium', 'Paris', false], [2, 'Belgium', 'Antwerp', true], [3, 'Germany', 'Lyon', false]]);
+  const replace = plan(text, state, null, null, { header: 'no', mode: 'replace' });
+  assert.deepEqual([replace.ok, replace.mode, replace.added, replace.existing, replace.removed, replace.duplicates],
+    [true, 'replace', 2, 1, 2, 1]);
+  const headerOnly = plan('Country;City', state, null, null, { mode: 'replace' });
+  assert.deepEqual([headerOnly.ok, headerOnly.pairs.length, headerOnly.removed, headerOnly.headerSkipped], [true, 0, 3, true]);
+  assert.equal(plan('', state, null, null, { mode: 'replace' }).ok, false, 'an empty input never clears the links');
+  assert.equal(plan('Country;City', state, null, null, {}).ok, false, 'merge needs a pair');
+  assert.equal(snapshotState(state), before);
+  assert.equal(JSON.stringify([COUNTRY.items, CITY.items]), lists);
+  assert.throws(() => M.planImport('a;b', {}, COUNTRY, CITY, {}), TypeError);
+  assert.throws(() => M.planImport('a;b', state, null, CITY, {}), TypeError);
+});
+
+test('applyImport: merge adds, replace keeps exactly the pairs (orphans and lost defaults go); source and import set', () => {
+  const mapping = { value_dependencies: { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'], Atlantis: ['Gone'] },
+                    default_value_dependencies: { Belgium: 'Brussels', France: 'Paris' } };
+  const text = 'Belgium;Paris\nBelgium;Antwerp\nGermany;Lyon\nFrance;Paris';
+  const opts = { multiple: false, base: BASE };
+  const merged = new M.State(mapping);
+  const snapshot = merged.clone();
+  const preText = M.stringify(M.serialize(merged, COUNTRY, CITY, opts));
+  M.applyImport(merged, plan(text, merged, null, null, { header: 'no' }));
+  let out = J(M.serialize(merged, COUNTRY, CITY, opts));
+  assert.deepEqual(out.value_dependencies, { Belgium: ['Antwerp', 'Brussels', 'Paris'], France: ['Paris'], Germany: ['Lyon'] });
+  assert.deepEqual(out.default_value_dependencies, { Belgium: 'Brussels', France: 'Paris' });
+  assert.deepEqual([out.source, out.import], ['import', { mode: 'merge', rows: 4 }]);
+  assert.ok(merged.isLinked('Atlantis', 'Gone'));
+  // undo: the clone taken before gives the pre-import payload byte for byte
+  assert.equal(M.stringify(M.serialize(snapshot, COUNTRY, CITY, opts)), preText);
+
+  const replaced = new M.State(mapping);
+  M.applyImport(replaced, plan(text, replaced, null, null, { header: 'no', mode: 'replace' }));
+  out = J(M.serialize(replaced, COUNTRY, CITY, opts));
+  assert.deepEqual(out.value_dependencies, { Belgium: ['Antwerp', 'Paris'], France: ['Paris'], Germany: ['Lyon'] });
+  assert.deepEqual(out.default_value_dependencies, { France: 'Paris' });
+  assert.deepEqual(out.import, { mode: 'replace', rows: 4 });
+  assert.equal(replaced.isLinked('Atlantis', 'Gone'), false);
+  assert.deepEqual(replaced.importMeta, { mode: 'replace', rows: 4 });
+  const clone = replaced.clone();
+  assert.deepEqual([clone.source, clone.importMeta], ['import', { mode: 'replace', rows: 4 }]);
+
+  const cleared = new M.State(mapping);
+  M.applyImport(cleared, plan('Country;City', cleared, null, null, { mode: 'replace' }));
+  assert.deepEqual([cleared.links.size, cleared.defaults.size, cleared.importMeta], [0, 0, { mode: 'replace', rows: 0 }]);
+  // rows counts the distinct pairs: not the skipped header, not the duplicate line
+  const x = new M.State(null);
+  const dup = plan('Country;City\nBelgium;Paris\nBelgium;Paris\nBelgium;Antwerp', x);
+  M.applyImport(x, dup);
+  assert.deepEqual([dup.lines, dup.duplicates, x.importMeta], [3, 1, { mode: 'merge', rows: 2 }]);
+  assert.throws(() => M.applyImport({}, { pairs: [], mode: 'merge' }), TypeError);
+});
+
+test('planImport: add missing child values (list children only)', () => {
+  const P = list(['Belgium']);
+  const C = list(['Antwerp', 'Brussels']);
+  const opts = { header: 'no', addMissing: true, kind: 'list' };
+  const text = ['Belgium;Zurich', 'Belgium;zurich', 'Belgium;" Zurich "', 'Belgium;Zu\u0308rich', 'Belgium;Z\u00fcrich',
+    'Belgium;" Brussels "', 'Belgium;"\tTab\u0000"'].join('\n');
+  let p = plan(text, null, P, C, opts);
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.newValues, ['Zurich', 'Z\u00fcrich', 'Tab']);
+  assert.deepEqual(p.pairs.map((x) => [x.child, x.existing]), [['Zurich', false], ['Z\u00fcrich', false], ['Brussels', false],
+    ['Tab', false]]);
+  assert.equal(p.duplicates, 3);
+  p = plan('Belgium;Zurich\nBelgium;"New\nLine"\nBelgium;"New\rLine"', null, P, C, opts);
+  assert.deepEqual(p.errors, [{ line: 2, code: 'multiline_value', value: 'New\nLine' },
+    { line: 4, code: 'multiline_value', value: 'New\rLine' }]);
+  p = plan('Belgium;" \u0000 "', null, P, C, opts);
+  assert.deepEqual(codes(p.errors), [[1, 'blank_value']]);
+  p = plan('Belgium;\ud800x', null, P, C, opts);
+  assert.deepEqual(p.newValues, ['\ufffdx']);
+  assert.deepEqual(M.listValuesFromText('Antwerp\nBrussels\n' + p.newValues.join('\n')).map((v) => v.key),
+    ['Antwerp', 'Brussels', '\ufffdx']);
+  p = plan('Belgium;Zurich', null, P, C, { header: 'no' });
+  assert.deepEqual([codes(p.errors), p.newValues], [[[1, 'unknown_child']], []]);
+  // a NUL inside a new value is refused (HTML would turn it into U+FFFD)
+  p = plan('Belgium;"new\u0000val"\nBelgium;new\u0000val\nBelgium;\u0000Zurich\u0000', null, P, C, opts);
+  assert.deepEqual([p.errors, p.newValues, p.ok], [[{ line: 1, code: 'nul_value', value: 'new\u0000val' },
+    { line: 2, code: 'nul_value', value: 'new\u0000val' }], ['Zurich'], false]);
+  // the match after strip and NFC can be ambiguous too
+  p = plan('Belgium;" paris "', null, P, list(['Paris', 'PARIS']), opts);
+  assert.deepEqual([codes(p.errors), p.newValues], [[[1, 'ambiguous_child']], []]);
+  // the estimate counts the extended children
+  p = plan('Belgium;Zurich', null, P, C, Object.assign({ multiple: false, base: BASE }, opts));
+  const state = new M.State(null);
+  M.applyImport(state, p);
+  const extended = list(['Antwerp', 'Brussels', 'Zurich']);
+  const text2 = M.stringify(M.serialize(state, P, extended, { multiple: false, base: BASE }));
+  assert.equal(p.estimatedPayloadBytes, M.utf8Bytes(text2));
+  assert.ok(text2.includes('"Belgium":["Zurich"]'));
+});
+
+test('planImport: errors in line order (parent before child), 200 kept and the rest counted; warnings capped', () => {
+  const lines = [];
+  for (let k = 0; k < 150; k += 1) lines.push('"a"x;b', 'Nowhere;Antwerp');
+  let p = plan(lines.join('\n'), null, null, null, { header: 'no' });
+  assert.equal(p.errors.length, 200);
+  assert.equal(p.errorCount, 300);
+  assert.deepEqual(p.errors.map((e) => e.line), Array.from({ length: 200 }, (_, k) => k + 1));
+  assert.deepEqual(codes(p.errors.slice(0, 2)), [[1, 'bad_quote'], [2, 'unknown_parent']]);
+  p = plan('Nowhere;Nothing', null, null, null, { header: 'no' });
+  assert.deepEqual(codes(p.errors), [[1, 'unknown_parent'], [1, 'unknown_child']]);
+  p = plan('Country;City\nnope;x;y', null, null, null, { header: 'auto' });
+  assert.deepEqual(p.errors.map((e) => [e.line, e.code, e.count]), [[2, 'columns', 3]]);
+  // a skipped header's columns error does not cost one of the 200 kept errors
+  p = plan('Country;City;Extra\n' + 'a;b;c\n'.repeat(250));
+  assert.deepEqual([p.headerSkipped, p.errors.length, p.errorCount, p.errors[0].line, p.errors[199].line], [true, 200, 250, 2, 201]);
+  const C = PRODUCTS();
+  p = plan('North;Retired\n'.repeat(1000), null, REGIONS, C, { header: 'no', kind: 'enumeration' });
+  assert.equal(p.warnings.length, 200);
+  assert.equal(p.warningCount, 1000);
+  assert.equal(p.duplicates, 999);
+  assert.equal(p.ok, true);
+});
+
+test('planImport: estimatedPayloadBytes is the serialized result; above maxPayloadBytes the plan is not ok', () => {
+  const state = new M.State({ value_dependencies: { Belgium: ['Antwerp'] }, default_value_dependencies: { Belgium: 'Antwerp' } });
+  const opts = { header: 'no', multiple: true, base: BASE };
+  const p = plan('France;Paris\nGermany;Lyon', state, null, null, opts);
+  const applied = state.clone();
+  M.applyImport(applied, p);
+  const bytes = M.utf8Bytes(M.stringify(M.serialize(applied, COUNTRY, CITY, { multiple: true, base: BASE })));
+  assert.equal(p.estimatedPayloadBytes, bytes);
+  assert.equal(plan('France;Paris\nGermany;Lyon', state, null, null, Object.assign({ maxPayloadBytes: bytes }, opts)).ok, true);
+  const over = plan('France;Paris\nGermany;Lyon', state, null, null, Object.assign({ maxPayloadBytes: bytes - 1 }, opts));
+  assert.deepEqual([over.ok, over.tooLarge, over.errorCount], [false, true, 0]);
+  const enumPlan = plan('North;Alpha', null, REGIONS, PRODUCTS(), { header: 'no', kind: 'enumeration', multiple: true });
+  const enumState = new M.State(null);
+  M.applyImport(enumState, enumPlan);
+  assert.equal(enumPlan.estimatedPayloadBytes,
+    M.utf8Bytes(M.stringify(M.serialize(enumState, REGIONS, PRODUCTS(), { kind: 'enumeration', multiple: true }))));
+  assert.ok(M.stringify(M.serialize(enumState, REGIONS, PRODUCTS(), { kind: 'enumeration' })).includes('[9200004]'));
+});
+
+test('planImport, applyImport and buildCsv: Object.prototype names behave like other values; no prototype changes', () => {
+  const before = Object.getOwnPropertyNames(Object.prototype).sort();
+  const P = list(['__proto__', 'constructor', 'a|b', 'a', 'toJSON']);
+  const C = list(['toString', 'hasOwnProperty', 'c', 'b|c', 'prototype', '__defineGetter__']);
+  const p = plan('constructor;toString\n__proto__;hasOwnProperty\na|b;c\na;b|c\ntoJSON;__defineGetter__\n__proto__;prototype',
+    null, P, C, { header: 'no' });
+  assert.deepEqual([p.errors, p.duplicates, p.pairs.length], [[], 0, 6]);
+  const q = plan('valueOf;c\na;constructor\nprototype;c', null, P, C, { header: 'no' });
+  assert.deepEqual(codes(q.errors), [[1, 'unknown_parent'], [2, 'unknown_child'], [3, 'unknown_parent']]);
+  const state = new M.State(null);
+  M.applyImport(state, p);
+  const out = J(M.serialize(state, P, C, {}));
+  assert.deepEqual(out.value_dependencies.__proto__, ['hasOwnProperty', 'prototype']);
+  assert.deepEqual(out.value_dependencies.constructor, ['toString']);
+  const csv = M.buildCsv(state, P, C, { separator: ',' });
+  assert.ok(csv.includes('\r\n__proto__,hasOwnProperty\r\n__proto__,prototype\r\nconstructor,toString\r\n'), csv);
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype).sort(), before);
+  assert.equal({}.toString, Object.prototype.toString);
+  assert.equal(typeof Object.prototype.prototype, 'undefined');
+});
+
+test('buildCsv: one BOM, CRLF, header names, quoting, labels, orphans and defaults left out', () => {
+  const C = list(['Antwerp', 'semi;colon', 'say "hi"', ' lead', 'trail\t', 'a\nb', 'c,d', 'tab\tin']);
+  const state = new M.State({ value_dependencies: { Belgium: ['semi;colon', 'Antwerp'],
+                                                    France: ['a\nb', 'say "hi"', ' lead', 'trail\t', 'c,d', 'tab\tin'],
+                                                    Atlantis: ['Gone'], Germany: ['Gone'] },
+                              default_value_dependencies: { Belgium: 'Antwerp' } });
+  const csv = M.buildCsv(state, COUNTRY, C, { separator: ',', parentName: 'Country', childName: 'City' });
+  assert.equal(csv, '\ufeffCountry,City\r\nBelgium,Antwerp\r\nBelgium,"semi;colon"\r\nFrance,"say ""hi"""\r\n' +
+    'France," lead"\r\nFrance,"trail\t"\r\nFrance,"a\nb"\r\nFrance,"c,d"\r\nFrance,"tab\tin"\r\n');
+  assert.equal(csv.split('\ufeff').length, 2);
+  assert.equal(M.buildCsv(state, COUNTRY, C, { separator: '.' }).split('\r\n')[0], '\ufeffparent,child');
+  assert.equal(M.buildCsv(state, COUNTRY, C, { separator: ';', parentName: 'Country', childName: 'City' }).split('\r\n')[2],
+    'Belgium;"semi;colon"');
+  assert.equal(M.buildCsv(state, COUNTRY, C, { separator: '\t' }).split('\r\n')[1], 'Belgium\tAntwerp');
+  assert.equal(M.buildCsv(state, null, C, { separator: ',', parentName: 'Country', childName: 'City' }), '\ufeffCountry,City\r\n');
+  const enumState = new M.State({ value_dependencies: { 9200001: ['9200004', '9200007'] } });
+  assert.equal(M.buildCsv(enumState, REGIONS, PRODUCTS(), { separator: ',', parentName: 'Region', childName: 'Product' }),
+    '\ufeffRegion,Product\r\nNorth,Alpha\r\nNorth,Retired\r\n');
+  const before = snapshotState(state);
+  M.buildCsv(state, COUNTRY, C, { separator: ',', protect: true });
+  assert.equal(snapshotState(state), before);
+  assert.throws(() => M.buildCsv({}, COUNTRY, C, {}), TypeError);
+  // cost follows the links, not parents x children
+  const many = list(L.names(5000, { prefix: 'P' }));
+  const kids = list(L.names(2000, { prefix: 'C', offset: 9000 }));
+  const sparse = new M.State(null);
+  for (let k = 0; k < 10; k += 1) sparse.link(many.items[k * 400].key, kids.items[k * 150].key, true);
+  const [ms, out] = warmMinimum(() => M.buildCsv(sparse, many, kids, { separator: ',' }));
+  assert.equal(out.split('\r\n').length, 12);
+  assert.ok(ms < 100, `${ms} ms`);
+});
+
+test('buildCsv formula protection: each trigger in both columns and the header, any separator; off by default (UD-18)', () => {
+  const values = ['=1+1', '+x', '-5', '@SUM(A1)', '\tz', '\rq', "'=x", "''-a", 'a=b', ' =x', "'x", '\uff1dx', 'plain'];
+  const P = list(['=P']);
+  const C = list(values);
+  const state = new M.State(null);
+  values.forEach((v) => state.link('=P', v, true));
+  [',', ';', '\t'].forEach((sep) => {
+    const quote = (s) => (/[,;\t"\r\n]/.test(s) || /^[\u0000\t\v\f ]|[\u0000\t\v\f ]$/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s);
+    const row = (a, b) => quote(a) + sep + quote(b);
+    const on = M.buildCsv(state, P, C, { separator: sep, parentName: '=Field', childName: 'City', protect: true });
+    const protectedValues = ["'=1+1", "'+x", "'-5", "'@SUM(A1)", "'\tz", "'\rq", "''=x", "'''-a", 'a=b', ' =x', "'x", '\uff1dx',
+      'plain'];
+    assert.equal(on, '\ufeff' + [row("'=Field", 'City')].concat(protectedValues.map((v) => row("'=P", v))).join('\r\n') + '\r\n', sep);
+    const off = M.buildCsv(state, P, C, { separator: sep, parentName: '=Field', childName: 'City' });
+    assert.equal(off, '\ufeff' + [row('=Field', 'City')].concat(values.map((v) => row('=P', v))).join('\r\n') + '\r\n', sep);
+  });
+});
+
+test('protect and unprotect are symmetric; unprotect off keeps the apostrophe (UD-18)', () => {
+  const values = ['=x', "'=x", "''=x", "'x", '-1', "'-1", '@', "'", '\tz', 'a', '=SUM(1)', '+1', '@x', "'@"];
+  const P = list(['P']);
+  const C = list(values);
+  const state = new M.State(null);
+  values.forEach((v) => state.link('P', v, true));
+  const csv = M.buildCsv(state, P, C, { separator: ',', parentName: 'Country', childName: 'City', protect: true });
+  const p = plan(csv, null, P, C, { separator: 'auto', mode: 'replace', unprotect: true });
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.pairs.map((x) => x.child), values);
+  const lone = plan("P,'=x\nP,'x\nP,''=x", null, P, C, { separator: ',', header: 'no', unprotect: true });
+  assert.deepEqual(lone.pairs.map((x) => x.child), ['=x', "'x", "'=x"]);
+  const kept = plan("P,'=x\nP,=x", null, P, C, { separator: ',', header: 'no' });
+  assert.deepEqual(kept.pairs.map((x) => x.child), ["'=x", '=x']);
+  const brussels = list(['=Brussels']);
+  assert.deepEqual(plan("P;'=Brussels", null, P, brussels, { header: 'no', unprotect: true }).pairs.map((x) => x.child), ['=Brussels']);
+  assert.deepEqual(codes(plan("P;'=Brussels", null, P, brussels, { header: 'no' }).errors), [[1, 'unknown_child']]);
+});
+
+const TRICKY_P = L.TRICKY.concat(['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf', 'toJSON',
+  '"><script>alert(1)</script>', '</script>', '&', 'a/b', '007', '10', '\u00e9', 'e\u0301', 'line\u2028sep', '\ud83d\ude00 smile',
+  '=SUM(1)', '+1', '-1', '@x', "'=x", "''=x", "'x", '-', "'", 'Nord;Ost', 'semi;colon,comma\ttab']);
+const TRICKY_C = ['__proto__', 'constructor', 'b', '[x]', 'a]', '<b>x</b>', '&amp;', '1.0', 'null', 'tab\tin', '=x', '@',
+  '\u00dcn\u00efc\u00f8d\u00e9 \u00f1', 'say "hi"', 'Sud;Est', 'x,y'];
+
+test('export then import round-trips: each separator, protection off and on, tricky values and field names', () => {
+  const scenarios = [];
+  const parentKeys = L.names(27, { prefix: 'P' });
+  const childKeys = L.names(5570, { trickyEvery: 97 });
+  scenarios.push(['S1', list(parentKeys), list(childKeys), new M.State({ value_dependencies: L.partition(parentKeys, childKeys) }),
+    {}]);
+  const trickyState = new M.State(null);
+  TRICKY_P.forEach((p, i) => {
+    trickyState.link(p, TRICKY_C[i % TRICKY_C.length], true);
+    trickyState.link(p, TRICKY_C[(i * 7 + 3) % TRICKY_C.length], true);
+  });
+  scenarios.push(['tricky', list(TRICKY_P), list(TRICKY_C), trickyState, {}]);
+  const enumP = M.ValueList.fromWire([{ key: '1', label: ' lead ' }, { key: '2', label: '=Formula' },
+    { key: '3', label: 'Old', active: false }]);
+  const enumC = M.ValueList.fromWire([{ key: '4', label: 'Alpha' }, { key: '5', label: 'trail\t' }, { key: '6', label: '+1' },
+    { key: '7', label: 'Retired', active: false }]);
+  const enumState = new M.State({ value_dependencies: { 1: ['4', '5'], 2: ['6', '7'], 3: ['4'] } });
+  scenarios.push(['enumeration', enumP, enumC, enumState, { kind: 'enumeration' }]);
+  scenarios.forEach(([name, P, C, state, extra]) => {
+    const expected = JSON.stringify(J(M.serialize(state, P, C, extra)).value_dependencies);
+    [',', ';', '\t'].forEach((sep) => {
+      [false, true].forEach((protect) => {
+        [['Country', 'City'], ['Land;Region', 'Stad, Ort'], ['=Field', 'tab\there']].forEach(([parentName, childName]) => {
+          const label = `${name} ${JSON.stringify(sep)} protect=${protect} ${parentName}`;
+          const csv = M.buildCsv(state, P, C, { separator: sep, parentName, childName, protect });
+          const p = M.planImport(csv, new M.State(null), P, C, Object.assign({ separator: 'auto', header: 'auto', mode: 'replace',
+            unprotect: protect, parentName, childName }, extra));
+          assert.equal(p.errorCount, 0, `${label}: ${JSON.stringify(p.errors.slice(0, 3))}`);
+          assert.equal(p.separator, sep, label);
+          assert.equal(p.headerSkipped, true, label);
+          const fresh = new M.State(null);
+          M.applyImport(fresh, p);
+          assert.equal(JSON.stringify(J(M.serialize(fresh, P, C, extra)).value_dependencies), expected, label);
+        });
+      });
+    });
+  });
+});
+
+test('scale: parse + plan + apply + serialize for 27 x 5,570 under 500 ms, S1-full under 4,500 ms; buildCsv under 2,000 ms (G6)', () => {
+  const parentKeys = L.names(27, { prefix: 'P' });
+  const childKeys = L.names(5570, { trickyEvery: 97 });
+  const P = list(parentKeys);
+  const C = list(childKeys);
+  const s1 = new M.State({ value_dependencies: L.partition(parentKeys, childKeys) });
+  const csv = M.buildCsv(s1, P, C, { separator: ';', parentName: 'Country', childName: 'City' });
+  const expected = M.stringify(M.serialize(s1, P, C, { multiple: false, base: BASE }));
+  const run = (text) => {
+    const state = new M.State(null);
+    const p = M.planImport(text, state, P, C, { separator: 'auto', mode: 'merge', parentName: 'Country', childName: 'City',
+                                               multiple: false, base: BASE });
+    M.applyImport(state, p);
+    return [p, M.stringify(M.serialize(state, P, C, { multiple: false, base: BASE }))];
+  };
+  const [s1Ms, [s1Plan, s1Text]] = warmMinimum(() => run(csv));
+  assert.equal(s1Plan.pairs.length, 5570);
+  assert.equal(JSON.stringify(JSON.parse(s1Text).value_dependencies), JSON.stringify(JSON.parse(expected).value_dependencies));
+
+  const full = new M.State(null);
+  parentKeys.forEach((pk) => childKeys.forEach((ck) => full.link(pk, ck, true)));
+  const [csvMs, fullCsv] = warmMinimum(() => M.buildCsv(full, P, C, { separator: ',', parentName: 'Country', childName: 'City' }));
+  assert.equal(fullCsv.split('\r\n').length, 150392);
+  const [fullMs, [fullPlan]] = warmMinimum(() => run(fullCsv));
+  assert.equal(fullPlan.pairs.length, 150390);
+  assert.ok(fullPlan.estimatedPayloadBytes <= 4194304);
+  console.log(`# perf import_ms=${s1Ms.toFixed(1)} import_full_ms=${fullMs.toFixed(1)} build_csv_full_ms=${csvMs.toFixed(1)} ` +
+              `full_csv_chars=${fullCsv.length}`);
+  assert.ok(s1Ms < 500, `S1 ${s1Ms} ms`);
+  assert.ok(fullMs < 4500, `S1-full ${fullMs} ms`);
+  assert.ok(csvMs < 2000, `buildCsv ${csvMs} ms`);
 });

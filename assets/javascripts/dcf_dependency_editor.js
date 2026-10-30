@@ -6,6 +6,8 @@
  * and createTextNode, attributes through setAttribute, never as markup. No
  * plain object is keyed by values (Map, Set, WeakMap). A bad attribute leaves
  * the editor inert (QA-24): no write, no multipart switch, no submit gate.
+ * WP-26: CSV import and export panels (editor design 6.4 to 6.8) on the
+ * model's parseRecords, planImport, applyImport and buildCsv.
  * window.DcfDependencyEditor = {init(root), get(root)}. ES2017, no build. */
 (function (window) {
   'use strict';
@@ -29,8 +31,17 @@
   // Only when data-dcf-editor-i18n itself cannot be read.
   var FALLBACK_UNAVAILABLE = 'The dependency editor could not be started. Reload the page.';
   var INT_RE = /^(0|[1-9][0-9]{0,15})$/;
-  var STRIP_RE = /^[\u0000\t\n\v\f\r ]+|[\u0000\t\n\v\f\r ]+$/g;
   var hasOwn = Object.prototype.hasOwnProperty;
+  // WP-26 import and export.
+  var IMPORT_SEPARATORS = ['auto', 'semicolon', 'comma', 'tab'];
+  var IMPORT_FILE_BYTES = 10000000;
+  var PREVIEW_ROWS = 20;
+  var MESSAGE_CHARS = 200;
+  // Import inputs whose change makes the preview stale (editor design 6.4).
+  var IMPORT_INPUTS = ['data-dcf-ed-import-text', 'data-dcf-ed-import-separator', 'data-dcf-ed-import-header',
+    'data-dcf-ed-import-mode', 'data-dcf-ed-import-add-missing', 'data-dcf-ed-import-unprotect'];
+  // Core possible_values= strip: NUL and ASCII white space.
+  var STRIP_CODES = new Set([0, 9, 10, 11, 12, 13, 32]);
 
   // ---------------------------------------------------------------- helpers
   function isPlain(o) {
@@ -62,6 +73,25 @@
       label.appendChild(control);
     }
     return label;
+  }
+
+  function checkbox(marker) {
+    var box = el('input');
+    box.type = 'checkbox';
+    box.setAttribute(marker, '');
+    return box;
+  }
+
+  // A select of [value, text] options.
+  function choice(marker, options) {
+    var select = el('select');
+    select.setAttribute(marker, '');
+    options.forEach(function (pair) {
+      var option = el('option', null, pair[1]);
+      option.value = pair[0];
+      select.appendChild(option);
+    });
+    return select;
   }
 
   function info(text) {
@@ -102,14 +132,15 @@
     return value;
   }
 
-  // div.flash.<type>; the warning sprite where core offers createSVGIcon
-  // and its icon source (6.1, 7.0), else the class background (UX-10).
+  // div.flash.<type>; the sprite of core notice_icon (notice: checked,
+  // else warning) where core offers createSVGIcon and its icon source
+  // (6.1, 7.0), else the class background (UX-10).
   function flash(type, text, alert) {
     var box = el('div', 'flash ' + type);
     if (alert) box.setAttribute('role', 'alert');
     if (typeof window.createSVGIcon === 'function' && doc.querySelector('#icon-copy-source svg')) {
       try {
-        box.appendChild(window.createSVGIcon('warning'));
+        box.appendChild(window.createSVGIcon(type === 'notice' ? 'checked' : 'warning'));
       } catch (e) {
         // the class background stays
       }
@@ -122,22 +153,61 @@
   // possible-values storage estimate.
   function storedValues(text) {
     var M = window.DcfDependencyEditorModel;
-    return String(text || '').split(/[\n\r]+/).map(function (line) { return line.replace(STRIP_RE, ''); })
+    return String(text || '').split(/[\n\r]+/).map(function (line) { return M.strip(line); })
       .filter(function (v) { return !M.isBlank(v); });
   }
 
-  // RFC 4180 with a BOM and CRLF (conflict export; WP-26 owns the full CSV
-  // builder).
-  function csvCell(value, sep) {
+  // A cell inside a message: at most 200 characters.
+  function shorten(value) {
     var s = String(value);
-    if (s.indexOf(sep) >= 0 || /["\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
+    return s.length > MESSAGE_CHARS ? s.slice(0, MESSAGE_CHARS) + '\u2026' : s;
   }
 
-  function csvText(rows, sep) {
-    return '\ufeff' + rows.map(function (row) {
-      return row.map(function (cell) { return csvCell(cell, sep); }).join(sep);
-    }).join('\r\n') + '\r\n';
+  // Select tokens (no raw tab in an attribute) and their separators.
+  function separatorChar(token) {
+    if (token === 'semicolon') return ';';
+    if (token === 'comma') return ',';
+    if (token === 'tab') return '\t';
+    return 'auto';
+  }
+
+  // ';' and TAB keep their token, anything else (',', core ro '.') is comma.
+  function separatorToken(sep) {
+    if (sep === ';') return 'semicolon';
+    return sep === '\t' ? 'tab' : 'comma';
+  }
+
+  // '<folded field name, other than [a-z0-9_.-] as _>_dependencies.csv'.
+  function exportName(M, name) {
+    var base = M.fold(name).replace(/[^a-z0-9_.-]/g, '_');
+    return /[a-z0-9]/.test(base) ? base + '_dependencies.csv' : 'dependencies.csv';
+  }
+
+  // Core CSV encodings that are no WHATWG label, under the WHATWG name of
+  // the same encoding (ja, ko).
+  var DECODER_ALIASES = new Map([['cp932', 'shift_jis'], ['cp949', 'euc-kr']]);
+
+  // Strict UTF-8 first (a BOM stays for parseRecords to drop once); else
+  // the locale CSV encoding, or windows-1252 when that label is unknown or
+  // UTF-8 (U+FFFD would hide bad bytes), after a leading UTF-8 BOM. A
+  // missing TextDecoder throws (unreadable).
+  function decode(buffer, label) {
+    var bytes = new window.Uint8Array(buffer);
+    var Decoder = window.TextDecoder;
+    try {
+      return { text: new Decoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), encoding: null };
+    } catch (e) {
+      // not UTF-8
+    }
+    var start = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+    var decoder = null;
+    try {
+      decoder = new Decoder(DECODER_ALIASES.get(String(label || '').toLowerCase()) || label || 'windows-1252');
+    } catch (e) {
+      decoder = null;
+    }
+    if (!decoder || decoder.encoding === 'utf-8') decoder = new Decoder('windows-1252');
+    return { text: decoder.decode(bytes.subarray(start)), encoding: decoder.encoding };
   }
 
   function download(text, name) {
@@ -249,6 +319,8 @@
       required: attr('required') === '1',
       valuesUrl: attr('values-url'),
       separator: attr('csv-separator') || ',',
+      csvEncoding: attr('csv-encoding') || '',
+      allowAddValues: attr('allow-add-values') === '1',
       warnUnsaved: attr('warn-unsaved') === '1',
       alwaysSubmit: attr('always-submit') === '1',
       storageLimit: has('storage-limit') ? integer(attr('storage-limit'), 'storage-limit') : null,
@@ -296,6 +368,11 @@
     this.loading = false;
     this.request = 0;
     this.mine = null;
+    this.plan = null;
+    this.fileData = null;
+    this.fileToken = 0;
+    this.undoSnapshot = null;
+    this.applying = false;
     this.input = root.querySelector('[data-dcf-editor-input]');
     this.app = root.querySelector('[data-dcf-editor-app]');
   }
@@ -323,6 +400,7 @@
     this.renderedParents = cfg.parents;
     this.parents = cfg.parents;
     this.parentId = cfg.parentId;
+    this.parentLabel = cfg.parentName;
     this.blank = this.mode === 'admin' && !cfg.parentId;
     this.multiple = cfg.multipleSource ? cfg.multipleSource.checked === true : cfg.multiple;
     this.required = cfg.requiredSource ? cfg.requiredSource.checked === true : cfg.required;
@@ -400,6 +478,13 @@
     this.timers.set(name, entry);
   };
 
+  Editor.prototype.cancelTimer = function (name) {
+    var entry = this.timers.get(name);
+    if (!entry) return;
+    window.clearTimeout(entry.handle);
+    this.timers.delete(name);
+  };
+
   Editor.prototype.flushTimer = function (name) {
     var entry = this.timers.get(name);
     if (!entry) return;
@@ -436,9 +521,8 @@
     this.unlinkedEl = el('details', 'dcf-dep-editor__unlinked');
     this.unlinkedSummary = el('summary');
     this.unlinkedEl.appendChild(this.unlinkedSummary);
-    [toolbar, this.statusEl, this.sectionsEl, this.moreSections, this.unlinkedEl].forEach(function (node) {
-      this.bodyEl.appendChild(node);
-    }, this);
+    [toolbar, this.statusEl, this.sectionsEl, this.moreSections, this.unlinkedEl].concat(this.buildPanels())
+      .forEach(function (node) { this.bodyEl.appendChild(node); }, this);
     app.appendChild(this.liveEl);
     app.appendChild(this.bodyEl);
     if (this.newEnumeration) this.hint('save_first', this.t('enumeration_save_first'));
@@ -466,6 +550,8 @@
     this.toolbarEl.hidden = !!empty;
     this.statusEl.hidden = !!empty;
     this.unlinkedEl.hidden = !!empty;
+    this.importPanel.hidden = !!empty;
+    this.exportPanel.hidden = !!empty;
     this.sectionsEl.textContent = '';
     this.moreSections.hidden = true;
     if (empty) {
@@ -779,6 +865,7 @@
   Editor.prototype.markDirty = function () {
     if (this.newEnumeration) return;
     this.dirty = true;
+    if (!this.applying) this.importChanged();
     var self = this;
     this.later('write', WRITE_MS, function () {
       self.write();
@@ -892,19 +979,16 @@
     this.announce(this.statusText());
   };
 
-  // CSV of the refused version over the current lists (header, then one
-  // row per link in parent then child order).
+  // CSV of the refused version over the current lists, through the model's
+  // buildCsv (WP-26: one CSV builder; no formula protection).
   Editor.prototype.exportMine = function () {
+    this.flushTimer('values');
     var mine = this.mine;
     if (!mine) return false;
-    var children = this.children;
-    var rows = [[this.config.parentName || 'parent', this.config.fieldName || 'child']];
-    (this.parents ? this.parents.items : []).forEach(function (p) {
-      children.items.forEach(function (c) {
-        if (mine.isLinked(p.key, c.key)) rows.push([p.label, c.label]);
-      });
-    });
-    return download(csvText(rows, this.config.separator), 'dependency-mapping.csv');
+    var text = this.model.buildCsv(mine, this.parents, this.children, {
+      separator: separatorChar(separatorToken(this.config.separator)), parentName: this.parentLabel,
+      childName: this.config.fieldName, protect: false });
+    return download(text, 'dependency-mapping.csv');
   };
 
   // ---------------------------------------------------------------- required
@@ -943,6 +1027,7 @@
   Editor.prototype.parentChanged = function () {
     var id = this.config.parentSource ? this.config.parentSource.value : '';
     this.parentId = id;
+    this.parentLabel = id === this.config.parentId ? this.config.parentName : '';
     this.request += 1;
     this.notice('load_failed', null);
     this.notice('parent_changed', null);
@@ -1006,6 +1091,7 @@
         if (token !== self.request) return;
         if (!isPlain(body) || String(body.id) !== id) throw new Error('DcfDependencyEditor: body');
         var list = M.ValueList.fromWire(body.values);
+        self.parentLabel = typeof body.name === 'string' ? body.name : self.optionText(id);
         self.setLoading(false);
         self.parents = list;
         self.loaded();
@@ -1017,7 +1103,15 @@
       });
   };
 
+  // The text of the parent select option with value +id+ ('' when none).
+  Editor.prototype.optionText = function (id) {
+    var select = this.config.parentSource;
+    var option = select ? Array.prototype.find.call(select.options, function (o) { return o.value === id; }) : null;
+    return option ? option.textContent : '';
+  };
+
   Editor.prototype.loadFailed = function () {
+    this.importChanged();
     this.parents = null;
     this.notice('load_failed', 'error', this.t('load_failed'), true);
     this.render();
@@ -1029,6 +1123,7 @@
   // New parent values rendered; the dropped count is derived state shown
   // only while the parent differs from the rendered one.
   Editor.prototype.loaded = function () {
+    this.importChanged();
     if (this.parentId !== this.config.parentId) {
       this.notice('parent_changed', 'warning',
         this.t('parent_changed', { count: this.n(this.state.orphanCount(this.parents, this.children)) }));
@@ -1044,6 +1139,7 @@
   Editor.prototype.valuesInput = function () {
     var self = this;
     this.later('values', VALUES_MS, function () {
+      self.importChanged();
       self.children = self.childrenFromText();
       self.render();
       self.updateRequired();
@@ -1108,6 +1204,11 @@
     else if (target.hasAttribute('data-dcf-ed-use-mine')) this.useMine();
     else if (target.hasAttribute('data-dcf-ed-keep-current')) this.keepCurrent();
     else if (target.hasAttribute('data-dcf-ed-export-mine')) this.exportMine();
+    else if (target.hasAttribute('data-dcf-ed-import-preview')) this.previewImport();
+    else if (target.hasAttribute('data-dcf-ed-import-apply')) this.applyImportClicked();
+    else if (target.hasAttribute('data-dcf-ed-import-clear')) this.clearImport();
+    else if (target.hasAttribute('data-dcf-ed-import-undo')) this.undoImport();
+    else if (target.hasAttribute('data-dcf-ed-export')) this.exportLinks();
   };
 
   Editor.prototype.change = function (e) {
@@ -1138,6 +1239,10 @@
     } else if (target.hasAttribute('data-dcf-ed-only-unlinked')) {
       this.onlyUnlinked = target.checked;
       this.filterParents();
+    } else if (target.hasAttribute('data-dcf-ed-import-file')) {
+      this.fileChosen();
+    } else if (IMPORT_INPUTS.some(function (name) { return target.hasAttribute(name); })) {
+      this.clearPreview();
     }
   };
 
@@ -1149,6 +1254,8 @@
     } else if (target.hasAttribute('data-dcf-ed-child-filter')) {
       var entry = this.entryFor(target);
       if (entry) this.later(childTimer(entry), FILTER_MS, function () { self.filterChildren(entry, target); });
+    } else if (target.hasAttribute('data-dcf-ed-import-text')) {
+      this.clearPreview();
     }
   };
 
@@ -1242,6 +1349,365 @@
     this.summary(entry);
     this.defaultControl(entry);
     this.markDirty();
+  };
+
+  // ---------------------------------------------------------------- import and export
+  // Editor design 6.4 to 6.8 (WP-26): two panels after the unlinked list,
+  // unnamed controls, everything client-side until the normal Save.
+  Editor.prototype.buildPanels = function () {
+    var t = this.t.bind(this);
+    var imp = el('details', 'dcf-dep-editor__panel dcf-dep-editor__import');
+    imp.appendChild(el('summary', null, t('import_title')));
+    imp.appendChild(info(t('import_help')));
+    this.importText = el('textarea');
+    this.importText.setAttribute('data-dcf-ed-import-text', '');
+    this.importText.setAttribute('rows', '8');
+    this.importText.setAttribute('spellcheck', 'false');
+    var paste = el('p');
+    paste.appendChild(wrap(t('import_paste'), this.importText));
+    imp.appendChild(paste);
+    this.importFile = el('input');
+    this.importFile.type = 'file';
+    this.importFile.setAttribute('accept', '.csv,.txt,text/csv,text/plain');
+    this.importFile.setAttribute('data-dcf-ed-import-file', '');
+    this.fileInfo = el('span', 'dcf-dep-editor__file-info');
+    var file = el('p');
+    file.appendChild(wrap(t('import_file'), this.importFile));
+    file.appendChild(doc.createTextNode(' '));
+    file.appendChild(this.fileInfo);
+    imp.appendChild(file);
+    var options = el('p', 'dcf-dep-editor__options');
+    this.importSeparator = choice('data-dcf-ed-import-separator', IMPORT_SEPARATORS.map(function (token) {
+      return [token, t(token)];
+    }));
+    options.appendChild(wrap(t('separator'), this.importSeparator));
+    this.importHeader = choice('data-dcf-ed-import-header', [['auto', t('auto')], ['yes', t('yes')], ['no', t('no')]]);
+    options.appendChild(wrap(t('import_header'), this.importHeader));
+    this.importMode = choice('data-dcf-ed-import-mode', [['merge', t('mode_merge')], ['replace', t('mode_replace')]]);
+    options.appendChild(wrap(t('import_mode'), this.importMode));
+    this.addMissingBox = null;
+    if (this.canAddValues()) {
+      this.addMissingBox = checkbox('data-dcf-ed-import-add-missing');
+      options.appendChild(wrap(t('add_missing'), this.addMissingBox, true));
+    }
+    this.unprotectBox = checkbox('data-dcf-ed-import-unprotect');
+    options.appendChild(wrap(t('unprotect'), this.unprotectBox, true));
+    imp.appendChild(options);
+    var actions = el('p');
+    actions.appendChild(button('data-dcf-ed-import-preview', t('preview')));
+    actions.appendChild(doc.createTextNode(' '));
+    this.applyButton = button('data-dcf-ed-import-apply', t('apply'));
+    this.applyButton.disabled = true;
+    actions.appendChild(this.applyButton);
+    actions.appendChild(doc.createTextNode(' '));
+    actions.appendChild(button('data-dcf-ed-import-clear', t('clear')));
+    imp.appendChild(actions);
+    this.previewEl = el('div', 'dcf-dep-editor__preview');
+    this.previewEl.setAttribute('role', 'region');
+    this.previewEl.setAttribute('aria-label', t('preview'));
+    imp.appendChild(this.previewEl);
+
+    var exp = el('details', 'dcf-dep-editor__panel dcf-dep-editor__export');
+    exp.appendChild(el('summary', null, t('export_title')));
+    exp.appendChild(info(t('export_help')));
+    var row = el('p', 'dcf-dep-editor__options');
+    this.exportSeparator = choice('data-dcf-ed-export-separator', [['comma', t('comma')], ['semicolon', t('semicolon')],
+      ['tab', t('tab')]]);
+    this.exportSeparator.value = separatorToken(this.config.separator);
+    row.appendChild(wrap(t('separator'), this.exportSeparator));
+    this.protectBox = checkbox('data-dcf-ed-export-protect');
+    row.appendChild(wrap(t('protect'), this.protectBox, true));
+    row.appendChild(button('data-dcf-ed-export', t('export')));
+    exp.appendChild(row);
+    this.importPanel = imp;
+    this.exportPanel = exp;
+    return [imp, exp];
+  };
+
+  // 'Add missing child values' (gap 12, FM-25): the admin form of a list
+  // field whose values come from #custom_field_possible_values only.
+  Editor.prototype.canAddValues = function () {
+    var cfg = this.config;
+    return this.mode === 'admin' && this.kind === 'list' && cfg.allowAddValues && !cfg.children && !!cfg.valuesSource;
+  };
+
+  // The preview is gone and Apply off until the next Preview.
+  Editor.prototype.clearPreview = function () {
+    if (!this.previewEl) return;
+    this.previewEl.textContent = '';
+    this.applyButton.disabled = true;
+    this.plan = null;
+  };
+
+  // Any editor change after an import: the preview is stale and Undo would
+  // drop that change, so both go.
+  Editor.prototype.importChanged = function () {
+    this.clearPreview();
+    if (!this.undoSnapshot) return;
+    this.undoSnapshot = null;
+    var box = this.notes.get('import_applied');
+    var undo = box ? box.querySelector('[data-dcf-ed-import-undo]') : null;
+    if (undo) undo.remove();
+  };
+
+  // The text to import: the decoded file while one is chosen, else the
+  // paste; null while a file is being read.
+  Editor.prototype.importSource = function () {
+    if (this.fileData) return this.fileData.pending ? null : this.fileData;
+    return { text: this.importText.value, encoding: null };
+  };
+
+  Editor.prototype.makePlan = function (source) {
+    var cfg = this.config;
+    var opts = {
+      separator: separatorChar(this.importSeparator.value),
+      defaultSeparator: cfg.separator,
+      header: this.importHeader.value,
+      mode: this.importMode.value,
+      addMissing: !!(this.addMissingBox && this.addMissingBox.checked),
+      unprotect: this.unprotectBox.checked === true,
+      parentName: this.parentLabel,
+      childName: cfg.fieldName,
+      kind: this.kind,
+      multiple: this.multiple === true,
+      maxPayloadBytes: cfg.maxPayload
+    };
+    if (this.mode === 'admin' && cfg.base) opts.base = cfg.base;
+    return this.model.planImport(source.text, this.state, this.parents, this.children, opts);
+  };
+
+  Editor.prototype.previewImport = function () {
+    this.flushTimer('values');
+    this.clearPreview();
+    if (!this.ready()) return;
+    var source = this.importSource();
+    if (!source) return;
+    var plan = this.makePlan(source);
+    this.renderPreview(plan, source.encoding);
+    this.plan = plan;
+    this.applyButton.disabled = !plan.ok;
+  };
+
+  // One line error or warning as text (%{name} replaced once).
+  Editor.prototype.lineText = function (entry, key) {
+    var vars = {};
+    if (entry.line !== null && entry.line !== undefined) vars.line = this.n(entry.line);
+    if (entry.count !== undefined) vars.count = this.n(entry.count);
+    if (entry.max !== undefined) vars.max = this.n(entry.max);
+    if (entry.value !== undefined) vars.value = shorten(entry.value);
+    return this.t(key || 'err_' + entry.code, vars);
+  };
+
+  Editor.prototype.errorBox = function (errors, total) {
+    var box = flash('error', '', true);
+    box.appendChild(el('p', null, this.t('errors_intro')));
+    var ul = el('ul');
+    errors.forEach(function (entry) { ul.appendChild(el('li', null, this.lineText(entry))); }, this);
+    box.appendChild(ul);
+    if (total > errors.length) box.appendChild(el('p', null, this.t('more_errors', { count: this.n(total - errors.length) })));
+    return box;
+  };
+
+  Editor.prototype.renderPreview = function (plan, encoding) {
+    var box = this.previewEl;
+    var cfg = this.config;
+    box.textContent = '';
+    if (plan.errorCount > 0) box.appendChild(this.errorBox(plan.errors, plan.errorCount));
+    if (plan.tooLarge) {
+      box.appendChild(flash('error', this.t('too_large_to_send', { size: this.n(plan.estimatedPayloadBytes),
+                                                                  limit: this.n(cfg.maxPayload) }), true));
+    }
+    if (plan.headerSkipped) {
+      box.appendChild(flash('warning', this.t('header_skipped', { cells: plan.headerCells.map(shorten).join(', ') })));
+    }
+    if (plan.warnings.length) {
+      var warn = flash('warning', '');
+      var wl = el('ul');
+      plan.warnings.forEach(function (entry) { wl.appendChild(el('li', null, this.lineText(entry, 'warn_inactive'))); }, this);
+      warn.appendChild(wl);
+      box.appendChild(warn);
+    }
+    if (plan.errors.length && plan.errors[0].line === null) return;
+    var summary = el('ul', 'dcf-dep-editor__summary');
+    var item = function (key, text) {
+      var li = el('li', null, text);
+      li.setAttribute('data-dcf-ed-summary', key);
+      summary.appendChild(li);
+    };
+    var count = function (key, n) { item(key, this.t(key, { count: this.n(n) })); }.bind(this);
+    count('lines', plan.lines);
+    count('to_add', plan.added);
+    count('existing', plan.existing);
+    count('to_remove', plan.removed);
+    if (this.addMissingBox && this.addMissingBox.checked) count('new_values', plan.newValues.length);
+    count('duplicates', plan.duplicates);
+    item('separator_used', this.t('separator_used', { name: this.t(separatorToken(plan.separator)) }));
+    if (encoding) item('decoded_as', this.t('decoded_as', { encoding: encoding }));
+    box.appendChild(summary);
+    if (!plan.pairs.length) {
+      if (!plan.errorCount) box.appendChild(info(this.t('nothing')));
+      return;
+    }
+    var table = el('table', 'list');
+    table.appendChild(el('caption', null, this.t('preview_rows')));
+    var head = el('tr');
+    [this.parentLabel || 'parent', cfg.fieldName || 'child', this.t('status')].forEach(function (text) {
+      head.appendChild(el('th', null, text));
+    });
+    var thead = el('thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el('tbody');
+    plan.pairs.slice(0, PREVIEW_ROWS).forEach(function (pair) {
+      var tr = el('tr');
+      tr.appendChild(el('td', null, pair.parentLabel));
+      tr.appendChild(el('td', null, pair.childLabel));
+      tr.appendChild(el('td', null, this.t(pair.existing ? 'status_existing' : 'status_new')));
+      tbody.appendChild(tr);
+    }, this);
+    table.appendChild(tbody);
+    box.appendChild(table);
+  };
+
+  // Planned again on the current state and lists; applied only when that
+  // plan is ok (all or nothing, SP-13). Nothing is sent.
+  Editor.prototype.applyImportClicked = function () {
+    this.flushTimer('values');
+    if (!this.plan || !this.ready()) return;
+    var source = this.importSource();
+    if (!source) return;
+    var plan = this.makePlan(source);
+    if (!plan.ok) {
+      this.renderPreview(plan, source.encoding);
+      this.plan = plan;
+      this.applyButton.disabled = true;
+      return;
+    }
+    var cfg = this.config;
+    var listText = this.kind === 'list' && !cfg.children && cfg.valuesSource ? cfg.valuesSource.value : null;
+    this.applying = true;
+    this.undoSnapshot = { state: this.state.clone(), dirty: this.dirty, values: listText };
+    if (plan.newValues.length && this.canAddValues()) this.appendValues(plan.newValues);
+    this.model.applyImport(this.state, plan);
+    this.markDirty();
+    this.applying = false;
+    this.clearPreview();
+    this.importPanel.open = false;
+    this.render();
+    this.updateRequired();
+    this.storage();
+    var text = this.t('applied', { added: this.n(plan.added), removed: this.n(plan.removed) });
+    var box = this.notice('import_applied', 'notice', text);
+    box.appendChild(doc.createTextNode(' '));
+    box.appendChild(button('data-dcf-ed-import-undo', this.t('undo')));
+    this.announce(text);
+  };
+
+  // The possible values become +text+: input and change bubble (core
+  // warnLeavingUnsaved), the children are rebuilt at once.
+  Editor.prototype.setValuesText = function (text) {
+    var source = this.config.valuesSource;
+    source.value = text;
+    source.dispatchEvent(new window.Event('input', { bubbles: true }));
+    source.dispatchEvent(new window.Event('change', { bubbles: true }));
+    this.cancelTimer('values');
+    this.children = this.childrenFromText();
+  };
+
+  // Appended after the text without its trailing core strip characters, so
+  // the last value keeps a trailing U+00A0 as core does (editor design 6.5).
+  Editor.prototype.appendValues = function (values) {
+    var text = this.config.valuesSource.value;
+    var end = text.length;
+    while (end > 0 && STRIP_CODES.has(text.charCodeAt(end - 1))) end--;
+    var head = text.slice(0, end);
+    this.setValuesText((head ? head + '\n' : '') + values.join('\n'));
+  };
+
+  // Back to the snapshot: links, defaults, source, import meta, the
+  // possible values and the dirty flag (an untouched form posts '' again).
+  // A possible-values edit still in its debounce withdraws Undo first.
+  Editor.prototype.undoImport = function () {
+    this.flushTimer('values');
+    var snap = this.undoSnapshot;
+    if (!snap) return;
+    this.undoSnapshot = null;
+    this.applying = true;
+    var source = this.config.valuesSource;
+    if (snap.values !== null && source && source.value !== snap.values) this.setValuesText(snap.values);
+    this.state = snap.state;
+    if (snap.dirty) {
+      this.markDirty();
+    } else {
+      this.dirty = false;
+      this.cancelTimer('write');
+    }
+    this.applying = false;
+    this.notice('import_applied', null);
+    this.clearPreview();
+    this.render();
+    this.updateRequired();
+    this.write();
+    this.storage();
+    this.announce(this.statusText());
+  };
+
+  // File input (editor design 6.6): size checked first, read once; a newer
+  // choice or Clear makes an older read stale.
+  Editor.prototype.fileChosen = function () {
+    var input = this.importFile;
+    var file = input.files && input.files.length ? input.files[0] : null;
+    var token = ++this.fileToken;
+    this.clearPreview();
+    this.useFile(null);
+    if (!file) return;
+    if (typeof file.size === 'number' && file.size > IMPORT_FILE_BYTES) {
+      input.value = '';
+      this.previewEl.appendChild(this.errorBox([{ line: null, code: 'too_large', max: IMPORT_FILE_BYTES }], 1));
+      return;
+    }
+    var self = this;
+    this.useFile({ pending: true });
+    var fail = function () {
+      if (token !== self.fileToken) return;
+      self.useFile(null);
+      input.value = '';
+      self.previewEl.appendChild(self.errorBox([{ line: null, code: 'unreadable' }], 1));
+    };
+    var read;
+    try {
+      read = file.arrayBuffer();
+    } catch (e) {
+      fail();
+      return;
+    }
+    window.Promise.resolve(read).then(function (buffer) {
+      if (token !== self.fileToken) return;
+      self.useFile(decode(buffer, self.config.csvEncoding));
+    }).catch(fail);
+  };
+
+  Editor.prototype.useFile = function (data) {
+    this.fileData = data;
+    this.importText.disabled = !!data;
+    this.fileInfo.textContent = data ? this.t('file_used') : '';
+  };
+
+  Editor.prototype.clearImport = function () {
+    this.fileToken += 1;
+    this.importText.value = '';
+    this.importFile.value = '';
+    this.useFile(null);
+    this.clearPreview();
+  };
+
+  Editor.prototype.exportLinks = function () {
+    this.flushTimer('values');
+    if (!this.ready()) return false;
+    var text = this.model.buildCsv(this.state, this.parents, this.children, {
+      separator: separatorChar(this.exportSeparator.value), parentName: this.parentLabel,
+      childName: this.config.fieldName, protect: this.protectBox.checked === true });
+    return download(text, exportName(this.model, this.config.fieldName));
   };
 
   // ---------------------------------------------------------------- submit

@@ -488,7 +488,7 @@ details.dcf-dep-editor__panel.dcf-dep-editor__import  (section 6)
 details.dcf-dep-editor__panel.dcf-dep-editor__export  (section 6)
 ```
 
-Text only through `textContent`, `setAttribute`, `createTextNode` (never `innerHTML`). No ids derived from values; labels wrap their controls. JS notices: `div.flash.<type>`, with `createSVGIcon('warning')` prepended only when `typeof createSVGIcon === 'function'` and `document.querySelector('#icon-copy-source svg')` exists (6.1, 7.0); 5.1 and 6.0 rely on the class background (UX-10). Empty states use the editor's own keys on both pages (`text_dcf_editor_no_parent_values`, `text_dcf_editor_no_child_values`), shown as `p > em.info`.
+Text only through `textContent`, `setAttribute`, `createTextNode` (never `innerHTML`). No ids derived from values; labels wrap their controls. JS notices: `div.flash.<type>`, with the icon of core `notice_icon` (`createSVGIcon('checked')` for `notice`, `createSVGIcon('warning')` for `warning` and `error`; WP-26 review round 2) prepended only when `typeof createSVGIcon === 'function'` and `document.querySelector('#icon-copy-source svg')` exists (6.1, 7.0); 5.1 and 6.0 rely on the class background (UX-10). Empty states use the editor's own keys on both pages (`text_dcf_editor_no_parent_values`, `text_dcf_editor_no_child_values`), shown as `p > em.info`.
 
 Behaviors:
 - **Lazy rendering (UD-20).** At most 100 section summaries at once ("Show more" adds 100); a body is built on `toggle` open (guarded against a double build) and removed on close; rows render 200 at a time; "Show more" moves focus to the first new checkbox.
@@ -576,13 +576,13 @@ Nothing posts until the normal Save; import inputs have no `name`.
 ### 6.1 Parser `parseRecords(text, sep)`
 - Input at most 10,000,000 characters (`err_too_large`); at most 200,000 records (`error_dcf_import_too_many_lines`, parsing stops, SP-13).
 - Leading U+FEFF stripped. CRLF, CR and LF end a record outside quotes.
-- RFC 4180: `"` quotes when it is the first non-space character; `""` is a literal quote; newlines inside quotes are kept and the record keeps its START line; a `"` inside an unquoted field is literal; text after a closing quote gives `bad_quote` (skip to end of line, continue); an unterminated quote gives `unterminated_quote` at the record start.
+- RFC 4180: `"` quotes when it is the first non-space character; `""` is a literal quote; newlines inside quotes are kept and the record keeps its START line; a `"` inside an unquoted field is literal; text after a closing quote gives `bad_quote` (skip to end of line, continue; the quoted cell is kept with the cells before it, so a skipped header (`yes`) still lists them); an unterminated quote gives `unterminated_quote` at the record start.
 - Unquoted cells trimmed; trailing empty cells removed; all-blank lines skipped; exactly 2 cells (`columns`); a blank cell gives `blank_value`.
 - Separator `auto`: tab, `;`, `,` tried on the first 64 KB, picking the one giving exactly two non-blank cells on most of the first 20 records (tie order tab, `;`, `,`); quoted separators respected. Manual override: Semicolon, Comma, Tab.
 - Errors capped at 200 ("Further errors not shown: N").
 
 ### 6.2 Header (select: Detect automatically / Yes / No)
-Auto: row 1 is a header unless it is a valid pair, when cell 1 equals the parent field name or `parent`, or cell 2 equals the child field name or `child` (case-insensitive), or both cells are unknown values. A skipped first row is shown prominently as `div.flash.warning` listing its cells (`text_dcf_import_header_skipped` with `%{cells}`), with the hint to choose "No" (QA-11 c). Export writes the field names, so export then import round-trips.
+Auto: row 1 is a header unless it is a valid pair, when cell 1 equals the parent field name or `parent`, or cell 2 equals the child field name or `child` (case-insensitive), or both cells are unknown values (two non-blank cells: a row with one cell or a blank cell keeps its `columns` or `blank_value` error unless a name rule matches; WP-26 review round 2). A skipped first row is shown prominently as `div.flash.warning` listing its cells (`text_dcf_import_header_skipped` with `%{cells}`), with the hint to choose "No" (QA-11 c). Export writes the field names, so export then import round-trips.
 
 ### 6.3 Matching
 - Order: exact trimmed label; exact NFC label; unique case-insensitive NFC match (`NFC` + `toLowerCase`, accents significant); several candidates without an exact match give `ambiguous_parent`/`ambiguous_child`.
@@ -601,6 +601,7 @@ Auto: row 1 is a header unless it is a valid pair, when cell 1 equals the parent
 ### 6.5 Add missing child values (admin, list children, `data-dcf-editor-allow-add-values`)
 - Unknown children are collected once each (NFC, case-insensitive, first-seen order), trimmed and NFC-normalized; the preview reports "Child values to add to the possible values: N".
 - A value containing CR or LF is a line error `error_dcf_import_multiline_value`: core `possible_values=` would split it into several values and the link would be pruned (QA-11 b). Surrounding whitespace is not an error: the importer trims exactly as core strips, so the stored value equals the link key.
+- A value still containing U+0000 after that trim is a line error `error_dcf_import_nul_value` (WP-26 review): the HTML parser turns NUL into U+FFFD when the textarea and the issue form options are rendered again, so the stored value would not stay the link key either.
 - Apply appends to `#custom_field_possible_values` (newline-joined after trimming trailing whitespace), dispatches `input` and `change` (core `warnLeavingUnsaved` sees it), rebuilds children synchronously, links the pairs; the storage estimate re-evaluates. Not offered for enumeration children or on the project page: the checkbox is rendered only when `data-dcf-editor-allow-add-values="1"` (admin + list, 5.3). WP-26 jsdom test (gap 12): "Add missing child values" is not rendered on the project fixture nor for enumeration children (admin enumeration fixture).
 
 ### 6.6 Files and encodings
@@ -771,7 +772,7 @@ Flat keys (JS key in parentheses when sent through `data-dcf-editor-i18n`):
 | text_dcf_import_new_values (new_values) | WP-26 | `%{count}` | see large_lists_i18n_registry.md |
 | text_dcf_import_duplicates (duplicates) | WP-26 | `%{count}` | see large_lists_i18n_registry.md |
 | text_dcf_import_header_skipped (header_skipped) | WP-26 | `%{cells}` | see large_lists_i18n_registry.md |
-| text_dcf_import_separator_used (separator_used) | WP-26 | `%{separator}` | see large_lists_i18n_registry.md |
+| text_dcf_import_separator_used (separator_used) | WP-26 | `%{name}` (Ruby I18n reserves `separator`; WP-26) | see large_lists_i18n_registry.md |
 | text_dcf_import_decoded_as (decoded_as) | WP-26 | `%{encoding}` | see large_lists_i18n_registry.md |
 | text_dcf_import_preview_rows (preview_rows) | WP-26 | none | see large_lists_i18n_registry.md |
 | label_dcf_import_status_new (status_new) | WP-26 | none | see large_lists_i18n_registry.md |
@@ -790,6 +791,7 @@ Flat keys (JS key in parentheses when sent through `data-dcf-editor-i18n`):
 | error_dcf_import_too_large (err_too_large) | WP-26 | `%{max}` | see large_lists_i18n_registry.md |
 | error_dcf_import_too_many_lines (err_too_many_lines) | WP-26 | `%{max}` | see large_lists_i18n_registry.md |
 | error_dcf_import_multiline_value (err_multiline_value) | WP-26 | `%{line}`, `%{value}` | see large_lists_i18n_registry.md |
+| error_dcf_import_nul_value (err_nul_value) | WP-26 | `%{line}`, `%{value}` | see large_lists_i18n_registry.md |
 | error_dcf_import_unreadable (err_unreadable) | WP-26 | none | see large_lists_i18n_registry.md |
 | warning_dcf_import_inactive (warn_inactive) | WP-26 | `%{line}`, `%{value}` | see large_lists_i18n_registry.md |
 | label_dcf_export_links (export_title) | WP-26 | none | see large_lists_i18n_registry.md |

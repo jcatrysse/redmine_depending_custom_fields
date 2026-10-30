@@ -137,8 +137,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
 
   describe 'constants' do
     # WP-25 extends the map with the editor keys of editor design 9 (changed
-    # from 'only the WP-24 key'); WP-26 adds the import and export keys.
-    it 'has its own frozen I18N map with the WP-24 and WP-25 keys, separate from ClientConfig::I18N' do
+    # from 'only the WP-24 key'); WP-26 adds the 48 import and export keys and
+    # the 8 reused core keys (renamed from 'with the WP-24 and WP-25 keys').
+    it 'has its own frozen I18N map with the WP-24, WP-25 and WP-26 keys, separate from ClientConfig::I18N' do
       expect(config::I18N).to eq(
         'storageEstimate' => :text_dcf_storage_estimate,
         'too_large_to_send' => :error_dcf_dependencies_too_large_to_send,
@@ -183,13 +184,80 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
         'unsaved' => :text_warn_on_leaving_unsaved,
         'no_default' => :text_dcf_no_default,
         'label_value_dependencies' => :field_value_dependencies,
-        'label_possible_values' => :field_possible_values
+        'label_possible_values' => :field_possible_values,
+        'import_title' => :label_dcf_import_links,
+        'import_help' => :text_dcf_import_help,
+        'import_paste' => :label_dcf_import_paste,
+        'import_file' => :label_dcf_import_file,
+        'file_used' => :text_dcf_import_file_used,
+        'auto' => :label_dcf_auto_detect,
+        'tab' => :label_dcf_tab_char,
+        'import_header' => :label_dcf_import_header,
+        'import_mode' => :label_dcf_import_mode,
+        'mode_merge' => :label_dcf_import_mode_merge,
+        'mode_replace' => :label_dcf_import_mode_replace,
+        'add_missing' => :label_dcf_import_add_missing,
+        'unprotect' => :label_dcf_import_unprotect_formulas,
+        'apply' => :button_dcf_import_apply,
+        'undo' => :button_dcf_import_undo,
+        'applied' => :text_dcf_import_applied,
+        'lines' => :text_dcf_import_lines,
+        'to_add' => :text_dcf_import_to_add,
+        'existing' => :text_dcf_import_existing,
+        'to_remove' => :text_dcf_import_to_remove,
+        'new_values' => :text_dcf_import_new_values,
+        'duplicates' => :text_dcf_import_duplicates,
+        'header_skipped' => :text_dcf_import_header_skipped,
+        'separator_used' => :text_dcf_import_separator_used,
+        'decoded_as' => :text_dcf_import_decoded_as,
+        'preview_rows' => :text_dcf_import_preview_rows,
+        'status_new' => :label_dcf_import_status_new,
+        'status_existing' => :label_dcf_import_status_existing,
+        'errors_intro' => :text_dcf_import_errors,
+        'more_errors' => :text_dcf_import_more_errors,
+        'nothing' => :text_dcf_import_nothing,
+        'err_columns' => :error_dcf_import_columns,
+        'err_blank_value' => :error_dcf_import_blank_value,
+        'err_unknown_parent' => :error_dcf_import_unknown_parent,
+        'err_unknown_child' => :error_dcf_import_unknown_child,
+        'err_ambiguous_parent' => :error_dcf_import_ambiguous_parent,
+        'err_ambiguous_child' => :error_dcf_import_ambiguous_child,
+        'err_unterminated_quote' => :error_dcf_import_unterminated_quote,
+        'err_bad_quote' => :error_dcf_import_bad_quote,
+        'err_too_large' => :error_dcf_import_too_large,
+        'err_too_many_lines' => :error_dcf_import_too_many_lines,
+        'err_multiline_value' => :error_dcf_import_multiline_value,
+        'err_nul_value' => :error_dcf_import_nul_value,
+        'err_unreadable' => :error_dcf_import_unreadable,
+        'warn_inactive' => :warning_dcf_import_inactive,
+        'export_title' => :label_dcf_export_links,
+        'export_help' => :text_dcf_export_help,
+        'protect' => :label_dcf_export_protect_formulas,
+        'export' => :button_export,
+        'preview' => :label_preview,
+        'separator' => :label_fields_separator,
+        'comma' => :label_comma_char,
+        'semicolon' => :label_semi_colon_char,
+        'yes' => :general_text_Yes,
+        'no' => :general_text_No,
+        'status' => :field_status
       )
+      expect(config::I18N.size).to eq(100)
       expect(config::I18N.values).not_to include(:error_invalid_dependency_payload)
       expect(config::I18N).to be_frozen
       expect(RedmineDependingCustomFields::ClientConfig::I18N.size).to eq(11)
       expect(RedmineDependingCustomFields::ClientConfig::I18N).not_to have_key('storageEstimate')
       expect(config.const_defined?(:I18N_KEYS)).to be(false)
+    end
+
+    # WP-26: the quoted labels of the skipped-header hint are the texts of
+    # the header select and its 'No' option in each locale (registry).
+    it 'names the header select and its No option inside the skipped-header text in every locale' do
+      %w[de en fr nl].each do |locale|
+        text = I18n.t(:text_dcf_import_header_skipped, locale: locale, cells: 'X')
+        expect(text).to include(I18n.t(:label_dcf_import_header, locale: locale)), locale
+        expect(text).to include(I18n.t(:general_text_No, locale: locale)), locale
+      end
     end
 
     it 'resolves every I18N value in de, en, fr and nl without a missing translation' do

@@ -4,7 +4,8 @@
  * under CommonJS module.exports. ES2017 only (npm run check). No object is
  * keyed by user values: Map and Set inside, Object.create(null) filled with
  * defineProperty for the JSON output, so __proto__ and constructor survive
- * (QA-11). The payload is schema v1 of DependencyPayload (WP-21). */
+ * (QA-11). The payload is schema v1 of DependencyPayload (WP-21). WP-26:
+ * CSV import (parseRecords, planImport, applyImport) and export (buildCsv). */
 (function (factory) {
   'use strict';
   var model = factory();
@@ -33,8 +34,6 @@
   var EDGE_SPACE = /^ | $/g;
   // Ruby blank?: nil, '' and [[:space:]] only.
   var BLANK_RE = /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
-  // Ruby strip (core possible_values=): NUL and ASCII white space at both ends.
-  var STRIP_RE = /^[\u0000\t\n\v\f\r ]+|[\u0000\t\n\v\f\r ]+$/g;
   var SURROGATE_RE = /[\ud800-\udfff]/;
   var BASE_RE = /^[0-9a-f]{64}$/;
   // Enumeration ids written as JSON integers: canonical and at most 16 digits.
@@ -72,6 +71,21 @@
   }
 
   // ---------------------------------------------------------------- helpers
+  // Ruby strip (core possible_values=): NUL and ASCII white space at both
+  // ends, by index (a regex is quadratic on long inner white space).
+  function stripCode(c) {
+    return c === 0 || c === 32 || (c >= 9 && c <= 13);
+  }
+
+  function strip(text) {
+    var s = String(text);
+    var a = 0;
+    var b = s.length;
+    while (a < b && stripCode(s.charCodeAt(a))) a++;
+    while (b > a && stripCode(s.charCodeAt(b - 1))) b--;
+    return a === 0 && b === s.length ? s : s.slice(a, b);
+  }
+
   function isObject(o) {
     return o !== null && typeof o === 'object' && !Array.isArray(o);
   }
@@ -150,10 +164,12 @@
   }
 
   // ---------------------------------------------------------------- values
-  // Items {key, label, active, index, folded} in wire order; byKey is a Map.
+  // Items {key, label, active, index, folded} in wire order; byKey is a Map;
+  // labelIndex holds the import lookups once built (candidates below).
   function ValueList() {
     this.items = [];
     this.byKey = new Map();
+    this.labelIndex = null;
   }
   ValueList.prototype.has = function (key) { return this.byKey.has(String(key)); };
   ValueList.prototype.get = function (key) { return this.byKey.get(String(key)); };
@@ -190,7 +206,7 @@
     var seen = new Set();
     var out = [];
     s.split(/[\n\r]+/).forEach(function (line) {
-      var v = line.replace(STRIP_RE, '');
+      var v = strip(line);
       if (isBlank(v) || seen.has(v)) return;
       seen.add(v);
       out.push({ key: v });
@@ -443,6 +459,570 @@
     return JSON.stringify(payload);
   }
 
+  // ---------------------------------------------------------------- import
+  // CSV import and export (editor design 6.1 to 6.7, WP-26). Line errors are
+  // {line, code} plus count, max or value: data, never text (the DOM layer
+  // words them). Lookups use Map and Set only (QA-11).
+  var MAX_IMPORT_CHARS = 10000000;
+  var MAX_IMPORT_RECORDS = 200000;
+  var MAX_LINE_ERRORS = 200;
+  var DETECT_CHARS = 65536;
+  var DETECT_RECORDS = 20;
+  var KEEP_CELLS = 10;
+  // Detection and tie order: tab, semicolon, comma.
+  var CANDIDATES = ['\t', ';', ','];
+  // Quoted on export: a candidate separator, a quote, CR or LF.
+  var QUOTE_RE = /[\t;,"\r\n]/;
+  var LINE_BREAK_RE = /[\r\n]/;
+
+  function isSeparator(sep) {
+    return sep === '\t' || sep === ';' || sep === ',';
+  }
+
+  // White space a cell is trimmed of: before an opening quote, after a
+  // closing quote, around an unquoted cell (not the separator, CR or LF).
+  function padCode(c, sep) {
+    return (c === 32 || c === 0 || c === 9 || c === 11 || c === 12) && c !== sep;
+  }
+
+  // One pass over text[0, end). visit(rec) gets every record that is not
+  // blank: {line (start line), cells (the first KEEP_CELLS), count (cells
+  // after trailing empty ones are dropped), error, errorLine, plainQuote (a
+  // quote inside an unquoted cell)}; returning false stops. A bad quote
+  // skips to the end of its line; an unterminated quote ends the scan. With
+  // partial (detection on a prefix) a record cut at end is left out.
+  function scan(text, sep, end, partial, visit) {
+    var n = end;
+    var s = sep.charCodeAt(0);
+    var i = 0;
+    var line = 1;
+    var buf = [];
+    while (i < n) {
+      var first = text.charCodeAt(i);
+      if (first === 10 || first === 13) {
+        // an empty line
+        i++;
+        if (first === 13 && i < n && text.charCodeAt(i) === 10) i++;
+        line++;
+        if (partial && i >= n) return;
+        continue;
+      }
+      var start = line;
+      var count = 0;
+      var filled = 0;
+      var error = null;
+      var errorLine = 0;
+      var plainQuote = false;
+      var cut = false;
+      for (;;) {
+        var j = i;
+        while (j < n && padCode(text.charCodeAt(j), s)) j++;
+        var value;
+        if (j < n && text.charCodeAt(j) === 34) {
+          var k = j + 1;
+          var escaped = false;
+          var closed = false;
+          while (k < n) {
+            var q = text.indexOf('"', k);
+            if (q === -1 || q >= n) q = n;
+            for (; k < q; k++) {
+              var c = text.charCodeAt(k);
+              if (c === 10 || (c === 13 && !(k + 1 < n && text.charCodeAt(k + 1) === 10))) line++;
+            }
+            if (q >= n) break;
+            if (q + 1 < n && text.charCodeAt(q + 1) === 34) {
+              escaped = true;
+              k = q + 2;
+              continue;
+            }
+            closed = true;
+            break;
+          }
+          if (!closed) {
+            if (partial) cut = true;
+            else {
+              error = 'unterminated_quote';
+              errorLine = start;
+            }
+            i = n;
+            break;
+          }
+          value = text.slice(j + 1, k);
+          // the content holds no lone quote; split is linear and fast here
+          if (escaped) value = value.split('""').join('"');
+          k++;
+          while (k < n && padCode(text.charCodeAt(k), s)) k++;
+          if (k < n) {
+            var d = text.charCodeAt(k);
+            if (d !== s && d !== 10 && d !== 13) {
+              error = 'bad_quote';
+              errorLine = line;
+              // kept for the header warning (header yes); the rest of the line goes
+              if (count < KEEP_CELLS) buf[count] = value;
+              count++;
+              if (value !== '') filled = count;
+              while (k < n && text.charCodeAt(k) !== 10 && text.charCodeAt(k) !== 13) k++;
+              i = k;
+              break;
+            }
+          }
+          i = k;
+        } else {
+          var m = i;
+          while (m < n) {
+            var e = text.charCodeAt(m);
+            if (e === s || e === 10 || e === 13) break;
+            if (e === 34) plainQuote = true;
+            m++;
+          }
+          value = m === i ? '' : strip(text.slice(i, m));
+          i = m;
+        }
+        if (count < KEEP_CELLS) buf[count] = value;
+        count++;
+        if (value !== '') filled = count;
+        if (i < n && text.charCodeAt(i) === s) {
+          i++;
+          continue;
+        }
+        break;
+      }
+      var terminated = false;
+      if (i < n) {
+        var t = text.charCodeAt(i);
+        if (t === 13 || t === 10) {
+          i++;
+          if (t === 13 && i < n && text.charCodeAt(i) === 10) i++;
+          line++;
+          terminated = true;
+        }
+      }
+      if (cut || (partial && !terminated)) return;
+      if (error === null && filled === 0) continue;
+      var rec = { line: start, cells: buf.slice(0, Math.min(filled, KEEP_CELLS)), count: filled, error: error,
+                  errorLine: errorLine, plainQuote: plainQuote };
+      if (visit(rec) === false) return;
+    }
+  }
+
+  // Separator auto (editor design 6.1): the real scan of the first 64 KB per
+  // candidate, scoring the first 20 records with exactly two non-blank
+  // cells; a tie goes to more such records without a quote inside an
+  // unquoted cell, then to the order tab ; ,; nothing found: +fallback+ when
+  // it is one of them, else ','.
+  function detect(text, fallback) {
+    var end = Math.min(text.length, DETECT_CHARS);
+    var partial = text.length > DETECT_CHARS;
+    var best = null;
+    var bestScore = 0;
+    var bestClean = 0;
+    CANDIDATES.forEach(function (sep) {
+      var score = 0;
+      var clean = 0;
+      var seen = 0;
+      scan(text, sep, end, partial, function (rec) {
+        seen++;
+        if (rec.error === null && rec.count === 2 && !isBlank(rec.cells[0]) && !isBlank(rec.cells[1])) {
+          score++;
+          if (!rec.plainQuote) clean++;
+        }
+        return seen < DETECT_RECORDS;
+      });
+      if (score > bestScore || (score > 0 && score === bestScore && clean > bestClean)) {
+        best = sep;
+        bestScore = score;
+        bestClean = clean;
+      }
+    });
+    if (best !== null) return best;
+    return isSeparator(fallback) ? fallback : ',';
+  }
+
+  function capError(code, max) {
+    return { line: null, code: code, max: max };
+  }
+
+  // keep: how many line errors are stored (the rest are counted).
+  function parse(text, sep, fallback, keep) {
+    var s = text === null || text === undefined ? '' : String(text);
+    var out = { separator: isSeparator(sep) ? sep : (isSeparator(fallback) ? fallback : ','), records: [], first: null,
+                errors: [], errorCount: 0, lines: 0 };
+    if (s.length > MAX_IMPORT_CHARS) {
+      out.errors.push(capError('too_large', MAX_IMPORT_CHARS));
+      out.errorCount = 1;
+      return out;
+    }
+    if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+    if (!isSeparator(sep)) out.separator = detect(s, fallback);
+    var tooMany = false;
+    scan(s, out.separator, s.length, false, function (rec) {
+      out.lines++;
+      if (out.lines > MAX_IMPORT_RECORDS) {
+        tooMany = true;
+        return false;
+      }
+      var code = rec.error;
+      if (code === null && rec.count !== 2) code = 'columns';
+      if (code === null && (isBlank(rec.cells[0]) || isBlank(rec.cells[1]))) code = 'blank_value';
+      if (out.first === null) {
+        out.first = { line: rec.line, cells: rec.cells, count: rec.count, code: code,
+                      errorLine: rec.error === null ? rec.line : rec.errorLine };
+      }
+      if (code === null) {
+        out.records.push({ line: rec.line, cells: [rec.cells[0], rec.cells[1]] });
+        return true;
+      }
+      out.errorCount++;
+      if (out.errors.length < keep) {
+        var entry = { line: rec.error === null ? rec.line : rec.errorLine, code: code };
+        if (code === 'columns') entry.count = rec.count;
+        out.errors.push(entry);
+      }
+      return true;
+    });
+    if (tooMany) {
+      out.records = [];
+      out.first = null;
+      out.errors = [capError('too_many_lines', MAX_IMPORT_RECORDS)];
+      out.errorCount = 1;
+      out.lines = 0;
+    }
+    return out;
+  }
+
+  // Pasted or decoded text as records (editor design 6.1): sep is ';', ','
+  // or TAB, anything else detects it (opts.fallback: the locale separator).
+  // Returns {separator, records [{line, cells [a, b]}], first (the first
+  // record as read, with the line of its error), errors (the first 200 by
+  // line), errorCount, lines}.
+  function parseRecords(text, sep, opts) {
+    var o = opts || {};
+    return parse(text, sep, o.fallback, MAX_LINE_ERRORS);
+  }
+
+  // The NFC lowercase key of import matching (accents significant, not fold).
+  function caseKey(s) {
+    return String(s).normalize('NFC').toLowerCase();
+  }
+
+  function addTo(map, key, item) {
+    var list = map.get(key);
+    if (list) list.push(item);
+    else map.set(key, [item]);
+  }
+
+  // The items a cell matches (editor design 6.3): every item with that exact
+  // label, else with that NFC label, else with that NFC lowercase label;
+  // [] when none. Labels can repeat (enumerations), so each step keeps every
+  // candidate. The index is built once per list, on the list.
+  function candidates(list, cell) {
+    var index = list.labelIndex;
+    if (!index) {
+      index = { exact: new Map(), nfc: new Map(), lower: new Map() };
+      list.items.forEach(function (item) {
+        var nfc = item.label.normalize('NFC');
+        addTo(index.exact, item.label, item);
+        addTo(index.nfc, nfc, item);
+        addTo(index.lower, nfc.toLowerCase(), item);
+      });
+      list.labelIndex = index;
+    }
+    var s = String(cell);
+    var nfc = s.normalize('NFC');
+    return index.exact.get(s) || index.nfc.get(nfc) || index.lower.get(nfc.toLowerCase()) || [];
+  }
+
+  ValueList.prototype.match = function (cell) {
+    return candidates(this, cell).slice();
+  };
+
+  // A formula trigger (= + - @ TAB CR) after any leading apostrophes
+  // (UD-18, SP-14). Protect adds one apostrophe and unprotect removes one,
+  // so with both options every value comes back unchanged.
+  function formulaLike(s) {
+    var i = 0;
+    while (i < s.length && s.charCodeAt(i) === 39) i++;
+    if (i >= s.length) return false;
+    var c = s.charCodeAt(i);
+    return c === 61 || c === 43 || c === 45 || c === 64 || c === 9 || c === 13;
+  }
+
+  function protectCell(s) {
+    return formulaLike(s) ? "'" + s : s;
+  }
+
+  function unprotectCell(s) {
+    return s.charCodeAt(0) === 39 && formulaLike(s) ? s.slice(1) : s;
+  }
+
+  // RFC 4180 field: quoted when it holds a candidate separator, a quote, CR
+  // or LF, or starts or ends with a character the import trims.
+  function csvField(value) {
+    var s = String(value);
+    if (QUOTE_RE.test(s) || (s !== '' && (stripCode(s.charCodeAt(0)) || stripCode(s.charCodeAt(s.length - 1))))) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function byIndex(a, b) {
+    return a.index - b.index;
+  }
+
+  // The children list with +values+ appended (add missing child values).
+  function extended(list, values) {
+    var wire = list.items.map(function (item) {
+      var o = { key: item.key };
+      if (item.label !== item.key) o.label = item.label;
+      if (!item.active) o.active = false;
+      return o;
+    });
+    values.forEach(function (v) { wire.push({ key: v }); });
+    return ValueList.fromWire(wire);
+  }
+
+  // Two sorted error lists merged by line (null first), the first +keep+.
+  function mergeErrors(a, b, keep) {
+    var out = [];
+    var i = 0;
+    var j = 0;
+    var rank = function (e) { return e.line === null ? 0 : e.line; };
+    while (out.length < keep && (i < a.length || j < b.length)) {
+      if (j >= b.length || (i < a.length && rank(a[i]) <= rank(b[j]))) out.push(a[i++]);
+      else out.push(b[j++]);
+    }
+    return out;
+  }
+
+  function checkLists(state, parents, children) {
+    if (!(state instanceof State)) throw new TypeError('DcfDependencyEditorModel: state must be a State');
+    if (!(parents instanceof ValueList)) throw new TypeError('DcfDependencyEditorModel: parents must be a ValueList');
+    if (!(children instanceof ValueList)) throw new TypeError('DcfDependencyEditorModel: children must be a ValueList');
+  }
+
+  // The import plan (editor design 6.2 to 6.5); changes nothing. opts:
+  // separator ('auto', ';', ',', TAB), defaultSeparator (the locale one),
+  // header ('auto', 'yes', 'no'), mode ('merge', 'replace'), addMissing
+  // (kind 'list' only), unprotect, parentName, childName, and the payload
+  // options of the editor (kind, multiple, base) plus maxPayloadBytes for
+  // the estimate. ok: no error, a pair (or replace mode after a non-empty
+  // input) and the resulting payload within maxPayloadBytes.
+  function planImport(text, state, parents, children, opts) {
+    checkLists(state, parents, children);
+    var o = opts || {};
+    var mode = o.mode === 'replace' ? 'replace' : 'merge';
+    var header = o.header === 'yes' || o.header === 'no' ? o.header : 'auto';
+    var addMissing = o.addMissing === true && o.kind === 'list';
+    var unprotect = o.unprotect === true;
+    var parsed = parse(text, o.separator, o.defaultSeparator, MAX_LINE_ERRORS + 1);
+    var plan = { ok: false, mode: mode, errors: [], errorCount: 0, warnings: [], warningCount: 0, pairs: [], added: 0,
+                 existing: 0, removed: 0, duplicates: 0, newValues: [], headerSkipped: false, headerCells: [],
+                 separator: parsed.separator, lines: parsed.lines, estimatedPayloadBytes: null, tooLarge: false };
+    var cell = function (v) { return unprotect ? unprotectCell(v) : v; };
+    var matchErrors = [];
+    var matchCount = 0;
+    var report = {
+      error: function (line, code, value) {
+        matchCount++;
+        if (matchErrors.length >= MAX_LINE_ERRORS) return;
+        var entry = { line: line, code: code };
+        if (value !== undefined) entry.value = value;
+        matchErrors.push(entry);
+      },
+      inactive: function (line, value) {
+        plan.warningCount++;
+        if (plan.warnings.length < MAX_LINE_ERRORS) plan.warnings.push({ line: line, code: 'inactive', value: value });
+      }
+    };
+
+    // The parent and child of one record, or null (errors reported).
+    var resolve = function (cells, line, out) {
+      var pc = cell(cells[0]);
+      var cc = cell(cells[1]);
+      var bad = false;
+      var parent = null;
+      var child = null;
+      var created = null;
+      var found = candidates(parents, pc);
+      if (found.length === 1) parent = found[0];
+      else {
+        bad = true;
+        if (out) out.error(line, found.length ? 'ambiguous_parent' : 'unknown_parent', cells[0]);
+      }
+      found = candidates(children, cc);
+      if (found.length === 1) child = found[0];
+      else if (found.length > 1 || !addMissing) {
+        bad = true;
+        if (out) out.error(line, found.length ? 'ambiguous_child' : 'unknown_child', cells[1]);
+      } else if (LINE_BREAK_RE.test(cc)) {
+        bad = true;
+        if (out) out.error(line, 'multiline_value', cells[1]);
+      } else {
+        // trimmed as core strips, NFC, lone surrogates as the form posts them
+        var v = strip(cc).normalize('NFC');
+        if (SURROGATE_RE.test(v)) v = wellFormed(v);
+        var again = isBlank(v) || v.indexOf('\u0000') !== -1 ? null : candidates(children, v);
+        if (isBlank(v)) {
+          bad = true;
+          if (out) out.error(line, 'blank_value');
+        } else if (again === null) {
+          // HTML turns a NUL into U+FFFD: the stored value would not stay the link key
+          bad = true;
+          if (out) out.error(line, 'nul_value', cells[1]);
+        } else if (again.length === 1) {
+          child = again[0];
+        } else if (again.length > 1) {
+          bad = true;
+          if (out) out.error(line, 'ambiguous_child', cells[1]);
+        } else {
+          created = v;
+        }
+      }
+      if (out && parent && !parent.active) out.inactive(line, cells[0]);
+      if (out && child && !child.active) out.inactive(line, cells[1]);
+      return bad ? null : { parent: parent, child: child, created: created };
+    };
+
+    var errors = parsed.errors;
+    var errorCount = parsed.errorCount;
+    var records = parsed.records;
+    var first = parsed.first;
+    // yes skips any first record but an unterminated quote (it holds the rest
+    // of the input); auto never takes a quote error for a header, and 'both
+    // unknown' needs two non-blank cells (a blank cell is blank_value).
+    if (first && first.code !== 'unterminated_quote' &&
+        (header === 'yes' || (header === 'auto' && first.code !== 'bad_quote'))) {
+      var skip = header === 'yes';
+      if (!skip && !(first.code === null && resolve(first.cells, first.line, null))) {
+        var c0 = first.cells.length > 0 ? cell(first.cells[0]) : '';
+        var c1 = first.cells.length > 1 ? cell(first.cells[1]) : '';
+        var k0 = caseKey(c0);
+        var k1 = caseKey(c1);
+        skip = k0 === 'parent' || k1 === 'child' || (!!o.parentName && k0 === caseKey(o.parentName)) ||
+          (!!o.childName && k1 === caseKey(o.childName)) ||
+          (first.count >= 2 && !isBlank(c0) && !isBlank(c1) &&
+            candidates(parents, c0).length === 0 && candidates(children, c1).length === 0);
+      }
+      if (skip) {
+        plan.headerSkipped = true;
+        plan.headerCells = first.cells.slice();
+        plan.lines = parsed.lines - 1;
+        if (first.code === null) {
+          records = records.slice(1);
+        } else {
+          errors = errors.filter(function (e) { return !(e.line === first.errorLine && e.code === first.code); });
+          errorCount--;
+        }
+      }
+    }
+
+    var newByKey = new Map();
+    var pairSets = new Map();
+    records.forEach(function (rec) {
+      var r = resolve(rec.cells, rec.line, report);
+      if (!r) return;
+      var pk = r.parent.key;
+      var ck;
+      if (r.created === null) {
+        ck = r.child.key;
+      } else {
+        var key = caseKey(r.created);
+        ck = newByKey.get(key);
+        if (ck === undefined) {
+          ck = r.created;
+          newByKey.set(key, ck);
+          plan.newValues.push(ck);
+        }
+      }
+      var set = pairSets.get(pk);
+      if (!set) {
+        set = new Set();
+        pairSets.set(pk, set);
+      }
+      if (set.has(ck)) {
+        plan.duplicates++;
+        return;
+      }
+      set.add(ck);
+      var existing = r.created === null && state.isLinked(pk, ck);
+      plan.pairs.push({ line: rec.line, parent: pk, child: ck, parentLabel: r.parent.label,
+                        childLabel: r.child ? r.child.label : ck, existing: existing });
+      if (existing) plan.existing++;
+      else plan.added++;
+    });
+
+    plan.errors = mergeErrors(errors, matchErrors, MAX_LINE_ERRORS);
+    plan.errorCount = errorCount + matchCount;
+    if (mode === 'replace') {
+      state.links.forEach(function (set, pk) {
+        if (!parents.byKey.has(pk)) return;
+        var kept = pairSets.get(pk);
+        set.forEach(function (ck) { if (children.byKey.has(ck) && !(kept && kept.has(ck))) plan.removed++; });
+      });
+    }
+    if (plan.errorCount === 0) {
+      var applied = applyImport(state.clone(), plan);
+      var list = plan.newValues.length ? extended(children, plan.newValues) : children;
+      var payloadOpts = { multiple: o.multiple === true, kind: o.kind };
+      if (typeof o.base === 'string' && o.base !== '') payloadOpts.base = o.base;
+      plan.estimatedPayloadBytes = utf8Bytes(stringify(serialize(applied, parents, list, payloadOpts)));
+      plan.tooLarge = typeof o.maxPayloadBytes === 'number' && plan.estimatedPayloadBytes > o.maxPayloadBytes;
+    }
+    plan.ok = plan.errorCount === 0 && !plan.tooLarge &&
+      (plan.pairs.length > 0 || (mode === 'replace' && parsed.lines > 0));
+    return plan;
+  }
+
+  // Applies plan.pairs to +state+ (editor design 6.4): merge links them;
+  // replace keeps only them (orphans go) and the defaults that stay linked.
+  // Sets source import and importMeta {mode, rows: pairs}. Returns state.
+  function applyImport(state, plan) {
+    if (!(state instanceof State)) throw new TypeError('DcfDependencyEditorModel: state must be a State');
+    if (!isObject(plan) || !Array.isArray(plan.pairs)) throw new TypeError('DcfDependencyEditorModel: plan has no pairs');
+    var mode = plan.mode === 'replace' ? 'replace' : 'merge';
+    var defaults = state.defaults;
+    if (mode === 'replace') {
+      state.links = new Map();
+      state.defaults = new Map();
+    }
+    plan.pairs.forEach(function (pair) { state.link(pair.parent, pair.child, true); });
+    if (mode === 'replace') defaults.forEach(function (keys, pk) { state.setDefaults(pk, keys); });
+    state.source = 'import';
+    state.importMeta = { mode: mode, rows: plan.pairs.length };
+    return state;
+  }
+
+  // The links of +state+ on the current lists as CSV (editor design 6.7):
+  // one BOM, a header of the field names, one row per link in parent then
+  // child order with labels (orphans and defaults left out), CRLF after
+  // every row. opts: separator (';', ',', TAB, else ','), parentName,
+  // childName, protect (UD-18). parents null: the header only.
+  function buildCsv(state, parents, children, opts) {
+    if (!(state instanceof State)) throw new TypeError('DcfDependencyEditorModel: state must be a State');
+    if (parents !== null && !(parents instanceof ValueList)) {
+      throw new TypeError('DcfDependencyEditorModel: parents must be a ValueList or null');
+    }
+    if (!(children instanceof ValueList)) throw new TypeError('DcfDependencyEditorModel: children must be a ValueList');
+    var o = opts || {};
+    var sep = isSeparator(o.separator) ? o.separator : ',';
+    var guard = o.protect === true ? protectCell : function (s) { return s; };
+    var row = function (a, b) { return csvField(guard(a)) + sep + csvField(guard(b)); };
+    var lines = [row(o.parentName ? String(o.parentName) : 'parent', o.childName ? String(o.childName) : 'child')];
+    if (parents !== null) {
+      parents.items.forEach(function (p) {
+        var set = state.links.get(p.key);
+        if (!set) return;
+        var kept = [];
+        set.forEach(function (ck) {
+          var item = children.byKey.get(ck);
+          if (item) kept.push(item);
+        });
+        kept.sort(byIndex).forEach(function (c) { lines.push(row(p.label, c.label)); });
+      });
+    }
+    return '\ufeff' + lines.join('\r\n') + '\r\n';
+  }
+
   return {
     VERSION: VERSION,
     fold: fold,
@@ -456,6 +1036,11 @@
     State: State,
     conflictCounts: conflictCounts,
     serialize: serialize,
-    stringify: stringify
+    stringify: stringify,
+    strip: strip,
+    parseRecords: parseRecords,
+    planImport: planImport,
+    applyImport: applyImport,
+    buildCsv: buildCsv
   };
 }));
