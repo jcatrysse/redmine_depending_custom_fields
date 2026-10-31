@@ -155,12 +155,9 @@ module RedmineDependingCustomFields
     end
 
     # The edited field, or one the user may see in this project (fail closed).
+    # One rule with the confirmation panel (SD-16): UsageCalculator.nameable_child?.
     def nameable_field?(record)
-      return true if record.id == field.id || user.admin?
-
-      FieldRelevance.in_project?(record, project) && record.visible_by?(project, user)
-    rescue StandardError
-      false
+      UsageCalculator.nameable_child?(record, field, project, user)
     end
 
     # Limits design 5.3: the class name, a known column name, the field id

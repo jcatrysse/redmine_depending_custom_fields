@@ -1,11 +1,16 @@
 <% enum_family = RedmineDependingCustomFields::FieldRelevance.enum_family?(@field) %>
 <% scope = dcf_field_scope(@field, @project) %>
-<%# Row identifiers in current display order — the reorder contract expects an
-    exact permutation of this set (enumeration ids, or the list values). %>
-<% row_ids = enum_family ? @enumerations.map { |e| e.id.to_s } : @list_values.map(&:to_s) %>
+<%# Drag reorders the whole list (the reorder contract expects an exact
+    permutation of every row), so handles, the reorder form and its script
+    appear only on an unfiltered page of at most 500 values (UD-21). %>
+<% sortable = @values_page.sortable? %>
+<% list_state = @values_page.list_state %>
+<% clear_path = custom_field_configuration_field_path(@project, @field, @show_usage ? { show_usage: 1 } : {}) %>
+<% state_fields = list_state.empty? ? nil : render(partial: 'list_state_fields', locals: { state: list_state }) %>
 
 <% content_for :header_tags do %>
-  <%= javascript_include_tag 'dcf_value_reorder', plugin: 'redmine_depending_custom_fields' %>
+  <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
+  <%= javascript_include_tag 'dcf_value_reorder', plugin: 'redmine_depending_custom_fields' if sortable %>
 <% end %>
 
 <div class="contextual">
@@ -21,31 +26,44 @@
 <h2><%= h(@field.name) %> <em class="info">(<%= dcf_format_label(@field) %>)</em></h2>
 
 <% unless scope == :project %>
-  <div class="flash warning">
-    <%= scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning) %>
-  </div>
+  <%= dcf_flash_box(:warning, scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning)) %>
 <% end %>
 <%= dcf_storage_usage_hint(@field) %>
 
 <% if @impact %>
   <%= render partial: 'confirm_panel',
-             locals: { impact: @impact, pending_action: @pending_action, pending_params: @pending_params } %>
+             locals: { impact: @impact, pending_action: @pending_action, pending_params: @pending_params,
+                       list_state: list_state } %>
 <% end %>
 
+<%= render partial: 'values_toolbar', locals: { clear_path: clear_path } %>
+
 <div class="box">
-  <% if enum_family %>
-    <% if @enumerations.empty? %>
-      <p class="nodata"><%= l(:text_no_values) %></p>
-    <% else %>
+  <% if @values_page.filtered? && !@values_page.empty_match? %>
+    <p class="info"><%= l(:text_dcf_values_filtered, count: @values_page.filtered_count, total: @values_page.total) %></p>
+  <% end %>
+  <% if @values_page.paginated? %>
+    <p class="info"><%= l(:text_dcf_drag_reorder_large, max: RedmineDependingCustomFields::ValuesPage::UNPAGINATED_MAX) %></p>
+  <% elsif @values_page.filtered? && !@values_page.empty_match? && @values_page.total > 1 %>
+    <p class="info"><%= l(:text_dcf_drag_reorder_filtered) %></p>
+  <% end %>
+
+  <% if @values_page.total.zero? %>
+    <p class="nodata"><%= l(:text_no_values) %></p>
+  <% elsif @values_page.empty_match? %>
+    <p class="nodata"><%= l(:text_dcf_no_matches) %> <%= link_to l(:button_clear), clear_path %></p>
+  <% elsif enum_family && @values_page.batch_scope.nil? %>
       <%# One form for the whole table with a single Save, exactly as core's
           custom_field_enumerations#index does: names, positions and active flags
           are staged in the form and committed together. The drag handle only
           rewrites the hidden position inputs (dcf_value_reorder.js), it does not
           submit. Delete is a link rather than a button_to because forms cannot
-          nest — again core's own choice on this screen (delete_link). %>
+          nest, again core's own choice on this screen (delete_link). Full mode
+          only: unfiltered and unpaginated, so every row is posted. %>
       <%= form_tag(custom_field_configuration_update_enumerations_path(@project, @field),
                    method: :patch, class: 'dcf-enumerations-form') do %>
         <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+        <%= state_fields %>
         <table class="list dcf-values">
           <thead>
             <tr>
@@ -56,26 +74,26 @@
             </tr>
           </thead>
           <tbody>
-            <% @enumerations.each_with_index do |enum, idx| %>
-              <tr data-dcf-value="<%= enum.id %>">
+            <% @rows.each do |row| %>
+              <tr data-dcf-value="<%= row.key %>">
                 <td>
-                  <%= hidden_field_tag "enumerations[#{enum.id}][position]", idx + 1,
+                  <%= hidden_field_tag "enumerations[#{row.key}][position]", row.index + 1,
                                        id: nil, class: 'dcf-position' %>
-                  <%= text_field_tag "enumerations[#{enum.id}][name]", enum.name, size: 30, id: nil %>
+                  <%= text_field_tag "enumerations[#{row.key}][name]", row.label, size: 30, id: nil %>
                 </td>
                 <%# Core's control: a checkbox backed by a hidden "0" so unticking
                     submits. The column header already reads "Active", so the
                     checkbox carries its accessible name in the attributes rather
                     than repeating the word in every row. %>
                 <td class="dcf-active">
-                  <%= hidden_field_tag "enumerations[#{enum.id}][active]", 0, id: nil %>
-                  <%= check_box_tag "enumerations[#{enum.id}][active]", 1, enum.active?, id: nil,
+                  <%= hidden_field_tag "enumerations[#{row.key}][active]", 0, id: nil %>
+                  <%= check_box_tag "enumerations[#{row.key}][active]", 1, row.active, id: nil,
                                     title: l(:field_active), 'aria-label': l(:field_active) %>
                 </td>
-                <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
+                <td class="reorder"><%= dcf_sort_handle if sortable %></td>
                 <td>
                   <%= delete_link(custom_field_configuration_remove_value_path(
-                        @project, @field, enumeration_id: enum.id, state_hash: @state_hash)) %>
+                        @project, @field, list_state.merge(enumeration_id: row.key, state_hash: @state_hash))) %>
                 </td>
               </tr>
             <% end %>
@@ -83,11 +101,32 @@
         </table>
         <p class="buttons"><%= submit_tag l(:button_save) %></p>
       <% end %>
-    <% end %>
+  <% elsif enum_family %>
+    <%# A filtered or paginated page shows only some rows, and the batch save
+        takes the full set, so the rows are read-only here; delete links keep
+        the list state. %>
+    <table class="list dcf-values">
+      <thead>
+        <tr>
+          <th><%= l(:label_dcf_value) %></th>
+          <th><%= l(:field_active) %></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @rows.each do |row| %>
+          <tr data-dcf-value="<%= row.key %>">
+            <td><%= row.label %></td>
+            <td class="dcf-active"><%= row.active ? l(:general_text_Yes) : l(:general_text_No) %></td>
+            <td>
+              <%= delete_link(custom_field_configuration_remove_value_path(
+                    @project, @field, list_state.merge(enumeration_id: row.key, state_hash: @state_hash))) %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
   <% else %>
-    <% if @list_values.empty? %>
-      <p class="nodata"><%= l(:text_no_values) %></p>
-    <% else %>
       <table class="list dcf-values">
         <thead>
           <tr>
@@ -102,45 +141,56 @@
           </tr>
         </thead>
         <tbody>
-          <% @list_values.each do |value| %>
-            <tr data-dcf-value="<%= value %>">
+          <% @rows.each do |row| %>
+            <tr data-dcf-value="<%= row.key %>">
               <td>
                 <%= form_tag(custom_field_configuration_rename_value_path(@project, @field), method: :patch, class: 'dcf-inline-form') do %>
-                  <%= hidden_field_tag :old_value, value %>
-                  <%= hidden_field_tag :state_hash, @state_hash %>
-                  <%= text_field_tag :new_value, value, size: 30 %>
+                  <%= hidden_field_tag :old_value, row.key, id: nil %>
+                  <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+                  <%= state_fields %>
+                  <%= text_field_tag :new_value, row.label, size: 30, id: nil, 'aria-label': l(:label_dcf_value) %>
                   <%= submit_tag l(:button_save), name: nil, class: 'small' %>
                 <% end %>
               </td>
               <% if @show_usage %>
-                <td><%= RedmineDependingCustomFields::UsageCalculator.usage_here(@field, value, @project) %></td>
-                <td><%= RedmineDependingCustomFields::UsageCalculator.usage_other(@field, value, @project) %></td>
-                <td><%= RedmineDependingCustomFields::UsageCalculator.own_dep_refs(@field, value) +
-                        RedmineDependingCustomFields::UsageCalculator.parent_key_refs(@field, value) %></td>
+                <% usage = @usage[row.key] %>
+                <td><%= usage.here %></td>
+                <td><%= usage.other %></td>
+                <td><%= usage.refs %></td>
               <% end %>
-              <td class="reorder"><%= dcf_sort_handle if row_ids.length > 1 %></td>
+              <td class="reorder"><%= dcf_sort_handle if sortable %></td>
               <td>
                 <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
                               method: :delete,
-                              params: { value: value, state_hash: @state_hash },
+                              params: { value: row.key, state_hash: @state_hash }.merge(list_state),
                               data: { confirm: l(:text_are_you_sure) }, class: 'small' %>
               </td>
             </tr>
           <% end %>
         </tbody>
       </table>
-    <% end %>
+  <% end %>
+
+  <% if @values_page.paginated? && !@values_page.empty_match? %>
+    <%# Links from the show path and the list state, also on a re-render of a
+        write action (core links would use the current route). %>
+    <% link_state = list_state.slice(:q).merge(@show_usage ? { show_usage: 1 } : {}) %>
+    <% page_link = proc do |text, parameters, options|
+         link_to(text, custom_field_configuration_field_path(@project, @field, link_state.merge(parameters)), options)
+       end %>
+    <span class="pagination"><%= pagination_links_full(@values_page.paginator, @values_page.filtered_count,
+                                                       per_page_links: true, &page_link) %></span>
   <% end %>
 
   <%# The list family still reorders by submitting a drag straight away, so it
       needs the separate target form. The enumeration table stages positions in
       its own batch form instead. %>
-  <%= render partial: 'reorder_form' if !enum_family && row_ids.length > 1 %>
+  <%= render partial: 'reorder_form' if !enum_family && sortable %>
 
   <p>
     <% unless @show_usage || enum_family %>
       <%= link_to l(:label_show_usage),
-                  custom_field_configuration_field_path(@project, @field, show_usage: 1),
+                  custom_field_configuration_field_path(@project, @field, list_state.merge(show_usage: 1)),
                   class: 'icon icon-stats' %>
     <% end %>
   </p>
@@ -150,14 +200,12 @@
   <fieldset class="box">
     <legend><%= l(:label_dcf_default_value) %></legend>
     <%= form_tag(custom_field_configuration_set_default_value_path(@project, @field), method: :patch) do %>
-      <%= hidden_field_tag :state_hash, @state_hash %>
-      <% default_options = enum_family ?
-           @enumerations.select(&:active?).map { |e| [e.name, e.id.to_s] } :
-           @list_values.map { |v| [v.to_s, v.to_s] } %>
+      <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+      <%= state_fields %>
       <p>
         <label><%= l(:label_dcf_default) %></label>
         <%= select_tag :default_value,
-                       options_for_select([[l(:text_dcf_no_default), '']] + default_options,
+                       options_for_select([[l(:text_dcf_no_default), '']] + @default_options,
                                           @field.default_value.to_s) %>
         <%= submit_tag l(:label_dcf_set_default) %>
       </p>
@@ -168,7 +216,7 @@
 <fieldset class="box">
   <legend><%= l(:label_add_value) %></legend>
   <%= form_tag(custom_field_configuration_add_value_path(@project, @field), method: :post) do %>
-    <%= hidden_field_tag :state_hash, @state_hash %>
+    <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
     <p>
       <label><%= l(:label_dcf_value) %></label>
       <%= text_field_tag :value, nil, size: 30 %>

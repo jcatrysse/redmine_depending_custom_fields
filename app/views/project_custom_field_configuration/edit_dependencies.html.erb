@@ -1,3 +1,8 @@
+<%# dcf_config.css only; the head hook loads the editor assets (project design 10). %>
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
+<% end %>
+
 <div class="contextual">
   <%= link_to l(:button_back), custom_field_configuration_field_path(@project, @field),
               class: 'icon icon-cancel' %>

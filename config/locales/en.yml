@@ -194,6 +194,9 @@ en:
   label_dcf_export_protect_formulas: "Protect cells that a spreadsheet would run as formulas"
   text_dcf_parent_not_available: "The parent field %{name} is not available in this project, so this mapping can only be changed by an administrator in the custom field settings."
   text_dcf_parent_missing: "The parent field of this field no longer exists, so no dependency mapping can be edited. An administrator can choose another parent field."
+  text_dcf_values_filtered: "Values matching the filter: %{count} of %{total}."
+  text_dcf_drag_reorder_large: "Drag-and-drop ordering is available for fields with at most %{max} values. Use the sort buttons to order this field."
+  text_dcf_drag_reorder_filtered: "Clear the filter to change the order by drag-and-drop."
 
   # Model errors, shown after the field name
   activerecord:

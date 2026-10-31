@@ -1,0 +1,18 @@
+<%# Search of the values page in core filter markup (groups/index), above 25
+    values or while q is present. The Clear link keeps show_usage and drops q
+    and page; core shows its icon as a sprite on 6.0 and later and through
+    the class on 5.1. %>
+<% if @values_page.show_filter? %>
+  <div class="dcf-values-toolbar">
+    <%= form_tag(custom_field_configuration_field_path(@project, @field), method: :get, class: 'dcf-values-filter') do %>
+      <fieldset><legend><%= l(:label_filter_plural) %></legend>
+        <label for="dcf_values_q"><%= l(:label_search) %>:</label>
+        <%= text_field_tag 'q', @values_page.query, size: 30, id: 'dcf_values_q', maxlength: 255 %>
+        <%= hidden_field_tag 'show_usage', '1', id: nil if @show_usage %>
+        <%= submit_tag l(:button_apply), class: 'small', name: nil %>
+        <%= link_to(respond_to?(:sprite_icon) ? sprite_icon('reload', l(:button_clear)) : l(:button_clear),
+                    clear_path, class: 'icon icon-reload') %>
+      </fieldset>
+    <% end %>
+  </div>
+<% end %>

@@ -194,6 +194,9 @@ de:
   label_dcf_export_protect_formulas: "Zellen schützen, die eine Tabellenkalkulation als Formel ausführen würde"
   text_dcf_parent_not_available: "Das übergeordnete Feld %{name} ist in diesem Projekt nicht verfügbar. Diese Zuordnung kann daher nur von einem Administrator in den Einstellungen des benutzerdefinierten Feldes geändert werden."
   text_dcf_parent_missing: "Das übergeordnete Feld dieses Feldes existiert nicht mehr, daher kann keine Abhängigkeitszuordnung bearbeitet werden. Ein Administrator kann ein anderes übergeordnetes Feld wählen."
+  text_dcf_values_filtered: "Werte, die dem Filter entsprechen: %{count} von %{total}."
+  text_dcf_drag_reorder_large: "Die Sortierung per Drag-and-drop ist für Felder mit höchstens %{max} Werten verfügbar. Verwenden Sie die Sortierschaltflächen, um dieses Feld zu ordnen."
+  text_dcf_drag_reorder_filtered: "Setzen Sie den Filter zurück, um die Reihenfolge per Drag-and-drop zu ändern."
 
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:

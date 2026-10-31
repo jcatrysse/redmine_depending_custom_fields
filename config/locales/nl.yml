@@ -194,6 +194,9 @@ nl:
   label_dcf_export_protect_formulas: "Cellen beschermen die een rekenblad als formule zou uitvoeren"
   text_dcf_parent_not_available: "Het bovenliggende veld %{name} is niet beschikbaar in dit project. Deze koppeling kan daarom alleen door een beheerder in de instellingen van het aangepaste veld worden gewijzigd."
   text_dcf_parent_missing: "Het bovenliggende veld van dit veld bestaat niet meer, daarom kan geen afhankelijkheidskoppeling worden bewerkt. Een beheerder kan een ander bovenliggend veld kiezen."
+  text_dcf_values_filtered: "Waarden die aan de filter voldoen: %{count} van %{total}."
+  text_dcf_drag_reorder_large: "Ordenen met slepen en neerzetten is beschikbaar voor velden met maximaal %{max} waarden. Gebruik de sorteerknoppen om dit veld te ordenen."
+  text_dcf_drag_reorder_filtered: "Wis de filter om de volgorde met slepen en neerzetten te wijzigen."
 
   # Modelfouten, getoond na de veldnaam
   activerecord:

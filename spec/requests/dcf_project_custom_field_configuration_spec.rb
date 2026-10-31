@@ -465,7 +465,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
     end
 
     # Changed by WP-27 (was: the dependency matrix, status 200 only): the
-    # editor root, its assets once each from the head hook.
+    # editor root, its assets once each from the head hook. Changed by WP-28
+    # (was: the body does not include dcf_config): dcf_config.css exactly
+    # once, from the view (T-ASSET-1).
     it 'renders the dependency editor for a depending field with a parent (T-UI-4)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1],
@@ -481,7 +483,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(srcs.grep(asset.call('dcf_dependency_editor', 'js')).size).to eq(1)
       expect(srcs.grep(asset.call('dcf_dependency_editor_model', 'js')).size).to eq(1)
       expect(hrefs.grep(asset.call('dcf_dependency_editor', 'css')).size).to eq(1)
-      expect(response.body).not_to include('dcf_config')
+      expect(hrefs.grep(asset.call('dcf_config', 'css')).size).to eq(1)
     end
 
     # Renamed by WP-27 (was: 'saves a dependency mapping and redirects').
@@ -1413,7 +1415,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
           .to eq('value_dependencies' => posted, 'default_value_dependencies' => { 'Belgium' => 'Antwerp' })
         expect(root['data-dcf-editor-dirty']).to eq('1')
         expect(hidden_values).to eq([['dcf_dependencies_json', '']])
-        expect(data_names(root).grep(/echo|pending|conflict|base/)).to eq([])
+        # Anchored: MySQL adds data-dcf-editor-storage-base, which is not the
+        # admin-only data-dcf-editor-base.
+        expect(data_names(root).grep(/\Adata-dcf-editor-(?:echo|pending|conflict|base)/)).to eq([])
         expect(response.body).not_to include('<img src=x')
         expect(stored(child)).to eq(original)
         expect(rendered_state_hash).to eq(state_hash(child))
@@ -1803,6 +1807,701 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response).to have_http_status(200)
         expect(attr_json('parent-values').size).to eq(1_000)
         expect(big_queries).to eq(small_queries)
+      end
+    end
+  end
+
+  # --- WP-28: values page search and pagination ---------------------------
+  # Project design 5, 10 and 15 (T-PAG-1..13, T-ASSET-1..2), UD-21, SD-16,
+  # P-D12. Drag-and-drop markup is checked here (no JS driver).
+  describe 'values page search and pagination (WP-28)' do
+    let(:manager) { dcf_manager(project) }
+    let(:asset) { ->(name, ext) { /#{name}(-[0-9a-f]{7,}\.#{ext}|\.#{ext}\?\d+)\z/ } }
+    let(:service) { RedmineDependingCustomFields::BaseService }
+
+    before { as(manager) }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def show_path(field, params = {})
+      custom_field_configuration_field_path(project, field, params)
+    end
+
+    def labels(count, prefix = 'Value')
+      (1..count).map { |i| format('%<prefix>s %<i>04d', prefix: prefix, i: i) }
+    end
+
+    def own_list(count, prefix = 'Value', extra: [])
+      dcf_list_field(values: extra + labels(count, prefix), is_for_all: false, projects: [project])
+    end
+
+    def enum_with(count, is_for_all: true)
+      field = dcf_enum_field(names: [], is_for_all: is_for_all)
+      field.projects = [project] unless is_for_all
+      CustomFieldEnumeration.insert_all(
+        (1..count).map { |i| { custom_field_id: field.id, name: format('N%04d', i), position: i, active: true } }
+      )
+      CustomField.find(field.id)
+    end
+
+    def row_values
+      doc.css('table.dcf-values tbody tr').map { |tr| tr['data-dcf-value'] }
+    end
+
+    def scripts
+      doc.css('script[src]').map { |node| node['src'] }
+    end
+
+    def stylesheets
+      doc.css('link[rel=stylesheet]').map { |node| node['href'] }
+    end
+
+    def hidden(name, scope = doc)
+      scope.css(%(input[type="hidden"][name="#{name}"]))
+    end
+
+    def query_of(href)
+      Rack::Utils.parse_nested_query(URI.parse(href).query.to_s)
+    end
+
+    describe 'drag threshold and pagination' do
+      it 'keeps the drag markup at 500 values, without hidden q or page (T-PAG-1, UD-21)' do
+        field = own_list(500)
+        get show_path(field)
+        expect(response).to have_http_status(200)
+        expect(row_values.size).to eq(500)
+        expect(doc.css('table.dcf-values .dcf-sort-handle').size).to eq(500)
+        expect(doc.css('form.dcf-reorder-form').size).to eq(1)
+        expect(scripts.grep(asset.call('dcf_value_reorder', 'js')).size).to eq(1)
+        expect(doc.css('input#dcf_values_q[type="text"][name="q"]').size).to eq(1)
+        expect(hidden('q')).to be_empty
+        expect(hidden('page')).to be_empty
+        expect(doc.css('.pagination')).to be_empty
+        expect(doc.text).not_to include(I18n.t(:text_dcf_drag_reorder_large, max: 500))
+      end
+
+      it 'paginates 520 values: 25 rows, core pagination, no drag, the drag notice (T-PAG-2)' do
+        field = own_list(520)
+        get show_path(field)
+        expect(row_values).to eq(labels(25))
+        expect(doc.css('span.pagination ul.pages li.current span').text).to eq('1')
+        expect(doc.css('span.pagination span.per-page')).not_to be_empty
+        expect(response.body).not_to include('dcf-sort-handle')
+        expect(response.body).not_to include('dcf-reorder-form')
+        expect(scripts.grep(/dcf_value_reorder/)).to be_empty
+        expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_large, max: 500))
+        expect(doc.css('form.dcf-values-filter').size).to eq(1)
+      end
+
+      it 'shows the rows of page 2 and clamps the page (T-PAG-3)' do
+        field = own_list(520)
+        get show_path(field, page: 2)
+        expect(row_values).to eq(labels(520)[25, 25])
+        expect(hidden('page', doc.at_css('form.dcf-inline-form')).map { |n| n['value'] }).to eq(['2'])
+        get show_path(field, page: 999)
+        expect(row_values).to eq(labels(520)[500, 20])
+        expect(doc.css('span.pagination li.current span').text).to eq('21')
+        expect(hidden('page', doc.at_css('form.dcf-inline-form')).map { |n| n['value'] }).to eq(['21'])
+        %w[0 -3 abc].each do |raw|
+          get show_path(field, page: raw)
+          expect(row_values.first).to eq('Value 0001')
+          expect(hidden('page')).to be_empty
+        end
+        ['page[]=2&q[]=x', 'page[x]=2&q[y]=z'].each do |query|
+          get "#{show_path(field)}?#{query}"
+          expect(response).to have_http_status(200)
+          expect(row_values).to eq(labels(25))
+          expect(doc.at_css('input#dcf_values_q')['value'].to_s).to eq('')
+          expect(hidden('q')).to be_empty
+        end
+      end
+
+      it 'honours per_page and caps it at 500 (T-PAG-4)' do
+        allow(Setting).to receive(:per_page_options_array).and_return([25, 100, 1000])
+        field = own_list(1_200)
+        get show_path(field, per_page: 100)
+        expect(row_values.size).to eq(100)
+        get show_path(field, per_page: 1000)
+        expect(row_values.size).to eq(500)
+        expect(doc.css('span.pagination span.items').text).to eq('(1-500/1200)')
+      end
+
+      it 'shows the search box above 25 values or with q, pagination above 500 (T-PAG-12, T-PAG-13)' do
+        get show_path(own_list(25))
+        expect(doc.css('form.dcf-values-filter')).to be_empty
+        field = own_list(26)
+        get show_path(field)
+        form = doc.at_css('form.dcf-values-filter[method="get"]')
+        expect(form['action']).to eq(show_path(field))
+        expect(form.css('fieldset legend').text).to eq(I18n.t(:label_filter_plural))
+        expect(form.at_css('label[for="dcf_values_q"]').text).to eq("#{I18n.t(:label_search)}:")
+        input = form.at_css('input#dcf_values_q')
+        expect([input['type'], input['name'], input['size'], input['maxlength']]).to eq(%w[text q 30 255])
+        submit = form.at_css('input[type="submit"]')
+        expect([submit['value'], submit['class'], submit['name']]).to eq([I18n.t(:button_apply), 'small', nil])
+        expect(form.css('input[name="page"]')).to be_empty
+        get show_path(own_list(3), q: 'x')
+        expect(doc.css('form.dcf-values-filter').size).to eq(1)
+        get show_path(own_list(500))
+        expect(doc.css('span.pagination')).to be_empty
+        get show_path(own_list(501))
+        expect(doc.css('span.pagination').size).to eq(1)
+      end
+
+      it 'renders the Clear link like core: an svg on 6.0 and later, plain text on 5.1' do
+        field = own_list(30)
+        get show_path(field, q: 'value', show_usage: 1)
+        link = doc.at_css('form.dcf-values-filter a.icon.icon-reload')
+        expect(link['href']).to eq(show_path(field, show_usage: 1))
+        expect(link.text.strip).to eq(I18n.t(:button_clear))
+        expect(link.css('svg').size).to eq(Redmine::VERSION::MAJOR >= 6 ? 1 : 0)
+        expect(link.css('span.icon')).to be_empty
+        expect(hidden('show_usage', doc.at_css('form.dcf-values-filter')).map { |n| n['value'] }).to eq(['1'])
+        get show_path(field, q: 'value')
+        expect(doc.at_css('form.dcf-values-filter a.icon-reload')['href']).to eq(show_path(field))
+        expect(hidden('show_usage', doc.at_css('form.dcf-values-filter'))).to be_empty
+      end
+
+      it 'keeps q and show_usage in the pagination links (core links)' do
+        field = own_list(1_200)
+        get show_path(field, q: 'value', show_usage: 1, page: 2)
+        hrefs = doc.css('span.pagination a[href]').map { |a| a['href'] }
+        expect(hrefs).not_to be_empty
+        hrefs.each do |href|
+          expect(URI.parse(href).path).to eq(show_path(field))
+          expect(query_of(href)).to include('q' => 'value', 'show_usage' => '1')
+        end
+      end
+    end
+
+    describe 'search' do
+      it 'searches tokens case- and accent-insensitively and disables drag (T-PAG-5)' do
+        field = own_list(30, extra: ["\u0141\u00F3d\u017A", "Krak\u00F3w"])
+        get show_path(field, q: 'LODZ')
+        expect(row_values).to eq(["\u0141\u00F3d\u017A"])
+        expect(response.body).not_to include('dcf-sort-handle')
+        expect(response.body).not_to include('dcf-reorder-form')
+        expect(scripts.grep(/dcf_value_reorder/)).to be_empty
+        expect(doc.text).to include(I18n.t(:text_dcf_values_filtered, count: 1, total: 32))
+        expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_filtered))
+        expect(doc.at_css('input#dcf_values_q')['value']).to eq('LODZ')
+        forms = doc.css('form.dcf-inline-form') + doc.css('form.button_to')
+        expect(forms.size).to eq(2)
+        forms.each do |form|
+          expect(hidden('q', form).map { |n| n['value'] }).to eq(['LODZ'])
+          expect(hidden('page', form)).to be_empty
+        end
+      end
+
+      it 'treats a q made only of a combining mark as unfiltered (T-PAG-10)' do
+        field = own_list(30)
+        get show_path(field, q: "\u0301")
+        expect(row_values.size).to eq(30)
+        expect(doc.css('table.dcf-values .dcf-sort-handle').size).to eq(30)
+        expect(scripts.grep(asset.call('dcf_value_reorder', 'js')).size).to eq(1)
+        expect(hidden('q')).to be_empty
+        expect(doc.text).not_to include(I18n.t(:text_dcf_drag_reorder_filtered))
+      end
+
+      it 'shows text_dcf_no_matches with a Clear link when nothing matches (T-PAG-11)' do
+        field = own_list(30)
+        get show_path(field, q: 'zzz', show_usage: 1)
+        nodata = doc.at_css('p.nodata')
+        expect(nodata.text).to include(I18n.t(:text_dcf_no_matches))
+        link = nodata.at_css('a')
+        expect(link.text).to eq(I18n.t(:button_clear))
+        expect(link['href']).to eq(show_path(field, show_usage: 1))
+        expect(doc.css('table.dcf-values')).to be_empty
+        expect(doc.css('.pagination')).to be_empty
+        expect(doc.text).not_to include(I18n.t(:text_dcf_values_filtered, count: 0, total: 30))
+      end
+
+      it 'keeps text_no_values for a field without values, also with q' do
+        field = dcf_enum_field(names: [], is_for_all: true)
+        get show_path(field, q: 'x')
+        expect(doc.at_css('p.nodata').text.strip).to eq(I18n.t(:text_no_values))
+      end
+
+      it 'folds each row at most once and q once per request, nothing unfiltered (G6)' do
+        field = own_list(30)
+        calls = 0
+        allow(RedmineDependingCustomFields::ValueCollation).to receive(:key).and_wrap_original do |original, *args|
+          calls += 1
+          original.call(*args)
+        end
+        get show_path(field)
+        expect(calls).to eq(0)
+        get show_path(field, q: 'value 001')
+        expect(calls).to be <= 30 + 1
+        expect(row_values.size).to eq(11)
+      end
+
+      it 'echoes q escaped once in the search box, hidden inputs and links (G5)' do
+        payloads = ['"><script>alert(1)</script>', "' onmouseover='x", '&amp;']
+        field = own_list(30, extra: payloads.map { |p| "v #{p}" })
+        payloads.each do |q|
+          get show_path(field, q: q)
+          expect(response.body).not_to include('<script>alert(1)</script>')
+          expect(response.body).not_to include("' onmouseover='x\"")
+          expect(doc.at_css('input#dcf_values_q')['value']).to eq(q)
+          expect(hidden('q').map { |n| n['value'] }.uniq).to eq([q])
+          usage = doc.css('a.icon-stats').map { |a| query_of(a['href'])['q'] }
+          expect(usage).to eq([q])
+        end
+      end
+
+      it 'searches on a closed project, where writes stay forbidden' do
+        closed = dcf_create_project(name: 'Closed', status: :closed)
+        field = dcf_list_field(values: labels(30), is_for_all: false, projects: [closed])
+        as(dcf_manager(closed))
+        get custom_field_configuration_field_path(closed, field, q: 'value 0001')
+        expect(response).to have_http_status(200)
+        expect(row_values).to eq(['Value 0001'])
+      end
+    end
+
+    describe 'state preservation' do
+      it 'redirects a rename on page 3 with q back to that page and search (T-PAG-6)' do
+        field = own_list(1_600, 'Lodz')
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'Lodz 0060', new_value: 'Lodz 0060x', q: 'lodz', page: '3',
+                        state_hash: service.state_hash(field) }
+        expect(response).to redirect_to(show_path(field, q: 'lodz', page: 3))
+        follow_redirect!
+        expected = labels(1_600, 'Lodz')[50, 25].map { |v| v == 'Lodz 0060' ? 'Lodz 0060x' : v }
+        expect(row_values).to eq(expected)
+      end
+
+      it 'keeps the redirect bare without q or page and drops an unfiltered q and page 1' do
+        field = own_list(3)
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'Value 0001', new_value: 'Value 0001x', q: " \u0301", page: '1' }
+        expect(response).to redirect_to(show_path(field))
+        expect(response.location).not_to include('?')
+      end
+
+      it 'encodes q in the redirect and keeps nothing else of the request' do
+        field = own_list(30)
+        q = "Va lue&x\r\nSet-Cookie: dcf=1"
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'Value 0001', new_value: 'Value 0001x', q: q, page: '2',
+                        state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(302)
+        expect(response.location).to include('%0D%0A')
+        expect(response.headers['Set-Cookie'].to_s).not_to include('dcf=1')
+        expect(query_of(response.location)).to eq('q' => q, 'page' => '2')
+      end
+
+      it 'carries q and page through the confirmation panel and its pagination (T-PAG-7)' do
+        field = dcf_list_field(values: labels(1_200), is_for_all: true)
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'Value 0030', new_value: 'Value 0030x', q: 'value', page: '2',
+                        state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(422)
+        form = doc.at_css('.dcf-confirm-panel form')
+        expect(form.css('input[name="q"]').map { |n| n['value'] }).to eq(['value'])
+        expect(form.css('input[name="page"]').map { |n| n['value'] }).to eq(['2'])
+        expect(row_values).to eq(labels(1_200)[25, 25])
+        hrefs = doc.css('span.pagination a[href]').map { |a| a['href'] }
+        expect(hrefs).not_to be_empty
+        hrefs.each do |href|
+          expect(URI.parse(href).path).to eq(show_path(field))
+          expect(query_of(href)['q']).to eq('value')
+          expect(query_of(href).keys & %w[old_value new_value state_hash enumeration_id confirm]).to be_empty
+        end
+
+        fields = form.css('input[type="hidden"]').to_h { |n| [n['name'], n['value']] }
+        fields.delete('_method')
+        fields.delete('authenticity_token')
+        patch form['action'], params: fields.merge('confirm' => '1')
+        expect(response).to redirect_to(show_path(field, q: 'value', page: 2))
+        expect(field.reload.possible_values).to include('Value 0030x')
+      end
+
+      it 're-renders a refused rename on the posted page and search' do
+        field = own_list(1_200)
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'Value 0060', new_value: 'Value 0061', q: 'value', page: '3',
+                        state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(422)
+        expect(row_values).to eq(labels(1_200)[50, 25])
+        expect(hidden('q', doc.at_css('form.dcf-inline-form')).map { |n| n['value'] }).to eq(['value'])
+      end
+
+      it 'jumps to the page of an added value and drops q (add_value)' do
+        field = own_list(520)
+        post custom_field_configuration_add_value_path(project, field), params: { value: ' ZZZ ', q: 'value', page: '3' }
+        expect(response).to redirect_to(show_path(field, page: 21))
+        post custom_field_configuration_add_value_path(project, field), params: { value: 'AAA', position: '0' }
+        expect(response).to redirect_to(show_path(field))
+        small = own_list(499)
+        post custom_field_configuration_add_value_path(project, small), params: { value: 'Z', q: 'value' }
+        expect(response).to redirect_to(show_path(small))
+        enum = enum_with(520)
+        post custom_field_configuration_add_value_path(project, enum), params: { value: 'New' }
+        expect(response).to redirect_to(show_path(enum, page: 21))
+      end
+
+      it 'keeps the redirect of a removal on the last page; the page is clamped on display' do
+        field = own_list(501)
+        delete custom_field_configuration_remove_value_path(project, field),
+               params: { value: 'Value 0501', page: '21', state_hash: service.state_hash(field) }
+        expect(response).to redirect_to(show_path(field, page: 21))
+        follow_redirect!
+        expect(response).to have_http_status(200)
+        expect(row_values.size).to eq(500)
+        expect(doc.css('table.dcf-values .dcf-sort-handle').size).to eq(500)
+      end
+
+      it 'still refuses a partial reorder on a large list; a full permutation passes' do
+        field = own_list(520)
+        patch custom_field_configuration_reorder_values_path(project, field),
+              params: { ordered_values: labels(520).first(25), state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(422)
+        expect(field.reload.possible_values).to eq(labels(520))
+        row = RedmineDependingCustomFields::ConfigAuditEvent.order(:id).last
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_reorder_mismatch])
+        patch custom_field_configuration_reorder_values_path(project, field),
+              params: { ordered_values: labels(520).reverse, state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(302)
+      end
+    end
+
+    describe 'enumeration pages before WP-30' do
+      it 'renders a filtered page read-only with list-state delete links' do
+        enum = enum_with(30)
+        get show_path(enum, q: 'n002')
+        expect(row_values.size).to eq(10)
+        expect(doc.css('form.dcf-enumerations-form')).to be_empty
+        expect(doc.css('input[name^="enumerations["]')).to be_empty
+        expect(doc.css('input.dcf-position, .dcf-sort-handle')).to be_empty
+        links = doc.css('table.dcf-values a.icon-del')
+        expect(links.size).to eq(10)
+        links.each { |a| expect(query_of(a['href'])).to include('q' => 'n002', 'state_hash' => service.state_hash(enum)) }
+        expect(doc.css('table.dcf-values tbody tr').first.text).to include('N0020')
+      end
+
+      it 'renders a paginated page read-only with the page in the delete links' do
+        enum = enum_with(520)
+        get show_path(enum, page: 2)
+        expect(row_values.size).to eq(25)
+        expect(doc.css('form.dcf-enumerations-form')).to be_empty
+        expect(doc.css('input[name^="enumerations["]')).to be_empty
+        doc.css('table.dcf-values a.icon-del').each { |a| expect(query_of(a['href'])['page']).to eq('2') }
+        expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_large, max: 500))
+      end
+    end
+
+    describe 'show usage' do
+      it 'shows exact usage of the page rows through page_usage, never per value' do
+        field = own_list(520)
+        2.times { dcf_issue_with_value(project, field, 'Value 0030') }
+        dcf_issue_with_value(dcf_create_project(name: 'Elsewhere'), field, 'Value 0030')
+        expect(RedmineDependingCustomFields::UsageCalculator).not_to receive(:usage_here)
+        expect(RedmineDependingCustomFields::UsageCalculator).not_to receive(:parent_key_refs)
+        get show_path(field, show_usage: 1, page: 2)
+        row = doc.at_css('table.dcf-values tr[data-dcf-value="Value 0030"]')
+        expect(row.css('td').map { |td| td.text.strip }[1, 3]).to eq(%w[2 1 0])
+        doc.css('span.pagination a[href]').each { |a| expect(query_of(a['href'])['show_usage']).to eq('1') }
+      end
+
+      it 'runs no usage query on an enumeration field' do
+        enum = enum_with(3)
+        expect(RedmineDependingCustomFields::UsageCalculator).not_to receive(:page_usage)
+        get show_path(enum, show_usage: 1)
+        expect(response).to have_http_status(200)
+      end
+    end
+
+    describe 'query counts (G6, T-PAG-9)' do
+      before { allow(Setting).to receive(:per_page_options_array).and_return([25, 100]) }
+
+      def usage_world(count)
+        field = dcf_list_field(values: labels(count), is_for_all: false, projects: [project])
+        child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: %w[c1 c2],
+                               parent: field, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'Value 0001' => %w[c1], 'Value 0003' => %w[c2] },
+                                    default_value_dependencies: { 'Value 0001' => 'c1' })
+        %w[Value\ 0001 Value\ 0002 Value\ 0003].each { |v| dcf_issue_with_value(project, field, v) }
+        CustomField.find(field.id)
+      end
+
+      def queries(field, params)
+        dcf_count_queries { get show_path(field, params) }
+      end
+
+      it 'are the same for per_page 25 and 100 and for the first and the last page with show_usage' do
+        field = usage_world(600)
+        get show_path(field, show_usage: 1)
+        c25 = queries(field, show_usage: 1, per_page: 25)
+        c100 = queries(field, show_usage: 1, per_page: 100)
+        expect(row_values.size).to eq(100)
+        expect(c100).to eq(c25)
+        first = queries(field, show_usage: 1, per_page: 25, page: 1)
+        last = queries(field, show_usage: 1, per_page: 25, page: 24)
+        expect(row_values.first).to eq('Value 0576')
+        expect(last).to eq(first)
+      end
+
+      it 'are the same for 25 and 500 values with and without show_usage' do
+        small = usage_world(25)
+        large = usage_world(500)
+        get show_path(small)
+        [{}, { show_usage: 1 }].each do |params|
+          small_count = queries(small, params)
+          large_count = queries(large, params)
+          expect(row_values.size).to eq(500)
+          expect(large_count).to eq(small_count)
+        end
+      end
+
+      it 'are the same for 25 and 500 enumerations, show_usage changing nothing' do
+        small = enum_with(25)
+        large = enum_with(500)
+        get show_path(small)
+        base = queries(small, {})
+        expect(queries(large, {})).to eq(base)
+        expect(queries(large, show_usage: 1)).to eq(base)
+      end
+    end
+
+    describe 'assets (T-ASSET-1, T-ASSET-2)' do
+      def config_css
+        stylesheets.grep(asset.call('dcf_config', 'css'))
+      end
+
+      it 'links dcf_config.css exactly once on every project configuration page and the admin audit page' do
+        parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
+        child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1], parent: parent, is_for_all: true)
+        [show_path(own_list(3)), custom_field_configuration_field_dependencies_path(project, child),
+         settings_project_path(project, tab: 'custom_field_configuration'),
+         custom_field_configuration_audit_path(project)].each do |path|
+          get path
+          expect(response).to have_http_status(200)
+          expect(config_css.size).to eq(1), path
+        end
+        as(dcf_admin)
+        get dcf_config_audit_path
+        expect(config_css.size).to eq(1)
+        get project_path(project)
+        expect(config_css).to be_empty
+      end
+
+      it 'includes dcf_value_reorder.js only when the list is sortable' do
+        { own_list(3) => 1, own_list(1, 'One') => 0, own_list(520) => 0 }.each do |field, count|
+          get show_path(field)
+          expect(scripts.grep(asset.call('dcf_value_reorder', 'js')).size).to eq(count)
+        end
+        get show_path(own_list(30), q: 'value 001')
+        expect(scripts.grep(/dcf_value_reorder/)).to be_empty
+      end
+
+      it 'moves the project rules into dcf_config.css with unchanged selectors' do
+        dir = File.expand_path('../../assets/stylesheets', __dir__)
+        config = File.read(File.join(dir, 'dcf_config.css'))
+        global = File.read(File.join(dir, 'depending_custom_fields.css'))
+        moved = ['.dcf-scope-badge', '.dcf-scope-global', '.dcf-scope-shared', '.dcf-scope-project',
+                 '.dcf-confirm-panel ul', '.dcf-status-success', '.dcf-status-failed', '.dcf-status-neutral',
+                 '.dcf-inline-form', '.dcf-values .dcf-sort-handle', '.dcf-values-sortable .dcf-sort-handle']
+        moved.each do |selector|
+          expect(config).to include(selector)
+          expect(global).not_to include(selector)
+        end
+        %w[.dcf-values-filter .dcf-values-toolbar .dcf-page-scope-note].each { |s| expect(config).to include(s) }
+      end
+    end
+
+    describe 'banners through dcf_flash_box (P-D12)' do
+      it 'shows the global or shared warning with the core icon and none for a project-only field' do
+        other = dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")
+        global = dcf_list_field(values: %w[A B], is_for_all: true)
+        shared = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project, other])
+        own = own_list(2)
+        { global => :text_global_field_warning, shared => :text_shared_field_warning, own => nil }.each do |field, key|
+          get show_path(field)
+          banners = doc.css('div.flash.warning:not([id])')
+          if key
+            expect(banners.size).to eq(1)
+            expect(banners.first.text.strip).to eq(I18n.t(key))
+            expect(banners.first.css('svg').size).to eq(Redmine::VERSION::MAJOR >= 6 ? 1 : 0)
+          else
+            expect(banners).to be_empty
+          end
+        end
+      end
+
+      it 'renders the confirmation panel in a flash box inside .dcf-confirm-panel' do
+        field = dcf_list_field(values: %w[A B], is_for_all: true)
+        patch custom_field_configuration_rename_value_path(project, field), params: { old_value: 'A', new_value: 'A2' }
+        expect(response).to have_http_status(422)
+        box = doc.at_css('div.dcf-confirm-panel > div.flash.warning:not([id])')
+        expect(box).not_to be_nil
+        expect(box.css('svg').size).to eq(Redmine::VERSION::MAJOR >= 6 ? 1 : 0)
+        expect(box.css('ul li').size).to be >= 3
+        expect(box.at_css('form input[name="confirm"][type="checkbox"]')).not_to be_nil
+        expect(doc.css('.dcf-confirm-panel ul')).not_to be_empty
+      end
+    end
+
+    describe 'confirmation panel naming (SD-16)' do
+      let(:other) { dcf_create_project(name: "Other-#{SecureRandom.hex(3)}") }
+      let(:other_role) { dcf_create_role }
+
+      def child_of(parent, name, key, enum: false, **options)
+        child = if enum
+                  dcf_enum_field(format: 'depending_enumeration', name: name, names: %w[c1], parent: parent)
+                else
+                  dcf_list_field(format: 'depending_list', name: name, values: %w[c1], parent: parent, **options)
+                end
+        child_key = enum ? child.enumerations.first.id.to_s : 'c1'
+        dcf_set_dependencies(child, value_dependencies: { key => [child_key] })
+      end
+
+      # Visible and restricted (the manager's role) are named; secret (another
+      # role) and outside (not used in the project) are only counted.
+      def world(parent, key, enum: false)
+        visible = child_of(parent, "Visible-#{SecureRandom.hex(3)}", key, enum: enum)
+        secret = child_of(parent, "SecretChild-#{SecureRandom.hex(3)}", key, enum: enum)
+        secret.update!(visible: false, role_ids: [other_role.id])
+        outside = child_of(parent, "OutChild-#{SecureRandom.hex(3)}", key, enum: enum)
+        outside.update!(is_for_all: false)
+        outside.projects = [other]
+        restricted = child_of(parent, "Restricted-#{SecureRandom.hex(3)}", key, enum: enum)
+        restricted.update!(visible: false, role_ids: [manager.members.first.roles.first.id])
+        { named: [visible, restricted], hidden: [secret, outside] }
+      end
+
+      def affected_line
+        label = I18n.t(:label_affected_child_fields)
+        doc.css('.dcf-confirm-panel li').map { |li| li.text.squish }.find { |text| text.start_with?(label) }
+      end
+
+      def expect_panel(named, hidden, total)
+        expect(response).to have_http_status(422)
+        expect(response.body).to include(I18n.t(:text_dcf_confirm_understand))
+        names = named.map(&:name).sort_by { |n| named.find { |f| f.name == n }.id }
+        expect(affected_line).to eq("#{I18n.t(:label_affected_child_fields)}: #{total} (#{names.join(', ')})")
+        hidden.each { |field| expect(response.body).not_to include(field.name) }
+      end
+
+      it 'names only nameable children on a list rename and a list removal; an admin sees all' do
+        parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: %w[A B], is_for_all: true)
+        fields = world(parent, 'A')
+
+        patch custom_field_configuration_rename_value_path(project, parent), params: { old_value: 'A', new_value: 'A2' }
+        expect_panel(fields[:named], fields[:hidden], 4)
+
+        delete custom_field_configuration_remove_value_path(project, parent), params: { value: 'A' }
+        expect_panel(fields[:named], fields[:hidden], 4)
+
+        as(dcf_admin)
+        patch custom_field_configuration_rename_value_path(project, parent), params: { old_value: 'A', new_value: 'A2' }
+        all = (fields[:named] + fields[:hidden]).sort_by(&:id)
+        expect(affected_line).to eq("#{I18n.t(:label_affected_child_fields)}: 4 (#{all.map(&:name).join(', ')})")
+      end
+
+      it 'names only nameable children on an enumeration removal through the delete link' do
+        parent = dcf_enum_field(name: "EnumParent-#{SecureRandom.hex(3)}", names: %w[P1 P2], is_for_all: true)
+        key = parent.enumerations.order(:position).first.id.to_s
+        fields = world(parent, key, enum: true)
+        get show_path(parent)
+        href = doc.css('table.dcf-values a.icon-del').map { |a| a['href'] }.find { |h| query_of(h)['enumeration_id'] == key }
+
+        delete href
+        expect_panel(fields[:named], fields[:hidden], 4)
+      end
+
+      it 'shows only the count when every affected child is hidden, and escapes names once' do
+        parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: %w[A B], is_for_all: true)
+        secret = child_of(parent, "SecretChild-#{SecureRandom.hex(3)}", 'A')
+        secret.update!(visible: false, role_ids: [other_role.id])
+        patch custom_field_configuration_rename_value_path(project, parent), params: { old_value: 'A', new_value: 'A2' }
+        expect(affected_line).to eq("#{I18n.t(:label_affected_child_fields)}: 1")
+        expect(response.body).not_to include(secret.name)
+        expect(doc.css('.dcf-confirm-panel li').map(&:text).join).to include(
+          "#{I18n.t(:label_dependency_references)}: 1"
+        )
+
+        markup = '<img src=x onerror=alert(1)>'
+        child_of(parent, markup, 'B')
+        patch custom_field_configuration_rename_value_path(project, parent), params: { old_value: 'B', new_value: 'B2' }
+        expect(doc.css('.dcf-confirm-panel img')).to be_empty
+        expect(response.body.scan(ERB::Util.html_escape(markup)).size).to eq(1)
+        expect(response.body).not_to include('&amp;lt;')
+        expect(affected_line).to eq("#{I18n.t(:label_affected_child_fields)}: 1 (#{markup})")
+      end
+    end
+
+    describe 'markup' do
+      it 'drops duplicate ids from the page and labels the rename text fields' do
+        field = own_list(3)
+        get show_path(field)
+        ids = doc.css('#content [id]').map { |node| node['id'] }
+        expect(ids.size).to eq(ids.uniq.size)
+        expect(doc.css('input[name="new_value"]').map { |n| n['aria-label'] }).to eq([I18n.t(:label_dcf_value)] * 3)
+      end
+
+      it 'renders the filtered and the paginated page in German and French without missing translations (G4, G8)' do
+        [['de', :de], ['fr', :fr]].each do |language, locale|
+          manager.update_column(:language, language)
+          I18n.with_locale(I18n.locale) { get show_path(own_list(30), q: 'value 001') }
+          expect(response.body).not_to include('translation missing')
+          expect(response.body).not_to include('translation_missing')
+          expect(doc.text).to include(I18n.t(:text_dcf_values_filtered, count: 11, total: 30, locale: locale))
+          expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_filtered, locale: locale))
+          I18n.with_locale(I18n.locale) { get show_path(own_list(520)) }
+          expect(response.body).not_to include('translation missing')
+          expect(response.body).not_to include('translation_missing')
+          expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_large, max: 500, locale: locale))
+        end
+      end
+
+      it 'has the registry texts for the WP-28 keys in the four locales' do
+        registry = File.read(File.expand_path('../../docs/specs/large_lists_i18n_registry.md', __dir__),
+                             encoding: 'UTF-8')
+        locales = [:en, :de, :fr, :nl]
+        %w[text_dcf_values_filtered text_dcf_drag_reorder_large text_dcf_drag_reorder_filtered].each do |key|
+          row = registry.lines.find { |line| line.start_with?("| `#{key}` | WP-28 |") }
+          cells = row.split(' | ').map(&:strip)
+          texts = cells[4, 4].map { |cell| cell.delete_suffix(' |').delete_suffix('|').strip }
+          locales.each_with_index do |locale, i|
+            raw = I18n.backend.send(:translations).dig(locale, key.to_sym)
+            expect(raw).to eq(texts[i]), "#{key} #{locale}"
+          end
+        end
+      end
+    end
+
+    describe 'audit page (project design 4)' do
+      it 'selects only the listed columns, counts every row and renders the rows unchanged' do
+        events = RedmineDependingCustomFields::ConfigAuditEvent
+        30.times do |i|
+          events.create!(project_id: project.id, action: 'rename_value', status: 'success',
+                         custom_field_name: "F#{i}", acting_user_name: 'M', changes_summary: "<b>S#{i}</b>",
+                         before_value: 'x' * 16_384, after_value: 'y' * 16_384, created_at: Time.now - i)
+        end
+        sqls = []
+        callback = lambda do |*, payload|
+          sqls << payload[:sql] unless payload[:name] == 'SCHEMA' || payload[:cached]
+        end
+        ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+          get custom_field_configuration_audit_path(project)
+        end
+        expect(response).to have_http_status(200)
+        # G6: no absolute query counts; the row query is found by its shape.
+        audit = sqls.grep(/dcf_config_audit_events/)
+        row_sql = audit.find { |sql| sql =~ /LIMIT/i && sql !~ /COUNT\(/i }
+        expect(row_sql).to be_present
+        expect(row_sql).not_to match(/before_value|after_value|\.\*|SELECT \*/)
+        expect(audit.grep(/COUNT\(\*\)/i)).not_to be_empty
+        rows = doc.css('table.dcf-audit-list tbody tr')
+        expect(rows.size).to eq(25)
+        expect(rows.first.css('td').map { |td| td.text.strip }[1..]).to eq(['M', 'F0', 'rename_value', 'success', '<b>S0</b>'])
+        expect(doc.css('span.pagination span.items').text).to eq('(1-25/30)')
+        get "#{custom_field_configuration_audit_path(project)}?page[]=1"
+        expect(response).to have_http_status(200)
       end
     end
   end

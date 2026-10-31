@@ -194,6 +194,9 @@ fr:
   label_dcf_export_protect_formulas: "Protéger les cellules qu'un tableur exécuterait comme des formules"
   text_dcf_parent_not_available: "Le champ parent %{name} n'est pas disponible dans ce projet. Ce mappage ne peut donc être modifié que par un administrateur dans les paramètres du champ personnalisé."
   text_dcf_parent_missing: "Le champ parent de ce champ n'existe plus, aucun mappage des dépendances ne peut donc être modifié. Un administrateur peut choisir un autre champ parent."
+  text_dcf_values_filtered: "Valeurs correspondant au filtre : %{count} sur %{total}."
+  text_dcf_drag_reorder_large: "Le réordonnancement par glisser-déposer est disponible pour les champs d'au plus %{max} valeurs. Utilisez les boutons de tri pour ordonner ce champ."
+  text_dcf_drag_reorder_filtered: "Effacez le filtre pour modifier l'ordre par glisser-déposer."
 
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:

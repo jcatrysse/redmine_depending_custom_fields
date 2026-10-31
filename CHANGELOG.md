@@ -215,6 +215,7 @@
 * Added: A dependency editor replaces the checkbox matrix on the admin custom field form and on the project dependency page: collapsible sections per parent value, search, check or uncheck all shown, filters for values without links, counters, per-parent defaults inside each section and inactive values shown and kept.
 * Added: CSV import of links (paste or file, preview with per-line errors, merge or replace, undo) and CSV export from the editor, with optional spreadsheet formula protection; 'Add missing child values' for List (depending) fields on the admin form.
 * Added: A save is refused when someone else changed the dependency mapping after the page was opened; the editor then shows the current version and your version (use, keep or export yours).
+* Added: Search on the project values page for fields with more than 25 values, and pagination for fields with more than 500 values.
 * Changed: The admin form sends the dependency mapping as one field (custom_field[dependencies_json]) and is submitted as multipart/form-data while the editor is active.
 * Changed: Saving the admin form without touching the dependencies leaves the stored mapping unchanged.
 * Changed: Changing the parent field in the admin form removes links that do not match the new parent's values.
@@ -223,6 +224,7 @@
 * Changed: The dependency editors need JavaScript. Without it the admin form keeps the mapping unchanged and the project page disables Save.
 * Changed: Links to values that no longer exist are reported by the editor and removed at the next editor save; project audit rows count them.
 * Changed: Project dependency audit rows store a compact summary (counts, samples, SHA-256 of the mapping); sort and reorder audit rows store the SHA-256 of the order. The source and import details are reported by the browser and are informational.
+* Changed: Drag-and-drop ordering is offered only for unfiltered lists with at most 500 values; redirects keep the search and the page; 'Show usage' reports exact counts.
 * Fixed: Unticking every link clears the mapping; parent values containing [ or ] and mappings with more than about 4,000 links can be saved (admin form and project settings).
 * Fixed: Links to inactive Key/Value list entries are kept on admin saves.
 * Fixed: Correcting a failed dependency save in project settings and saving again no longer reports a conflict.

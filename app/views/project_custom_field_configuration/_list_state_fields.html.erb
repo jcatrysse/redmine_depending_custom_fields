@@ -1,0 +1,5 @@
+<%# Hidden search and page of the values page (project design 5): q only
+    when it filters, page only above 1, without ids (the forms repeat per
+    row). Pass state.slice(:q) for a form that must not keep the page. %>
+<%= hidden_field_tag :q, state[:q], id: nil if state.key?(:q) %>
+<%= hidden_field_tag :page, state[:page], id: nil if state.key?(:page) %>

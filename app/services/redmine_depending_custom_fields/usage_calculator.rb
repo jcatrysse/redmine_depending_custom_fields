@@ -8,6 +8,9 @@ module RedmineDependingCustomFields
     # rather than running an unbounded scan (Functional §7 / UI §4).
     USAGE_CAP = 50_000
 
+    # Exact usage of one value on the values page (page_usage).
+    PageUsage = Struct.new(:here, :other, :refs, keyword_init: true)
+
     module_function
 
     # value_key is the stored CustomValue.value: the option string for list
@@ -72,6 +75,77 @@ module RedmineDependingCustomFields
         (child.value_dependencies || {}).key?(pv) ||
           (child.default_value_dependencies || {}).key?(pv)
       end
+    end
+
+    # Exact usage of the keys of one values page (project design 5): two
+    # grouped CustomValue counts (all, and scoped to the project like
+    # usage_here), own references from the field's stores in memory and
+    # parent references from the children the FieldIndex lists, loaded in one
+    # query. Equals usage_here, usage_other and own_dep_refs plus
+    # parent_key_refs per key, without USAGE_CAP; the counts are byte-exact
+    # also on MySQL and MariaDB, where the per-value methods count values
+    # that are equal under the column collation together. {key => PageUsage}.
+    def page_usage(field, keys, project, index: FieldIndex.load)
+      keys = keys.map(&:to_s).uniq
+      return {} if keys.empty?
+
+      base = CustomValue.where(custom_field_id: field.id, value: keys)
+      totals = grouped_value_counts(base)
+      here = grouped_value_counts(scope_to_project(field, base, project))
+      refs = own_refs_by_key(field, keys)
+      DependencyRules.children_of(field, index: index).each do |child|
+        vd = child.value_dependencies || {}
+        dd = child.default_value_dependencies || {}
+        keys.each do |key|
+          refs[key] += 1 if vd.key?(key)
+          refs[key] += 1 if dd.key?(key)
+        end
+      end
+      keys.each_with_object({}) do |key, out|
+        count = here.fetch(key, 0)
+        out[key] = PageUsage.new(here: count, other: [totals.fetch(key, 0) - count, 0].max, refs: refs[key])
+      end
+    end
+
+    # {value => count} of a CustomValue scope, byte-exact. MySQL and MariaDB
+    # compare TEXT with the column collation (case- and accent-insensitive by
+    # default), so 'A' and 'a' would share one group: group by the bytes
+    # there and read the binary keys back as UTF-8.
+    def grouped_value_counts(scope)
+      return scope.group(:value).count unless Redmine::Database.mysql?
+
+      scope.group(Arel.sql('CAST(custom_values.value AS BINARY)')).count.transform_keys do |key|
+        key.to_s.dup.force_encoding(Encoding::UTF_8)
+      end
+    end
+
+    # own_dep_refs for every key in one pass over the field's stores.
+    def own_refs_by_key(field, keys)
+      counts = Hash.new(0)
+      return counts unless FieldRelevance.depending_format?(field)
+
+      wanted = keys.to_h { |key| [key, true] }
+      [field.value_dependencies || {}, field.default_value_dependencies || {}].each do |store|
+        store.each_value do |values|
+          Array(values).each do |value|
+            text = value.to_s
+            counts[text] += 1 if wanted.key?(text)
+          end
+        end
+      end
+      counts
+    end
+
+    # SD-16: the one naming rule of the WP-12 errors (BaseService#nameable_field?
+    # delegates here) and the confirmation panel: the edited field, an
+    # administrator, or a field used in the project and visible to the user.
+    # Fail closed.
+    def nameable_child?(child, field, project, user)
+      return true if child.id == field.id || user.admin?
+
+      FieldRelevance.in_project?(child, project) && child.visible_by?(project, user)
+    rescue StandardError
+      false
     end
   end
 end

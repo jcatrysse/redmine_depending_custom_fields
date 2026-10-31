@@ -1,0 +1,28 @@
+/* Project custom field configuration pages (project design 10): each view
+   links this file through content_for :header_tags; the head hook never
+   does. Selectors are unchanged from depending_custom_fields.css, so theme
+   overrides still match. */
+.dcf-scope-badge { display: inline-block; padding: 0 .4em; border-radius: 3px; font-size: .85em; }
+.dcf-scope-global { background: #c62828; color: #fff; }
+.dcf-scope-shared { background: #ef6c00; color: #fff; }
+.dcf-scope-project { background: #2e7d32; color: #fff; }
+.dcf-confirm-panel ul { margin: .5em 0; }
+.dcf-status-success { color: #2e7d32; }
+.dcf-status-failed { color: #c62828; }
+.dcf-status-neutral { color: #555; }
+.dcf-inline-form { display: inline; }
+/* Drag handle is only useful once the sortable is initialised, so it stays
+   hidden until the JS enables it rather than sitting there inert. Icon and
+   cursor come from core .icon-sort-handle. */
+.dcf-values .dcf-sort-handle { display: none; }
+.dcf-values-sortable .dcf-sort-handle {
+  display: inline-block;
+  vertical-align: middle;
+  cursor: move;
+}
+
+/* Values page search, sort and page-mode note (WP-28 to WP-30). */
+.dcf-values-filter fieldset { margin-bottom: .5em; }
+.dcf-values-toolbar { display: flex; flex-wrap: wrap; gap: .5em 1.5em; align-items: center; margin-bottom: .5em; }
+.dcf-values-toolbar form { display: inline; }
+.dcf-page-scope-note { color: #555; }

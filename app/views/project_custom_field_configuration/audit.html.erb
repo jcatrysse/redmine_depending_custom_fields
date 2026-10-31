@@ -1,3 +1,7 @@
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
+<% end %>
+
 <div class="contextual">
   <%= link_to l(:button_back), settings_project_path(@project, tab: 'custom_field_configuration'),
               class: 'icon icon-cancel' %>

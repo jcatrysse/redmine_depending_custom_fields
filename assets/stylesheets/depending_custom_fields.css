@@ -98,24 +98,3 @@ label.dcf-legacy-option { font-style: italic; }
   justify-content: flex-end;
   gap: 4px;
 }
-
-
-/* Project-level custom field configuration */
-.dcf-scope-badge { display: inline-block; padding: 0 .4em; border-radius: 3px; font-size: .85em; }
-.dcf-scope-global { background: #c62828; color: #fff; }
-.dcf-scope-shared { background: #ef6c00; color: #fff; }
-.dcf-scope-project { background: #2e7d32; color: #fff; }
-.dcf-confirm-panel ul { margin: .5em 0; }
-.dcf-status-success { color: #2e7d32; }
-.dcf-status-failed { color: #c62828; }
-.dcf-status-neutral { color: #555; }
-.dcf-inline-form { display: inline; }
-/* Drag handle is only useful once the sortable is initialised, so it stays
-   hidden until the JS enables it rather than sitting there inert. Icon and
-   cursor come from core .icon-sort-handle. */
-.dcf-values .dcf-sort-handle { display: none; }
-.dcf-values-sortable .dcf-sort-handle {
-  display: inline-block;
-  vertical-align: middle;
-  cursor: move;
-}

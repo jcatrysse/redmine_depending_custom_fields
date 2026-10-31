@@ -1,4 +1,8 @@
 <% fields = dcf_relevant_custom_fields(@project) %>
+<%# Core _tabs renders every tab partial inline, so content_for reaches the head. %>
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
+<% end %>
 <div class="box dcf-config-overview">
   <div class="contextual">
     <%= link_to l(:label_custom_field_config_audit),

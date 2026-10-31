@@ -5,6 +5,9 @@
 class ProjectCustomFieldConfigurationController < ApplicationController
   helper :project_custom_field_configuration
 
+  AUDIT_COLUMNS = [:id, :project_id, :custom_field_id, :custom_field_name, :acting_user_id, :acting_user_name,
+                   :action, :status, :changes_summary, :error_message, :created_at].freeze
+
   before_action :find_project
   before_action :authorize
   before_action :ensure_audit_table
@@ -87,12 +90,15 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     end
   end
 
+  # The page loads only the columns the view shows (project design 4); the
+  # count stays on the unselected scope.
   def audit
     scope = RedmineDependingCustomFields::ConfigAuditEvent
             .where(project_id: @project.id).order(created_at: :desc, id: :desc)
     @event_count = scope.count
-    @paginator = Redmine::Pagination::Paginator.new(@event_count, 25, params[:page])
-    @events = scope.limit(@paginator.per_page).offset(@paginator.offset).to_a
+    page = RedmineDependingCustomFields::ValuesPage.coerce_page(params[:page])
+    @paginator = Redmine::Pagination::Paginator.new(@event_count, 25, page)
+    @events = scope.select(AUDIT_COLUMNS).limit(@paginator.per_page).offset(@paginator.offset).to_a
   end
 
   private
@@ -139,7 +145,7 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     klass.new(project: @project, field: @field, user: User.current,
               params: value_params, request: request).call
     flash[:notice] = translate_error(notice)
-    redirect_to custom_field_configuration_field_path(@project, @field)
+    redirect_to custom_field_configuration_field_path(@project, @field, redirect_state(action))
   rescue RedmineDependingCustomFields::ConfirmationRequired => e
     @impact = e.impact
     @pending_action = action
@@ -157,16 +163,45 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     end
   end
 
+  # Show and every re-render read q and page from the request (posted or
+  # in the query string), so a refused operation shows the same page.
   def prepare_show
     @field.reload
     @state_hash = RedmineDependingCustomFields::BaseService.state_hash(@field)
     @show_usage = params[:show_usage].present?
     @dependency_capable = RedmineDependingCustomFields::FieldRelevance.dependency_capable?(@field)
-    if RedmineDependingCustomFields::FieldRelevance.enum_family?(@field)
-      @enumerations = @field.enumerations.order(:position).to_a
-    else
-      @list_values = Array(@field.possible_values)
-    end
+    @values_page = RedmineDependingCustomFields::ValuesPage.new(@field, q: params[:q], page: params[:page],
+                                                                         per_page: per_page_option)
+    @rows = @values_page.rows
+    @usage = if @show_usage && RedmineDependingCustomFields::FieldRelevance.list_family?(@field)
+               RedmineDependingCustomFields::UsageCalculator.page_usage(@field, @rows.map(&:key), @project)
+             end
+    @default_options = @values_page.default_options
+  end
+
+  # Where a successful value operation returns (project design 5): the posted
+  # q when it filters and page when above 1; add_value drops q and jumps to
+  # the page of the new value. An empty Hash gives the bare field path.
+  def redirect_state(action)
+    return add_value_state if action == :add_value
+
+    RedmineDependingCustomFields::ValuesPage.state_for(params[:q], params[:page])
+  end
+
+  # The page of the added value: its index among the reloaded list values
+  # (the value normalized as AddValueService does), or the last row for an
+  # enumeration (appended at the highest position). Only when paginated.
+  def add_value_state
+    @field.reload
+    options = RedmineDependingCustomFields::DependencyRules.value_options(@field)
+    index = if RedmineDependingCustomFields::FieldRelevance.enum_family?(@field)
+              options.size - 1
+            else
+              added = value_params[:value].to_s.strip
+              options.index { |(key, _label, _active)| key == added }
+            end
+    page = RedmineDependingCustomFields::ValuesPage.page_for_index(index, options.size, per_page_option)
+    page > 1 ? { page: page } : {}
   end
 
   # R9: every render reloads the field, so the state hash and the editor never

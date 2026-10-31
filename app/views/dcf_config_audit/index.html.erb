@@ -1,3 +1,7 @@
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
+<% end %>
+
 <h2><%= l(:label_custom_field_config_audit_global) %></h2>
 
 <% if @events.empty? %>
