@@ -299,6 +299,51 @@ Params: `default_value_dependencies` (hash).
 
 (F and G may be saved together from the same matrix screen in one transaction.)
 
+### F/G as built from 0.1.0 (Amendment A5, WP-27)
+
+F and G are one operation, `DependencyMappingService`, audited as
+`update_dependencies`; the steps above describe 0.0.16.
+
+1. **Transport.** The dependency page posts one multipart field,
+   `dependencies_json`, a String of at most 4 MiB in payload schema v1
+   (`version` 1, `source` `editor` or `import`, `import` `{mode, rows}` only
+   with `source` `import`, `value_dependencies`, `default_value_dependencies`;
+   a well-formed `base` is ignored on this path, a malformed one refused).
+   The controller copies it raw; the service parses it with
+   `DependencyPayload.parse!` inside `perform!`, after the preamble (the
+   permission check first, the stale check last) and after the parent checks,
+   so an unauthorized request is refused before any parse (SP-20b). The
+   payload replaces the whole mapping; `{}` clears.
+2. **Legacy fallback.** Without the `dependencies_json` key the nested
+   `value_dependencies` / `default_value_dependencies` params are read as in
+   0.0.16 (nothing posted clears, defaults stored as submitted) and one
+   constant deprecation line is logged. Deprecated in 0.1.0, accepted
+   throughout 0.1.x, removable no earlier than 0.2.0. When both are posted
+   the JSON wins.
+3. **Parent.** `DependencyRules.parent_of` (nil for a dangling, own, other
+   type or other family pointer) gives `error_invalid_dependency`; a parent
+   not relevant to the project gives 404 `error_field_not_found`.
+4. **Validation.** Keys from `DependencyRules.value_options` of the field
+   and its parent (inactive enumerations included), checked with Sets
+   through `DependencyRules.mapping_problems`. Every offender is collected:
+   unknown parent keys, unknown child values (unknown defaults included),
+   defaults not linked and, on the JSON path, several defaults on a
+   single-value field (defaults are shaped by `multiple`: a list for a
+   multiple field, one value otherwise). One `error_invalid_dependency`
+   whose audit summary lists each group with its count and at most 5
+   offenders of 40 characters (summary at most 1,000); the flash is the
+   generic text only.
+5. **Save and audit.** One `field.save!` of the edited field only (no
+   cascade, no prune, no confirmation step on shared or global fields,
+   UD-23); the success row holds the compact delta v2 (Audit Spec §3).
+6. **Re-render.** A 422 after an ok parse shows the posted mapping in the
+   editor, dirty; a parser error or the legacy path shows the stored
+   mapping. Every re-render reloads the field first, so the rendered
+   `state_hash` is the stored one (R9). A 409 (stale `state_hash`) shows the
+   stored mapping and the posted version as `data-dcf-editor-conflict-mapping`
+   (parsed once, after authorization), with the shared conflict panel (use my
+   version, keep the current version, export my version; UD-17).
+
 ## Normalization & comparison rules
 
 - `normalize` = `value.to_s.strip`. Do not alter case (Redmine list values are
@@ -322,6 +367,8 @@ Params: `default_value_dependencies` (hash).
 | Batch save: name taken by another active value | 422 | error_value_duplicate |
 | Batch save: submitted ids do not cover the value set | 422 | error_reorder_mismatch |
 | Invalid dependency | 422 | error_invalid_dependency |
+| Dependency payload unreadable (blank, malformed, wrong type or schema, long number) | 422 | error_invalid_dependency_payload |
+| Dependency payload above 4 MiB | 422 | error_dcf_dependencies_too_large_to_send |
 | In-use (when blocking enabled) | 422 | error_value_in_use |
 | Stale edit | 409/422 | error_stale_edit |
 | Needs confirmation | 422 (re-render) | text_confirm_cross_project_change |

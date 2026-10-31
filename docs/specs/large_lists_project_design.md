@@ -585,7 +585,7 @@ New class `app/services/redmine_depending_custom_fields/dependency_delta.rb` (pr
 
 Measured worst case 12,028 B (`proto2/delta_worst.out`). AuditPayload's 16,384 B cap is a backstop that this delta never reaches.
 
-**Digest.** `mapping_sha256` = SHA-256 of `JSON.generate([vd.keys.sort.map { |k| [k, vd[k].sort] }, dd.keys.sort.map { |k| [k, Array(dd[k]).sort] }])`. The `before_value` chain lets an auditor detect mapping changes made outside the audited project path (admin form, API, D6).
+**Digest.** `mapping_sha256` = SHA-256 of `JSON.generate([vd.keys.sort.map { |k| [k, vd[k].sort] }, dd.keys.sort.map { |k| [k, Array(dd[k]).sort] }])` (amended by WP-27: `mapping_sha256` = `DependencyPayload.digest`, values as a set, a String default equals a list of one; the formula above holds only for duplicate-free value lists). The `before_value` chain lets an auditor detect mapping changes made outside the audited project path (admin form, API, D6).
 
 **Summary** (English, as every existing summary, at most 1,000 characters): `Updated dependency mapping (import, replace, 5000 rows): +40/-10 links, 2 orphaned removed, 2 default(s) changed, 23 parent value(s)`. The source part is `(editor)`, `(form)` or `(import, <mode>, <rows> rows)`. A no-op save is still audited.
 

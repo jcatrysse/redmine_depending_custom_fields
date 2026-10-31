@@ -393,3 +393,47 @@ Two smaller cleanups the new shape allowed:
   one (§E needs no panel), but the panel now skips hashes so a future confirmable
   batch operation fails loudly on the id-set check instead of silently
   re-submitting a mangled payload.
+
+## Amendment A5: The dependency page on the shared editor (0.1.0, WP-27)
+
+Written by WP-27 (`large_lists_work_packages.md`), finalized by WP-32. Design:
+`large_lists_project_design.md` sections 2 to 4, `large_lists_editor_design.md`
+section 7; decisions UD-16, UD-17, UD-23.
+
+- **Editor.** `edit_dependencies` renders the shared dependency editor of the
+  admin form in project mode (`DependencyEditorConfig.for_project`) inside one
+  multipart PATCH form with the hidden `state_hash`; the checkbox matrix, its
+  nested `value_dependencies[...]` / `default_value_dependencies[...]` controls,
+  `text_dependency_matrix_help` and `.dcf-dependencies-matrix` are gone. Save is
+  rendered disabled and enabled by the editor after a successful start; without
+  JavaScript nothing can be posted (UD-16). The global or shared warning shows
+  through `dcf_flash_box`; a missing parent (`text_dcf_parent_missing`) or one
+  not available in the project (`text_dcf_parent_not_available`) replaces the
+  editor with a notice.
+- **Transport.** One field, `dependencies_json` (payload schema v1, at most
+  4 MiB), parsed by `DependencyPayload.parse!` inside
+  `DependencyMappingService#perform!`, after the preamble authorized the user
+  and after the parent checks, so every bad input is an audited 422 and an
+  unauthorized request is refused before any parse. Brackets in parent values
+  and more than 4,096 links save exactly. The nested params stay accepted when
+  the key is absent (deprecated in 0.1.0, removable no earlier than 0.2.0, one
+  log line per request).
+- **Validation.** Strict, with Sets; all offenders (unknown parent keys,
+  unknown child values, defaults not linked, several defaults on a
+  single-value field) in one audit summary, never in the flash. Defaults take
+  the field's shape on the JSON path.
+- **Delta.** `update_dependencies` rows store the compact delta v2 (counts,
+  samples bounded by entries and encoded bytes, labels of this field and its
+  parent only, `mapping_sha256`, client-reported `source` and `import`) instead
+  of the full mapping, so no row reaches the 16,384-byte audit cap.
+- **Import and export.** The editor's CSV import (merge or replace, preview,
+  undo) and export work on the project page as on the admin form; a saved
+  import is audited with `source` `import` and its mode and rows. Shared and
+  global fields get no confirmation step, replace imports included (UD-23).
+- **Orphans.** Links to values that no longer exist are reported by the editor
+  and removed by the next save, which counts them (`orphans_removed`).
+- **409 recovery.** A stale save shows the stored mapping and the posted
+  version in the shared conflict panel (use my version, keep the current
+  version, export my version); nothing is applied automatically (UD-17).
+  Every re-render reloads the field first, so correcting a failed save and
+  saving again no longer gives a 409 (R9).

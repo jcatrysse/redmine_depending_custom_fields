@@ -135,6 +135,35 @@ Only for fields with a `parent_custom_field_id`.
 - Buttons: Save / Cancel.
 - Reuse the existing matrix JavaScript only; add no new framework.
 
+**As built from 0.1.0 (Amendment A5, WP-27).** The matrix is replaced by the
+shared dependency editor (the partial of the admin form, project mode):
+- Markup: one multipart PATCH form holding the hidden `state_hash`, the editor
+  (`fieldset[data-dcf-editor][data-dcf-editor-mode="project"]`, sections per
+  parent value, search, filters, per-parent defaults, inactive values shown and
+  kept, orphan notice, CSV import and export) with its one named control, the
+  always blank hidden `dependencies_json`, and Save / Cancel. The help text is
+  the editor's `text_dcf_editor_help`; `text_dependency_matrix_help` is gone.
+- Save gate (UD-16): Save is rendered `disabled` with `data-dcf-editor-submit`
+  and enabled by the editor after a successful start; an inert editor keeps it
+  disabled; without JavaScript the noscript text `text_dcf_editor_noscript`
+  shows and nothing can be posted.
+- Banners: the global or shared warning (`text_global_field_warning`,
+  `text_shared_field_warning`, by the field's own scope) through
+  `dcf_flash_box` (core's notice icon on 6.0 and later, the class background
+  icon on 5.1). Shared and global fields get no confirmation step (UD-23).
+- Notices instead of the editor: `text_dcf_parent_missing` when the parent
+  pointer resolves to no field of the same type and family (dangling, own,
+  other type or family); `text_dcf_parent_not_available` (the parent name,
+  escaped once) when the parent is not available in the project. A blank
+  pointer keeps the 422 `error_format_unsupported` page.
+- Failed save (gap 1): a 422 after a readable payload shows the posted mapping
+  with `data-dcf-editor-dirty="1"`, so the editor starts dirty and warns before
+  leaving; the hidden input stays blank. An unreadable payload shows the
+  stored mapping.
+- Conflict (UD-17): a 409 shows the stored mapping and the posted version in
+  the shared conflict panel (use my version, keep the current version, export
+  my version as CSV); nothing is applied automatically.
+
 ## 6. Screen 4 — Audit log (action `audit`)
 
 `<table class="list">`:
@@ -182,6 +211,13 @@ Errors: as listed in §7.
 Warnings: `text_shared_field_warning`, `text_global_field_warning`,
 `text_confirm_cross_project_change`.
 
+From 0.1.0 (WP-27): `text_dependency_matrix_help` is removed; the dependency
+page adds `text_dcf_parent_missing` and `text_dcf_parent_not_available`
+(`%{name}`) and reuses the editor keys (`text_dcf_editor_help`,
+`text_dcf_editor_noscript`, `error_invalid_dependency_payload`,
+`error_dcf_dependencies_too_large_to_send` and the `DependencyEditorConfig`
+map), all in en, de, fr and nl (`large_lists_i18n_registry.md`).
+
 ## 9. Accessibility / no-JS behaviour
 
 - Reordering is drag-only, matching core exactly: no Redmine version from 5.1
@@ -203,6 +239,9 @@ Warnings: `text_shared_field_warning`, `text_global_field_warning`,
   the client hooks by markup assertions (T-ORD-8..13).
 - All destructive actions are real form submissions (POST) with confirm dialogs
   using Redmine's `data: { confirm: ... }` pattern.
+- The dependency page needs JavaScript from 0.1.0 (UD-16, WP-27): without it
+  Save stays disabled and the noscript text explains why; managers change
+  mappings with the editor only.
 
 ## 10. Out-of-scope UI
 

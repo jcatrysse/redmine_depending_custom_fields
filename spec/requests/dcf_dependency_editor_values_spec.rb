@@ -334,15 +334,21 @@ RSpec.describe 'GET /dcf_dependency_editor/values (WP-24)', type: :request do
   end
 
   # Changed by WP-25: the admin format partials render the editor (was:
-  # 'is rendered by no production view yet'); WP-27 adds the project page.
+  # 'is rendered by no production view yet'). Changed by WP-27: the project
+  # dependency page renders it too (was: the two admin partials only).
   describe 'the editor partial' do
-    it 'is rendered by the admin format partials' do
+    it 'is rendered by the admin format partials and the project dependency page' do
       log_in(admin, 'admin')
       child = dcf_list_field(format: 'depending_list', name: 'Wired child', values: %w[c1], parent: list_parent)
       get "/custom_fields/#{child.id}/edit"
 
       expect(response).to have_http_status(200)
       expect(Nokogiri::HTML(response.body).css('fieldset[data-dcf-editor]').size).to eq(1)
+      project = dcf_create_project
+      get "/projects/#{project.identifier}/custom_field_configuration/fields/#{child.id}/dependencies"
+      expect(response).to have_http_status(200)
+      expect(Nokogiri::HTML(response.body).css('fieldset[data-dcf-editor][data-dcf-editor-mode="project"]').size)
+        .to eq(1)
       root = File.expand_path('../..', __dir__)
       users = Dir[File.join(root, 'app', '**', '*.{rb,erb}')].select do |path|
         File.read(path).match?(/dependency_editor|DependencyEditorConfig/)
@@ -351,7 +357,8 @@ RSpec.describe 'GET /dcf_dependency_editor/values (WP-24)', type: :request do
         .to contain_exactly('app/controllers/dcf_dependency_editor_controller.rb',
                             'app/views/depending_custom_fields/_dependency_editor.html.erb',
                             'app/views/custom_fields/formats/_depending_list.html.erb',
-                            'app/views/custom_fields/formats/_depending_enumeration.html.erb')
+                            'app/views/custom_fields/formats/_depending_enumeration.html.erb',
+                            'app/views/project_custom_field_configuration/edit_dependencies.html.erb')
     end
   end
 

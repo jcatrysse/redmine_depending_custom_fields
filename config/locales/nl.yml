@@ -54,7 +54,6 @@ nl:
   text_global_field_warning: "Dit veld is globaal (gebruikt door elk project). Wijzigingen hebben invloed op alle projecten."
   text_confirm_cross_project_change: "Deze wijziging heeft projectoverschrijdende of in-gebruik-impact. Controleer en bevestig."
   text_dcf_confirm_understand: "Ik begrijp dat dit andere projecten / bestaande gegevens beïnvloedt."
-  text_dependency_matrix_help: "Vink de toegelaten onderliggende waarden aan per bovenliggende waarde en kies eventueel een standaard onderliggende waarde per bovenliggende waarde."
   text_manage_standard_custom_fields_info: "Wanneer uitgeschakeld, worden standaard lijst- en sleutel/waardevelden uitgesloten van delegatie op projectniveau (de afhankelijke formaten van de plugin blijven beschikbaar)."
   text_block_removal_when_used_info: "Wanneer ingeschakeld, kan een waarde die nog door issues wordt gebruikt niet worden verwijderd."
   notice_value_added: "Waarde toegevoegd."
@@ -193,6 +192,8 @@ nl:
   label_dcf_export_links: "Koppelingen exporteren (CSV)"
   text_dcf_export_help: "Exporteert de koppelingen die nu in de editor staan, inclusief niet-opgeslagen wijzigingen, als UTF-8-CSV-bestand met één koppeling per regel. Een rekenblad kan waarden die met =, +, - of @ beginnen als formules uitvoeren: open zulke bestanden voorzichtig of bescherm die cellen."
   label_dcf_export_protect_formulas: "Cellen beschermen die een rekenblad als formule zou uitvoeren"
+  text_dcf_parent_not_available: "Het bovenliggende veld %{name} is niet beschikbaar in dit project. Deze koppeling kan daarom alleen door een beheerder in de instellingen van het aangepaste veld worden gewijzigd."
+  text_dcf_parent_missing: "Het bovenliggende veld van dit veld bestaat niet meer, daarom kan geen afhankelijkheidskoppeling worden bewerkt. Een beheerder kan een ander bovenliggend veld kiezen."
 
   # Modelfouten, getoond na de veldnaam
   activerecord:

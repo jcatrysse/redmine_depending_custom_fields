@@ -1612,3 +1612,119 @@ test('preview table and header warning show markup values as text only (no eleme
   assert.equal(p.root.querySelectorAll('script, img, b, i, u').length, 0);
   assert.equal(ui.apply.disabled, false);
 });
+
+// WP-27 (project design 15, UD-16, UD-17, gap 1): the project page cases the
+// WP-25 and WP-26 tests leave open, on both project fixtures and variants.
+const PROJECT_KEYS = ['version', 'source', 'import', 'value_dependencies', 'default_value_dependencies'];
+
+test('project submit gate: only the Save buttons of the editor form are enabled, inert keeps them all disabled', async () => {
+  const outside = (doc) => {
+    const form = doc.createElement('form');
+    form.innerHTML = '<input type="submit" value="Other" data-dcf-editor-submit disabled>';
+    doc.body.appendChild(form);
+    const second = doc.createElement('button');
+    second.setAttribute('data-dcf-editor-submit', '');
+    second.disabled = true;
+    doc.querySelector('form').appendChild(second);
+  };
+  for (const name of ['project_list', 'project_enumeration']) {
+    for (const variant of VARIANTS) {
+      const good = await E.load(name, { variant, tweak: (r, doc) => outside(doc) });
+      const gates = Array.from(good.document.querySelectorAll('[data-dcf-editor-submit]'));
+      assert.equal(gates.length, 3, name);
+      assert.deepEqual(gates.map((b) => [b.form === good.form, b.disabled]), [[true, false], [true, false], [false, true]], name);
+
+      const bad = await E.load(name, {
+        variant,
+        tweak: (r, doc) => { outside(doc); r.setAttribute('data-dcf-editor-mapping', '{"value_dependencies":{'); }
+      });
+      assert.ok(Array.from(bad.document.querySelectorAll('[data-dcf-editor-submit]')).every((b) => b.disabled), name);
+      assert.equal(bad.input.value, '', name);
+      assert.equal(bad.editor().inert, true, name);
+      assert.equal(bad.alerts().length, 1, name);
+    }
+  }
+});
+
+test('project hidden input: blank as rendered, the JSON from init on, never a base or a meta key', async () => {
+  for (const name of ['project_list', 'project_enumeration']) {
+    for (const variant of VARIANTS) {
+      const bare = await E.load(name, { variant, noEditor: true });
+      assert.equal(bare.input.value, '', name);
+      assert.equal(bare.form.querySelector('[data-dcf-editor-submit]').disabled, true, name);
+      const p = await E.load(name, { variant });
+      const data = p.payload();
+      assert.deepEqual(Object.keys(data).filter((k) => !PROJECT_KEYS.includes(k)), [], name);
+      assert.equal(data.base, undefined, name);
+      assert.equal(data.meta, undefined, name);
+      assert.equal(data.source, 'editor', name);
+      assert.equal(p.root.getAttribute('data-dcf-editor-base'), null, name);
+    }
+  }
+});
+
+test('project failed-save re-render: data-dcf-editor-dirty="1" starts dirty, writes the posted mapping and warns (gap 1)', async () => {
+  const unload = (p) => p.fire(p.window, 'beforeunload').defaultPrevented;
+  for (const variant of VARIANTS) {
+    const posted = await E.load('project_enumeration', { variant });
+    assert.equal(posted.root.getAttribute('data-dcf-editor-dirty'), '1');
+    assert.equal(posted.editor().dirty, true);
+    assert.deepEqual(posted.payload().value_dependencies, { 9200001: [9200004], 9200002: [9200005] });
+    assert.deepEqual(posted.payload().default_value_dependencies, { 9200002: 9200005 });
+    assert.equal(posted.payload().base, undefined);
+    assert.equal(unload(posted), true, 'a re-rendered failed save warns before leaving');
+    posted.submit();
+    assert.equal(unload(posted), false, 'submitting');
+
+    const clean = await E.load('project_enumeration', { variant, tweak: (r) => r.removeAttribute('data-dcf-editor-dirty') });
+    assert.equal(clean.editor().dirty, false);
+    assert.equal(unload(clean), false, 'untouched');
+    assert.notEqual(clean.input.value, '', 'always-submit writes the JSON also when untouched');
+    const list = await E.load('project_list', { variant, tweak: (r) => r.setAttribute('data-dcf-editor-dirty', '1') });
+    assert.equal(list.editor().dirty, true);
+    assert.deepEqual(list.payload().value_dependencies, { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'] });
+  }
+});
+
+test('project always-submit: a change is in the payload at submit before the write timer runs', async () => {
+  for (const variant of VARIANTS) {
+    const p = await E.load('project_list', { variant });
+    p.tick(p.open(p.section('Germany')), 'Lyon');
+    const ev = p.submit();
+    assert.equal(ev.defaultPrevented, false);
+    assert.deepEqual(p.payload().value_dependencies, { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'], Germany: ['Lyon'] });
+    assert.equal(p.payload().base, undefined);
+  }
+});
+
+test('project conflict panel: use my version, keep the current version and export my version (UD-17)', async () => {
+  const conflict = { value_dependencies: { Germany: ['Lyon'] }, default_value_dependencies: { Germany: 'Lyon' },
+                     source: 'import', import: { mode: 'replace', rows: 1 } };
+  for (const variant of VARIANTS) {
+    const p = await E.load('project_list', { variant, tweak: (r) => setJson(r, 'conflict-mapping', conflict) });
+    const panel = p.root.querySelector('.dcf-dep-editor__conflict');
+    assert.deepEqual(Array.from(panel.querySelectorAll('button')).map((b) => b.textContent),
+      [p.t('use_mine'), p.t('keep_current'), p.t('export_mine')]);
+    assert.equal(p.editor().dirty, false);
+    assert.deepEqual(p.payload().value_dependencies, { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'] });
+    let blob = null;
+    p.window.URL.createObjectURL = (b) => { blob = b; return 'blob:p'; };
+    p.window.URL.revokeObjectURL = () => {};
+    panel.querySelector('[data-dcf-ed-export-mine]').click();
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    assert.equal(bytes.subarray(3).toString('utf8'), 'Country,City\r\nGermany,Lyon\r\n');
+    panel.querySelector('[data-dcf-ed-use-mine]').click();
+    p.clock.tick(150);
+    const mine = p.payload();
+    assert.deepEqual([mine.value_dependencies, mine.default_value_dependencies], [{ Germany: ['Lyon'] }, { Germany: 'Lyon' }]);
+    assert.deepEqual([mine.source, mine.import, mine.base], ['import', { mode: 'replace', rows: 1 }, undefined]);
+    assert.equal(p.editor().dirty, true);
+
+    const q = await E.load('project_list', { variant, tweak: (r) => setJson(r, 'conflict-mapping', conflict) });
+    q.root.querySelector('[data-dcf-ed-keep-current]').click();
+    assert.equal(q.root.querySelector('.dcf-dep-editor__conflict'), null);
+    assert.equal(q.editor().dirty, false);
+    assert.deepEqual(q.payload().value_dependencies, { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'] });
+    assert.equal(q.payload().source, 'editor');
+  }
+});

@@ -425,24 +425,35 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(response.body).not_to include('name="default_value"')
     end
 
-    it 'renders a multi-select per-parent default for a multiple child field (T-UI-7)' do
+    # Changed by WP-27 (was: the matrix select default_value_dependencies[A][]
+    # with multiple): the editor root carries the multiple flag, the form
+    # posts only dependencies_json.
+    it 'renders the editor in project mode for a multiple child field (T-UI-7)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1 c2],
                              parent: parent, is_for_all: true, multiple: true)
       as(dcf_manager(project))
       get custom_field_configuration_field_dependencies_path(project, child)
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('name="default_value_dependencies[A][]"')
-      expect(response.body).to match(/<select[^>]*\bmultiple\b/)
+      root = Nokogiri::HTML(response.body).at_css('form[enctype="multipart/form-data"] fieldset[data-dcf-editor]')
+      expect([root['data-dcf-editor-mode'], root['data-dcf-editor-multiple']]).to eq(%w[project 1])
+      expect(response.body).to include('name="dependencies_json"')
+      expect(response.body).not_to include('default_value_dependencies[')
+      expect(response.body).not_to include('data-dcf-parent-values')
     end
 
-    it 'renders a single-select per-parent default for a single-value child field (T-UI-7)' do
+    # Changed by WP-27 (was: the matrix select default_value_dependencies[A]).
+    it 'renders the editor in project mode for a single-value child field (T-UI-7)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1 c2],
                              parent: parent, is_for_all: true, multiple: false)
       as(dcf_manager(project))
       get custom_field_configuration_field_dependencies_path(project, child)
-      expect(response.body).to include('name="default_value_dependencies[A]"')
+      root = Nokogiri::HTML(response.body).at_css('form[enctype="multipart/form-data"] fieldset[data-dcf-editor]')
+      expect([root['data-dcf-editor-mode'], root['data-dcf-editor-multiple']]).to eq(%w[project 0])
+      expect(response.body).to include('name="dependencies_json"')
+      expect(response.body).not_to include('default_value_dependencies[')
+      expect(response.body).not_to include('data-dcf-parent-values')
     end
 
     it 'lists a relevant field on the overview with its format label (T-UI-6)' do
@@ -453,16 +464,28 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(response.body).not_to include('translation missing')
     end
 
-    it 'renders the dependency matrix for a depending field with a parent (T-UI-4)' do
+    # Changed by WP-27 (was: the dependency matrix, status 200 only): the
+    # editor root, its assets once each from the head hook.
+    it 'renders the dependency editor for a depending field with a parent (T-UI-4)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1],
                              parent: parent, is_for_all: true)
       as(dcf_manager(project))
       get custom_field_configuration_field_dependencies_path(project, child)
       expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.css('fieldset[data-dcf-editor][data-dcf-editor-mode="project"]').size).to eq(1)
+      asset = ->(name, ext) { /#{name}(-[0-9a-f]{7,}\.#{ext}|\.#{ext}\?\d+)\z/ }
+      srcs = doc.css('script[src]').map { |node| node['src'] }
+      hrefs = doc.css('link[rel=stylesheet]').map { |node| node['href'] }
+      expect(srcs.grep(asset.call('dcf_dependency_editor', 'js')).size).to eq(1)
+      expect(srcs.grep(asset.call('dcf_dependency_editor_model', 'js')).size).to eq(1)
+      expect(hrefs.grep(asset.call('dcf_dependency_editor', 'css')).size).to eq(1)
+      expect(response.body).not_to include('dcf_config')
     end
 
-    it 'saves a dependency mapping and redirects' do
+    # Renamed by WP-27 (was: 'saves a dependency mapping and redirects').
+    it 'saves a dependency mapping and redirects (legacy nested params, deprecated)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1],
                              parent: parent, is_for_all: true)
@@ -473,7 +496,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(child.reload.value_dependencies).to eq('A' => ['c1'])
     end
 
-    it 'saves multiple per-parent defaults submitted as an array (T-UI-7)' do
+    # Renamed by WP-27 (was: '... submitted as an array (T-UI-7)').
+    it 'saves multiple per-parent defaults submitted as an array (T-UI-7, legacy nested params, deprecated)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1 c2],
                              parent: parent, is_for_all: true, multiple: true)
@@ -900,6 +924,886 @@ RSpec.describe 'Project custom field configuration', type: :request do
       source.lines.grep(/render_error\(/).each { |line| expect(line).to match(/message: translate_error\(/) }
       expect(source).not_to match(/translate_error\(e\.key/)
       expect(source.scan(/\bl\(/).size).to eq(1)
+    end
+  end
+
+  # --- WP-27: the dependency page on the shared editor -------------------
+  # Project design 3 and 15 (T-DEPJ-1..25), editor design 7, UD-16, UD-17,
+  # UD-23, SP-01, SP-17, SP-20b, gap 1, gap 2.
+  describe 'dependency page on the shared editor (WP-27)' do
+    include DcfStoredCycle
+
+    let(:payload) { RedmineDependingCustomFields::DependencyPayload }
+    let(:limits) { RedmineDependingCustomFields::StorageLimits }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+    let(:max_bytes) { payload::MAX_BYTES }
+    let(:manager) { dcf_manager(project) }
+    let(:multipart) { { 'CONTENT_TYPE' => 'multipart/form-data' } }
+    let(:parent) { dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France Germany]) }
+    let(:child) do
+      field = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
+                             values: %w[Antwerp Brussels Paris Lyon], parent: parent)
+      dcf_set_dependencies(field, value_dependencies: { 'Belgium' => %w[Antwerp Brussels], 'France' => %w[Paris] },
+                                  default_value_dependencies: { 'Belgium' => 'Brussels' })
+    end
+    let(:original) { [{ 'Belgium' => %w[Antwerp Brussels], 'France' => %w[Paris] }, { 'Belgium' => 'Brussels' }] }
+
+    before { as(manager) }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def root
+      doc.at_css('fieldset[data-dcf-editor]')
+    end
+
+    def attr_json(name)
+      JSON.parse(root["data-dcf-editor-#{name}"])
+    end
+
+    def hidden_values
+      doc.css('input[name="dependencies_json"]').map { |input| [input['id'], input['value']] }
+    end
+
+    def flash_error
+      doc.at_css('#flash_error').text.strip
+    end
+
+    def rendered_state_hash
+      doc.at_css('input[name="state_hash"]')['value']
+    end
+
+    def state_hash(field)
+      RedmineDependingCustomFields::BaseService.state_hash(CustomField.find(field.id))
+    end
+
+    def json(vd, dd = {}, extra = {})
+      JSON.generate({ 'value_dependencies' => vd, 'default_value_dependencies' => dd }.merge(extra))
+    end
+
+    def stored(field)
+      record = CustomField.find(field.id)
+      [record.value_dependencies.to_hash, record.default_value_dependencies.to_hash]
+    end
+
+    def stored_mapping(field)
+      vd, dd = stored(field)
+      { 'value_dependencies' => vd, 'default_value_dependencies' => dd }
+    end
+
+    def raw_store(field)
+      CustomField.connection.select_value(CustomField.where(id: field.id).select(:format_store).to_sql)
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def page_path(field, in_project = project)
+      custom_field_configuration_field_dependencies_path(in_project, field)
+    end
+
+    # The browser's PATCH: multipart, the current state hash unless given.
+    def save(field, raw, state: nil, extra: {}, in_project: project)
+      params = { dependencies_json: raw, state_hash: state || state_hash(field) }.merge(extra)
+      patch custom_field_configuration_update_dependencies_path(in_project, field), params: params, headers: multipart
+    end
+
+    def stub_limit_at_stored(field)
+      bytes = raw_store(field).bytesize
+      allow(limits).to receive(:column_limit).and_return(nil)
+      allow(limits).to receive(:column_limit).with('format_store').and_return(bytes)
+    end
+
+    def data_names(node)
+      node.attribute_nodes.map(&:name)
+    end
+
+    # Writes a mapping as stored data (orphans included), without callbacks.
+    def store_raw(field, vd, dd = {})
+      store = CustomField.find(field.id).format_store.to_hash
+                         .merge('value_dependencies' => vd, 'default_value_dependencies' => dd)
+      CustomField.where(id: field.id)
+                 .update_all(['format_store = ?', CustomField.type_for_attribute('format_store').serialize(store)])
+      CustomField.find(field.id)
+    end
+
+    describe 'GET' do
+      it 'renders the editor in a multipart PATCH form with a blank input, the stored mapping and Save disabled ' \
+         '(T-DEPJ-10, T-DEPJ-19, UD-16)' do
+        get page_path(child)
+
+        expect(response).to have_http_status(200)
+        form = doc.at_css('form[enctype="multipart/form-data"]')
+        expect(form['action']).to eq(custom_field_configuration_update_dependencies_path(project, child))
+        expect(form.at_css('input[name="_method"]')['value']).to eq('patch')
+        expect(form.css('fieldset[data-dcf-editor]').size).to eq(1)
+        expect([root['data-dcf-editor-mode'], root['data-dcf-editor-always-submit']]).to eq(%w[project 1])
+        expect(root['data-dcf-editor-parent-name']).to eq(parent.name)
+        expect(root['data-dcf-editor-dirty']).to be_nil
+        expect(root['data-dcf-editor-conflict-mapping']).to be_nil
+        expect(attr_json('mapping')).to eq(stored_mapping(child))
+        expect(hidden_values).to eq([['dcf_dependencies_json', '']])
+        names = form.css('[name]').map { |n| n['name'] }.uniq
+        expect(names - %w[_method authenticity_token utf8 state_hash dependencies_json]).to eq([])
+        expect(names.size).to be <= 5
+        saves = form.css('input[type=submit]')
+        expect(saves.size).to eq(1)
+        expect([saves.first['disabled'], saves.first['data-dcf-editor-submit'], saves.first['name']])
+          .to eq(['disabled', '1', nil])
+        expect(form.at_css('noscript').text).to include(I18n.t(:text_dcf_editor_noscript))
+        expect(rendered_state_hash).to eq(state_hash(child))
+        expect(doc.at_css('p.info').text).to include(parent.name)
+        expect(data_names(root).grep(/\Adata-dcf-editor-(base|values-url|parent-source|values-source|multiple-source|
+                                      allow-add-values|echo|pending|submit-gate)\z/x)).to eq([])
+        expect(doc.css('[name^="value_dependencies"], [name^="default_value_dependencies"]')).to be_empty
+        expect(response.body).not_to include('dependencies-matrix')
+        expect(doc.xpath('//@*').map(&:name).grep(/\Adata-dcf-parent/)).to eq([])
+        expect(response.body).not_to include('data-dcf-blank', 'data-dcf-required-none', 'Tick the allowed child')
+        expect(response.body).not_to match(/translation[ _]missing/i)
+      end
+
+      it 'escapes markup values once in the mapping attribute (T-DEPJ-10)' do
+        markup = '"><script>alert(1)</script>'
+        field = dcf_list_field(format: 'depending_list', name: "Mark-#{SecureRandom.hex(3)}", values: [markup, '&amp;'],
+                               parent: parent)
+        field = dcf_set_dependencies(field, value_dependencies: { 'Belgium' => [markup, '&amp;'] })
+
+        get page_path(field)
+
+        expect(response.body).not_to include('<script>alert(1)</script>')
+        expect(attr_json('mapping')['value_dependencies']).to eq('Belgium' => [markup, '&amp;'])
+        expect(attr_json('child-values').map { |v| v['key'] }).to eq([markup, '&amp;'])
+      end
+
+      it 'shows the global or shared warning through dcf_flash_box and none for a project-only field (T-DEPJ-11)' do
+        other = dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")
+        global = child
+        shared = dcf_list_field(format: 'depending_list', name: "Shared-#{SecureRandom.hex(3)}", values: %w[c1],
+                                parent: parent, is_for_all: false, projects: [project, other])
+        own = dcf_list_field(format: 'depending_list', name: "Own-#{SecureRandom.hex(3)}", values: %w[c1],
+                             parent: parent, is_for_all: false, projects: [project])
+        { global => :text_global_field_warning, shared => :text_shared_field_warning, own => nil }.each do |field, key|
+          get page_path(field)
+          banners = doc.css('div.flash.warning:not([id])')
+          if key
+            expect(banners.size).to eq(1)
+            expect(banners.first.text.strip).to eq(I18n.t(key))
+            expect(banners.first.css('svg').size).to eq(Redmine::VERSION::MAJOR >= 6 ? 1 : 0)
+          else
+            expect(banners).to be_empty
+          end
+          expect(response.body).not_to include(other.name)
+        end
+      end
+
+      it 'renders text_dcf_parent_missing and no editor for a dangling, other-type, other-family or own parent ' \
+         '(T-DEPJ-12, T-DEPJ-25, gap 2)' do
+        other_type = dcf_list_field(name: "PCF-#{SecureRandom.hex(3)}", values: %w[A], type: ProjectCustomField)
+        other_family = dcf_enum_field(name: "Fam-#{SecureRandom.hex(3)}", names: %w[A])
+        allow(payload).to receive(:parse).and_call_original
+        [99_999_999, other_type, other_family, :own].each do |pointer|
+          field = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[c1],
+                                 parent: parent)
+          field = dcf_store_parent(field, pointer == :own ? field : pointer)
+
+          get page_path(field)
+
+          expect(response).to have_http_status(200), pointer.to_s
+          expect(doc.at_css('p.nodata').text.strip).to eq(I18n.t(:text_dcf_parent_missing))
+          expect(doc.css('fieldset[data-dcf-editor], input[name="dependencies_json"], [data-dcf-editor-submit]'))
+            .to be_empty
+
+          save(field, '{')
+          expect(response).to have_http_status(422)
+          expect(flash_error).to eq(I18n.t(:error_invalid_dependency))
+          expect(rows(field).pluck(:status)).to eq(%w[validation_failed])
+        end
+        expect(payload).not_to have_received(:parse)
+      end
+
+      it 'keeps the 422 error_format_unsupported page for a blank parent pointer (require_dependency_capable)' do
+        field = dcf_store_parent(child, nil)
+        get page_path(field)
+        expect(response).to have_http_status(422)
+        expect(response.body).not_to include(I18n.t(:text_dcf_parent_missing))
+      end
+
+      it 'renders text_dcf_parent_not_available with the parent name escaped once; a PATCH gives 404 (T-DEPJ-12)' do
+        other = dcf_create_project(name: 'Other')
+        away = dcf_list_field(name: "Away <b>#{SecureRandom.hex(3)}</b>", values: %w[A], is_for_all: false,
+                              projects: [other])
+        field = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[c1],
+                               parent: away)
+        allow(payload).to receive(:parse).and_call_original
+
+        get page_path(field)
+
+        expect(response).to have_http_status(200)
+        notice = doc.at_css('p.warning')
+        expect(notice.text.strip).to eq(I18n.t(:text_dcf_parent_not_available, name: away.name))
+        expect(notice.css('b')).to be_empty
+        expect(notice.inner_html).to include(ERB::Util.html_escape(away.name))
+        expect(response.body).not_to include('&amp;lt;')
+        expect(doc.css('fieldset[data-dcf-editor], [data-dcf-editor-submit]')).to be_empty
+
+        save(field, '{')
+        expect(response).to have_http_status(404)
+        expect(payload).not_to have_received(:parse)
+        expect(rows(field).pluck(:status, :error_message)).to eq([%w[validation_failed error_field_not_found]])
+      end
+
+      %w[de fr nl].each do |lang|
+        it "renders the editor, the scope banner and the parent notices in #{lang} without missing translations" do
+          manager.update_column(:language, lang)
+          missing = dcf_store_parent(dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}",
+                                                    values: %w[c1], parent: parent), 99_999_999)
+          other = dcf_create_project(name: 'Other')
+          away = dcf_list_field(name: "Away-#{SecureRandom.hex(3)}", values: %w[A], is_for_all: false,
+                                projects: [other])
+          unavailable = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[c1],
+                                       parent: away)
+
+          # The request switches the locale; with_locale puts it back.
+          I18n.with_locale(I18n.locale) do
+            get page_path(child)
+            expect(response.body).not_to match(/translation[ _]missing/i)
+            expect(doc.at_css('noscript').text).to include(I18n.t(:text_dcf_editor_noscript, locale: lang))
+            expect(doc.at_css('div.flash.warning').text.strip).to eq(I18n.t(:text_global_field_warning, locale: lang))
+            get page_path(missing)
+            expect(doc.at_css('p.nodata').text.strip).to eq(I18n.t(:text_dcf_parent_missing, locale: lang))
+            get page_path(unavailable)
+            expect(doc.at_css('p.warning').text.strip)
+              .to eq(I18n.t(:text_dcf_parent_not_available, locale: lang, name: away.name))
+            expect(response.body).not_to match(/translation[ _]missing/i)
+          end
+        end
+      end
+
+      it 'ignores a dependencies_json query parameter and parses nothing' do
+        allow(payload).to receive(:parse).and_call_original
+        get page_path(child), params: { dependencies_json: 'MARKER{' }
+        expect(response).to have_http_status(200)
+        expect(payload).not_to have_received(:parse)
+        expect(response.body).not_to include('MARKER')
+      end
+    end
+
+    describe 'PATCH with dependencies_json' do
+      it 'saves, redirects with the notice and writes one success row with the v2 delta (T-DEPJ-1)' do
+        child
+        allow(payload).to receive(:parse).and_call_original
+
+        expect { save(child, json({ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' })) }
+          .to change { rows(child).count }.by(1)
+
+        expect(response).to redirect_to(page_path(child))
+        expect(flash[:notice]).to eq(I18n.t(:notice_dependencies_saved))
+        expect(payload).to have_received(:parse).once
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }])
+        row = rows(child).last
+        before = JSON.parse(row.before_value)
+        after = JSON.parse(row.after_value)
+        expect([row.action, row.status, after['v'], after['source']]).to eq(['update_dependencies', 'success', 2, 'editor'])
+        expect(after['mapping_sha256']).to match(/\A[0-9a-f]{64}\z/)
+        expect(after['mapping_sha256']).to eq(payload.stored_digest(CustomField.find(child.id)))
+        expect(before).to eq('v' => 2, 'links' => 3, 'defaults' => 1, 'mapping_sha256' => payload.digest(*original))
+        expect(after.slice('links', 'added', 'removed', 'orphans_removed', 'defaults_changed', 'parents_changed'))
+          .to eq('links' => 1, 'added' => 1, 'removed' => 3, 'orphans_removed' => 0, 'defaults_changed' => 2,
+                 'parents_changed' => 3)
+        expect(row.changes_summary).to start_with('Updated dependency mapping (editor): +1/-3 links')
+      end
+
+      it 'saves for an administrator on an active project with one success row (G5 admin row)' do
+        child
+        admin = dcf_admin
+        as(admin)
+
+        expect { save(child, json({ 'Germany' => %w[Lyon] })) }.to change { rows(child).count }.by(1)
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
+        row = rows(child).last
+        expect([row.action, row.status, row.acting_user_id]).to eq(['update_dependencies', 'success', admin.id])
+        expect(JSON.parse(row.after_value)['source']).to eq('editor')
+      end
+
+      it 'chains mapping_sha256 over consecutive saves and audits a no-op save' do
+        child
+        save(child, json({ 'Germany' => %w[Lyon] }))
+        save(child, json({ 'Germany' => %w[Lyon] }))
+
+        first, second = rows(child).last(2).map { |row| [JSON.parse(row.before_value), JSON.parse(row.after_value)] }
+        expect(second[0]['mapping_sha256']).to eq(first[1]['mapping_sha256'])
+        expect(second[1].values_at('added', 'removed')).to eq([0, 0])
+        expect(rows(child).last.status).to eq('success')
+      end
+
+      it 'round-trips parent and child values with brackets (T-DEPJ-2)' do
+        brackets = dcf_list_field(name: "Br-#{SecureRandom.hex(3)}", values: ['Foo [x]', '[b', 'a]'])
+        field = dcf_list_field(format: 'depending_list', name: "Brc-#{SecureRandom.hex(3)}", values: ['[x]', 'y]'],
+                               parent: brackets)
+        mapping = { 'Foo [x]' => ['[x]'], '[b' => ['y]'], 'a]' => ['[x]', 'y]'] }
+
+        save(field, json(mapping, { 'a]' => 'y]' }))
+
+        expect(response).to redirect_to(page_path(field))
+        expect(stored(field)).to eq([mapping, { 'a]' => 'y]' }])
+      end
+
+      it 'clears both stores with {} (T-DEPJ-3)' do
+        save(child, '{}')
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{}, {}])
+        after = JSON.parse(rows(child).last.after_value)
+        expect(after.values_at('links', 'defaults', 'removed', 'defaults_changed')).to eq([0, 0, 3, 1])
+      end
+
+      it 'saves 4,200 links in one parameter (T-DEPJ-4, UN-28)' do
+        big_parent = dcf_list_field(name: "BigP-#{SecureRandom.hex(3)}", values: (1..42).map { |i| "P#{i}" })
+        big = dcf_list_field(format: 'depending_list', name: "BigC-#{SecureRandom.hex(3)}",
+                             values: (1..100).map { |i| "C#{i}" }, parent: big_parent)
+        mapping = big_parent.possible_values.to_h { |key| [key, big.possible_values] }
+
+        save(big, json(mapping))
+
+        expect(response).to redirect_to(page_path(big))
+        expect(request.request_parameters.keys.size).to be <= 5
+        expect(stored(big)[0]).to eq(mapping)
+        after = JSON.parse(rows(big).last.after_value)
+        expect(after.values_at('links', 'added', 'truncated')).to eq([4_200, 4_200, true])
+        expect(after['sample']['added'].size).to eq(20)
+        expect(rows(big).last.after_value.bytesize).to be <= 12_100
+      end
+
+      it 'records an import payload with source import, mode and rows (T-DEPJ-13)' do
+        meta = { 'mode' => 'replace', 'rows' => 2 }
+        save(child, json({ 'Germany' => %w[Lyon], 'France' => %w[Lyon] }, {}, 'source' => 'import', 'import' => meta))
+
+        expect(response).to redirect_to(page_path(child))
+        row = rows(child).last
+        expect(JSON.parse(row.after_value).values_at('source', 'import')).to eq(['import', meta])
+        expect(row.changes_summary).to start_with('Updated dependency mapping (import, replace, 2 rows): ')
+        expect(CustomField.find(child.id).format_store.keys & %w[source import base version]).to eq([])
+      end
+
+      it 'refuses source editor together with import as invalid_import (T-DEPJ-23)' do
+        save(child, json({ 'Germany' => %w[Lyon] }, {}, 'import' => { 'mode' => 'merge', 'rows' => 1 }))
+
+        expect(response).to have_http_status(422)
+        expect(flash_error).to eq(I18n.t(:error_invalid_dependency_payload))
+        expect(rows(child).last.changes_summary).to match(/\Adependencies_json rejected: invalid_import \(\d+ bytes\)\z/)
+        expect(stored(child)).to eq(original)
+      end
+
+      {
+        'malformed' => ['{', 'invalid_json'],
+        'blank' => ['', 'blank'],
+        'unknown top-level key' => ['{"meta":{}}', 'unknown_key'],
+        'long number' => ['{"value_dependencies":{"Belgium":[12345678901234567890]}}', 'number_too_long'],
+        # G5 on the project path: floats, null and nesting deeper than 3
+        'float' => ['{"value_dependencies":{"Belgium":[1.5]}}', 'invalid_links'],
+        'null' => ['{"value_dependencies":{"Belgium":[null]}}', 'invalid_links'],
+        'nesting deeper than 3' => ['{"value_dependencies":{"Belgium":[["x"]]}}', 'invalid_json']
+      }.each do |label, (raw, code)|
+        it "refuses a #{label} payload with an audited 422 and re-renders the stored mapping clean (T-DEPJ-5)" do
+          raw_before = raw_store(child)
+          allow(payload).to receive(:parse).and_call_original
+
+          save(child, raw)
+
+          expect(response).to have_http_status(422)
+          expect(payload).to have_received(:parse).once
+          expect(flash_error).to eq(I18n.t(:error_invalid_dependency_payload))
+          expect(raw_store(child)).to eq(raw_before)
+          row = rows(child).last
+          expect([row.status, row.error_message]).to eq(%w[validation_failed error_invalid_dependency_payload])
+          expect(row.changes_summary).to eq("dependencies_json rejected: #{code} (#{raw.bytesize} bytes)")
+          expect(attr_json('mapping')).to eq(stored_mapping(child))
+          expect(root['data-dcf-editor-dirty']).to be_nil
+          expect(hidden_values).to eq([['dcf_dependencies_json', '']])
+          expect(rendered_state_hash).to eq(state_hash(child))
+        end
+      end
+
+      it 'refuses a nested dependencies_json param as not_a_string with 0 bytes' do
+        save(child, { 'a' => '1' })
+
+        expect(response).to have_http_status(422)
+        expect(rows(child).last.changes_summary).to eq('dependencies_json rejected: not_a_string (0 bytes)')
+        expect(stored(child)).to eq(original)
+      end
+
+      it 'refuses a payload above 4 MiB with the size message in the request locale, without JSON.parse (T-DEPJ-21)' do
+        child
+        body = json('Belgium' => %w[Antwerp])
+        above = body + (' ' * (max_bytes + 1 - body.bytesize))
+        allow(JSON).to receive(:parse).and_call_original
+
+        save(child, above)
+
+        expect(response).to have_http_status(422)
+        expect(flash_error).to eq(I18n.t(:error_dcf_dependencies_too_large_to_send, size: limits.delimited(max_bytes + 1),
+                                                                                    limit: limits.delimited(max_bytes)))
+        expect(flash_error).not_to eq(I18n.t(:error_invalid_dependency_payload))
+        expect(rows(child).last.changes_summary).to eq("dependencies_json rejected: too_large (#{max_bytes + 1} bytes)")
+        expect(root['data-dcf-editor-dirty']).to be_nil
+
+        manager.update_column(:language, 'de')
+        I18n.with_locale(I18n.locale) { save(child, above) }
+        size, limit = I18n.with_locale(:de) { [limits.delimited(max_bytes + 1), limits.delimited(max_bytes)] }
+        expect(size).to eq('4.194.305')
+        expect(flash_error)
+          .to eq(I18n.t(:error_dcf_dependencies_too_large_to_send, locale: :de, size: size, limit: limit))
+        # Rails 6.1 parses its own JSON (the session cookie) on a later request.
+        expect(JSON).not_to have_received(:parse).with(a_string_including('Belgium'), any_args)
+        expect(stored(child)).to eq(original)
+      end
+
+      it 'refuses 1,000,000-digit and 20-digit integers before JSON.parse, each in under 1 s (T-DEPJ-20, SP-01)' do
+        child
+        # untimed warm-up: the first render of the process loads the locales,
+        # the layout and the editor partial
+        save(child, '{"value_dependencies":{"Belgium":[12345678901234567890]}}')
+        expect(response).to have_http_status(422)
+        allow(JSON).to receive(:parse).and_call_original
+        ['9' * 1_000_000, '-12345678901234567890', '12345678901234567890'].each do |number|
+          raw = %({"value_dependencies":{"Belgium":[#{number}]}})
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          save(child, raw)
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+          expect(response).to have_http_status(422)
+          expect(rows(child).last.changes_summary)
+            .to eq("dependencies_json rejected: number_too_long (#{raw.bytesize} bytes)")
+          puts format('DCF PERF project PATCH with a %d-digit integer: %.0f ms', number.delete('-').size, elapsed * 1000)
+          expect(elapsed).to be < 1.0
+        end
+        expect(JSON).not_to have_received(:parse).with(a_string_including('Belgium'), any_args)
+        expect(stored(child)).to eq(original)
+      end
+
+      it 'refuses a short negative integer after JSON.parse as invalid_links (WP-22 open input)' do
+        raw = '{"value_dependencies":{"Belgium":[-1]}}'
+        allow(JSON).to receive(:parse).and_call_original
+        save(child, raw)
+
+        expect(response).to have_http_status(422)
+        # the spy form of T-DEPJ-20 and T-DEPJ-21 sees this parse
+        expect(JSON).to have_received(:parse).with(a_string_including('Belgium'), any_args).once
+        expect(rows(child).last.changes_summary).to eq("dependencies_json rejected: invalid_links (#{raw.bytesize} bytes)")
+      end
+
+      it 'refuses an unknown parent key with offenders only in the audit summary and re-renders the posted mapping ' \
+         'dirty (T-DEPJ-6, gap 1)' do
+        key = '<img src=x onerror=alert(1)>MARK'
+        posted = { 'Belgium' => %w[Antwerp], key => %w[Paris] }
+        allow(payload).to receive(:parse).and_call_original
+
+        save(child, json(posted, { 'Belgium' => 'Antwerp' }))
+
+        expect(response).to have_http_status(422)
+        expect(payload).to have_received(:parse).once
+        expect(flash_error).to eq(I18n.t(:error_invalid_dependency))
+        expect(doc.at_css('#flash_error').inner_html).not_to include('MARK')
+        expect(rows(child).last.changes_summary).to eq("unknown parent keys: 1 [#{key}]")
+        expect(attr_json('mapping'))
+          .to eq('value_dependencies' => posted, 'default_value_dependencies' => { 'Belgium' => 'Antwerp' })
+        expect(root['data-dcf-editor-dirty']).to eq('1')
+        expect(hidden_values).to eq([['dcf_dependencies_json', '']])
+        expect(data_names(root).grep(/echo|pending|conflict|base/)).to eq([])
+        expect(response.body).not_to include('<img src=x')
+        expect(stored(child)).to eq(original)
+        expect(rendered_state_hash).to eq(state_hash(child))
+
+        get custom_field_configuration_audit_path(project)
+        expect(response.body).to include('&lt;img src=x onerror=alert(1)&gt;MARK')
+        expect(response.body).not_to include('<img src=x')
+      end
+
+      it 'prefers dependencies_json over nested params of the same request, without a deprecation line (T-DEPJ-7)' do
+        child
+        allow(Rails.logger).to receive(:warn).and_call_original
+
+        save(child, json({ 'Germany' => %w[Lyon] }), extra: { value_dependencies: { 'Belgium' => %w[Paris] } })
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
+        expect(Rails.logger).not_to have_received(:warn).with(/deprecated/)
+      end
+
+      it 'reloads the field after a storage 422; the corrected resubmit with the rendered state hash saves ' \
+         '(T-DEPJ-14, R9, PC-58)' do
+        child
+        stub_limit_at_stored(child)
+        allow(payload).to receive(:parse).and_call_original
+        grown = { 'Belgium' => %w[Antwerp Brussels Paris Lyon], 'France' => %w[Paris Lyon], 'Germany' => %w[Lyon] }
+
+        save(child, json(grown))
+
+        expect(response).to have_http_status(422)
+        expect(payload).to have_received(:parse).once
+        expect(flash_error).to include(child.name)
+        expect(rows(child).last.error_message).to eq('error_dcf_mapping_too_large')
+        expect(attr_json('mapping')['value_dependencies']).to eq(grown)
+        expect(root['data-dcf-editor-dirty']).to eq('1')
+        expect(hidden_values).to eq([['dcf_dependencies_json', '']])
+        expect(stored(child)).to eq(original)
+        fresh = rendered_state_hash
+        expect(fresh).to eq(state_hash(child))
+
+        save(child, json({ 'Germany' => %w[Lyon] }), state: fresh)
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
+        expect(rows(child).last.status).to eq('success')
+      end
+
+      it 'escapes the field name once in the storage 422 flash on the JSON path (T-DEPJ-22, SP-06)' do
+        markup = '<img src=x onerror=alert(1)>'
+        field = dcf_list_field(format: 'depending_list', name: markup, values: %w[c1 c2], parent: parent)
+        stub_limit_at_stored(field)
+
+        save(field, json({ 'Belgium' => %w[c1 c2], 'France' => %w[c1 c2] }))
+
+        expect(response).to have_http_status(422)
+        box = doc.at_css('#flash_error')
+        expect(box.css('img')).to be_empty
+        expect(box.inner_html).to include(ERB::Util.html_escape(markup))
+        expect(box.text).to include(markup)
+        expect(response.body).not_to include(markup)
+        expect(response.body).not_to include('&amp;lt;')
+      end
+
+      it 'answers a stale save with 409, the stored mapping and the posted version as conflict mapping; the fresh ' \
+         'state hash saves it (T-DEPJ-8, T-DEPJ-16, UD-17)' do
+        raw_before = raw_store(child)
+        allow(payload).to receive(:parse).and_call_original
+        meta = { 'mode' => 'merge', 'rows' => 1 }
+        mine = json({ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }, 'source' => 'import', 'import' => meta)
+
+        save(child, mine, state: 'stale')
+
+        expect(response).to have_http_status(409)
+        expect(payload).to have_received(:parse).once
+        expect(flash_error).to eq(I18n.t(:error_stale_edit))
+        expect(raw_store(child)).to eq(raw_before)
+        expect(attr_json('mapping')).to eq(stored_mapping(child))
+        expect(root['data-dcf-editor-dirty']).to be_nil
+        expect(attr_json('conflict-mapping'))
+          .to eq('value_dependencies' => { 'Germany' => %w[Lyon] }, 'default_value_dependencies' => { 'Germany' => 'Lyon' },
+                 'source' => 'import', 'import' => meta)
+        expect(hidden_values).to eq([['dcf_dependencies_json', '']])
+        expect(data_names(root).grep(/pending|echo/)).to eq([])
+        expect(rows(child).pluck(:status, :error_message).last).to eq(%w[validation_failed error_stale_edit])
+        fresh = rendered_state_hash
+        expect(fresh).to eq(state_hash(child))
+
+        save(child, mine, state: fresh)
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }])
+      end
+
+      it 'offers no conflict mapping when the stale payload does not parse; a non-String one is not parsed' do
+        allow(payload).to receive(:parse).and_call_original
+        save(child, '{', state: 'stale')
+        expect(response).to have_http_status(409)
+        expect(payload).to have_received(:parse).once
+        expect(root['data-dcf-editor-conflict-mapping']).to be_nil
+        expect(attr_json('mapping')).to eq(stored_mapping(child))
+
+        save(child, { 'a' => '1' }, state: 'stale')
+        expect(response).to have_http_status(409)
+        expect(payload).to have_received(:parse).once
+        expect(root['data-dcf-editor-conflict-mapping']).to be_nil
+
+        save(child, json({ 'Germany' => %w[Lyon] }), state: 'stale')
+        expect(attr_json('conflict-mapping')).to include('source' => 'editor', 'import' => nil)
+      end
+
+      it 'removes stored orphans on save and counts them; an identical save is still audited (edge case 9)' do
+        field = store_raw(child, { 'Gone' => %w[Antwerp], 'Belgium' => %w[zz Antwerp] })
+
+        save(field, json({ 'Belgium' => %w[Antwerp] }))
+        save(field, json({ 'Belgium' => %w[Antwerp] }))
+
+        first, second = rows(field).last(2)
+        expect(JSON.parse(first.after_value)['orphans_removed']).to eq(2)
+        expect(first.changes_summary).to include('2 orphaned removed')
+        expect(JSON.parse(second.after_value).values_at('added', 'removed')).to eq([0, 0])
+        expect([first.status, second.status]).to eq(%w[success success])
+      end
+
+      it 'never names a hidden child of the edited field on the page, a 422 or a 409' do
+        grandchild = dcf_list_field(format: 'depending_list', name: 'Secret grandchild', values: %w[SECRET-G1],
+                                    parent: child)
+        dcf_set_dependencies(grandchild, value_dependencies: { 'Antwerp' => %w[SECRET-G1] })
+        grandchild.update!(visible: false, role_ids: [dcf_create_role.id])
+        before = raw_store(grandchild)
+
+        get page_path(child)
+        bodies = [response.body]
+        save(child, json({ 'ZZ' => %w[Antwerp] }))
+        bodies << response.body
+        save(child, json({ 'Germany' => %w[Lyon] }), state: 'stale')
+        bodies << response.body
+        save(child, json({ 'Germany' => %w[Lyon] }))
+
+        bodies.each do |body|
+          expect(body).not_to include('Secret grandchild')
+          expect(body).not_to include('SECRET-G1')
+        end
+        expect(raw_store(grandchild)).to eq(before)
+        expect(rows(child).last.changes_summary).not_to include('Secret')
+        expect(rows(child).last.affected_child_field_ids.to_s).not_to include(grandchild.id.to_s)
+      end
+
+      it 'shows a foreign enumeration id raw in offenders and samples, never its hidden label (gap 3)' do
+        hidden = dcf_enum_field(name: "SecretEnum-#{SecureRandom.hex(3)}", names: ['SECRET-LABEL'])
+        hidden.update!(visible: false, role_ids: [dcf_create_role.id])
+        secret = hidden.enumerations.first.id.to_s
+        enum_parent = dcf_enum_field(name: "EP-#{SecureRandom.hex(3)}", names: %w[North])
+        enum_child = dcf_enum_field(format: 'depending_enumeration', name: "EC-#{SecureRandom.hex(3)}",
+                                    names: %w[Alpha], parent: enum_parent)
+        north = enum_parent.enumerations.first.id.to_s
+        alpha = enum_child.enumerations.first.id.to_s
+
+        save(enum_child, json(north => [secret]))
+
+        expect(response).to have_http_status(422)
+        expect(rows(enum_child).last.changes_summary).to eq("unknown child values: 1 [#{secret}]")
+        expect(response.body).not_to include('SECRET-LABEL')
+        expect(response.body).not_to include(hidden.name)
+
+        store_raw(enum_child, { north => [alpha, secret] })
+        save(enum_child, json(north => [alpha]))
+
+        expect(response).to redirect_to(page_path(enum_child))
+        row = rows(enum_child).last
+        after = JSON.parse(row.after_value)
+        expect(after['sample']['removed']).to eq([['North', secret]])
+        expect(after['orphans_removed']).to eq(1)
+        expect(row.after_value).not_to include('SECRET-LABEL')
+      end
+
+      it 'saves a replace import on a global field without any confirmation step (UD-23)' do
+        expect(child.is_for_all).to be(true)
+        save(child, json({ 'Germany' => %w[Lyon] }, {}, 'source' => 'import',
+                                                       'import' => { 'mode' => 'replace', 'rows' => 1 }))
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
+        row = rows(child).last
+        expect(JSON.parse(row.after_value).values_at('source', 'import'))
+          .to eq(['import', { 'mode' => 'replace', 'rows' => 1 }])
+        expect(row.affected_projects_count).to eq(Project.active.count)
+        follow_redirect!
+        expect(doc.css('input[name=confirm]')).to be_empty
+        expect(response.body).not_to include(I18n.t(:text_dcf_confirm_understand))
+      end
+    end
+
+    describe 'PATCH with the deprecated nested params' do
+      it 'clears without mapping params, audits source form and logs one constant deprecation line (T-DEPJ-9)' do
+        child
+        allow(Rails.logger).to receive(:warn).and_call_original
+        allow(payload).to receive(:parse).and_call_original
+
+        patch custom_field_configuration_update_dependencies_path(project, child)
+
+        expect(response).to redirect_to(page_path(child))
+        expect(stored(child)).to eq([{}, {}])
+        expect(JSON.parse(rows(child).last.after_value)['source']).to eq('form')
+        expect(Rails.logger).to have_received(:warn).with(/\A\[DCF\] .*deprecated in 0\.1\.0/).once
+        expect(payload).not_to have_received(:parse)
+      end
+
+      it 'answers a validation 422 with the reloaded stored mapping, not dirty' do
+        patch custom_field_configuration_update_dependencies_path(project, child),
+              params: { value_dependencies: { 'ZZ' => %w[Lyon] } }
+
+        expect(response).to have_http_status(422)
+        expect(attr_json('mapping')).to eq(stored_mapping(child))
+        expect(root['data-dcf-editor-dirty']).to be_nil
+      end
+    end
+
+    describe 'refusals before any parse (SP-20b, gap 12)' do
+      before do
+        allow(payload).to receive(:parse).and_call_original
+        allow(payload).to receive(:parse!).and_call_original
+      end
+
+      let(:oversize) { 'x' * (max_bytes + 1) }
+      let(:payloads) { ['{', %({"value_dependencies":{"Belgium":[#{'9' * 1_000_000}]}}), oversize, { 'a' => '1' }] }
+
+      def expect_no_parse
+        expect(payload).not_to have_received(:parse)
+        expect(payload).not_to have_received(:parse!)
+      end
+
+      it 'refuses a PATCH that reaches the service without the permission: 403 and one authorization_failed row ' \
+         'each (T-DEPJ-24)' do
+        child
+        as(dcf_plain_member(project))
+        allow_any_instance_of(User).to receive(:allowed_to?).and_wrap_original do |original, action, *args, **opts, &block|
+          if action.is_a?(Hash)
+            true
+          elsif action == :manage_project_custom_field_configuration
+            false
+          else
+            original.call(action, *args, **opts, &block)
+          end
+        end
+        raw_before = raw_store(child)
+
+        payloads.each do |raw|
+          [nil, 'stale'].each do |state|
+            expect { save(child, raw, state: state) }
+              .to change { rows(child).where(status: 'authorization_failed').count }.by(1)
+            expect(response).to have_http_status(403)
+          end
+        end
+
+        expect_no_parse
+        expect(raw_store(child)).to eq(raw_before)
+        row = rows(child).last
+        expect([row.action, row.status, row.error_message, row.changes_summary, row.before_value, row.after_value])
+          .to eq(['authorization_failed', 'authorization_failed', 'error_forbidden', nil, nil, nil])
+        expect([row.project_id, row.custom_field_id]).to eq([project.id, child.id])
+      end
+
+      it 'refuses non-members, members without the permission and anonymous users with no row' do
+        child
+        count = events.count
+        [dcf_create_user("stranger-#{SecureRandom.hex(3)}"), dcf_plain_member(project)].each do |user|
+          as(user)
+          save(child, '{', state: 'x')
+          expect(response).to have_http_status(403)
+        end
+        as(User.anonymous)
+        save(child, '{', state: 'x')
+        expect(response.status).to be_in([302, 401, 403])
+        expect(events.count).to eq(count)
+        expect_no_parse
+      end
+
+      it 'answers 403 on a closed project for the manager and an administrator, with no parse and no row ' \
+         '(T-DEPJ-17)' do
+        closed = dcf_create_project(name: 'Closed', status: :closed)
+        child
+        raw_before = raw_store(child)
+        count = events.count
+        [dcf_manager(closed), dcf_admin].each do |user|
+          as(user)
+          get page_path(child, closed)
+          expect(response).to have_http_status(200)
+          payloads.first(2).each do |raw|
+            save(child, raw, in_project: closed)
+            expect(response).to have_http_status(403)
+          end
+        end
+        expect_no_parse
+        expect(events.count).to eq(count)
+        expect(raw_store(child)).to eq(raw_before)
+      end
+
+      it 'answers 403 on an archived project for the manager and an administrator, with no parse' do
+        archived = dcf_create_project(name: 'Archived', status: :archived)
+        child
+        [dcf_manager(archived), dcf_admin].each do |user|
+          as(user)
+          get page_path(child, archived)
+          expect(response).to have_http_status(403)
+          save(child, '{', in_project: archived)
+          expect(response).to have_http_status(403)
+        end
+        expect_no_parse
+      end
+
+      it 'answers 404 for a field outside the project and 403 to a non-member for any field id' do
+        other = dcf_create_project(name: 'Other')
+        foreign = dcf_list_field(format: 'depending_list', name: "Foreign-#{SecureRandom.hex(3)}", values: %w[SECRET-V],
+                                 parent: parent, is_for_all: false, projects: [other])
+        save(foreign, '{', state: 'x')
+        expect(response).to have_http_status(404)
+        expect(response.body).not_to include(foreign.name)
+        expect(response.body).not_to include('SECRET-V')
+
+        as(dcf_create_user("stranger-#{SecureRandom.hex(3)}"))
+        save(foreign, '{', state: 'x')
+        expect(response).to have_http_status(403)
+        patch custom_field_configuration_update_dependencies_path(project, 99_999_999),
+              params: { dependencies_json: '{' }, headers: multipart
+        expect(response).to have_http_status(403)
+        expect(rows(foreign).count).to eq(0)
+        expect_no_parse
+      end
+
+      it 'answers 422 without an authenticity token when forgery protection is on, with no parse' do
+        child
+        protection = ActionController::Base.allow_forgery_protection
+        ActionController::Base.allow_forgery_protection = true
+        begin
+          save(child, '{')
+        ensure
+          ActionController::Base.allow_forgery_protection = protection
+        end
+        expect(response).to have_http_status(422)
+        expect_no_parse
+        expect(stored(child)).to eq(original)
+      end
+    end
+
+    # G6 (quality R16): the invariance form, after a warm-up request.
+    describe 'query counts' do
+      def full(field, parent_field)
+        json(parent_field.possible_values.to_h { |key| [key, field.possible_values] })
+      end
+
+      it 'are the same for a save of 10 and of 4,200 links' do
+        small_parent = dcf_list_field(name: "SP-#{SecureRandom.hex(3)}", values: %w[P1 P2])
+        small = dcf_list_field(format: 'depending_list', name: "SC-#{SecureRandom.hex(3)}",
+                               values: (1..5).map { |i| "C#{i}" }, parent: small_parent)
+        big_parent = dcf_list_field(name: "BP-#{SecureRandom.hex(3)}", values: (1..42).map { |i| "P#{i}" })
+        big = dcf_list_field(format: 'depending_list', name: "BC-#{SecureRandom.hex(3)}",
+                             values: (1..100).map { |i| "C#{i}" }, parent: big_parent)
+        save(small, '{}')
+        small_raw = full(small, small_parent)
+        big_raw = full(big, big_parent)
+        small_state = state_hash(small)
+        big_state = state_hash(big)
+
+        small_queries = dcf_count_queries { save(small, small_raw, state: small_state) }
+        big_queries = dcf_count_queries { save(big, big_raw, state: big_state) }
+
+        expect(response).to redirect_to(page_path(big))
+        expect(big_queries).to eq(small_queries)
+      end
+
+      it 'are the same for the page of 10 and of 1,000 parent values' do
+        small_parent = dcf_enum_field(name: "SE-#{SecureRandom.hex(3)}", names: (1..10).map { |i| "N#{i}" })
+        big_parent = dcf_enum_field(name: "BE-#{SecureRandom.hex(3)}", names: [])
+        CustomFieldEnumeration.insert_all(
+          (1..1_000).map { |i| { custom_field_id: big_parent.id, name: "N#{i}", position: i, active: true } }
+        )
+        small = dcf_enum_field(format: 'depending_enumeration', name: "SL-#{SecureRandom.hex(3)}", names: %w[c1],
+                               parent: small_parent)
+        big = dcf_enum_field(format: 'depending_enumeration', name: "BL-#{SecureRandom.hex(3)}", names: %w[c1],
+                             parent: CustomField.find(big_parent.id))
+        get page_path(small)
+        expect(root['data-dcf-editor-mode']).to eq('project')
+
+        small_queries = dcf_count_queries { get page_path(small) }
+        big_queries = dcf_count_queries { get page_path(big) }
+
+        expect(response).to have_http_status(200)
+        expect(attr_json('parent-values').size).to eq(1_000)
+        expect(big_queries).to eq(small_queries)
+      end
     end
   end
 end

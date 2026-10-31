@@ -62,11 +62,14 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     prepare_dependencies
   end
 
+  # The service parses dependencies_json after its preamble authorized the
+  # user (SP-20b); a 422 reuses its parse result, a 409 parses once here.
   def update_dependencies
-    RedmineDependingCustomFields::DependencyMappingService.new(
+    service = RedmineDependingCustomFields::DependencyMappingService.new(
       project: @project, field: @field, user: User.current,
       params: dependency_params, request: request
-    ).call
+    )
+    service.call
     flash[:notice] = translate_error(:notice_dependencies_saved)
     redirect_to custom_field_configuration_field_dependencies_path(@project, @field)
   rescue RedmineDependingCustomFields::OperationError => e
@@ -75,7 +78,11 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     when :not_found then render_404
     else
       flash.now[:error] = translate_error(e)
-      prepare_dependencies
+      if e.http_status == :conflict
+        prepare_dependencies(conflict: conflict_payload)
+      else
+        prepare_dependencies(posted: posted_payload(service))
+      end
       render :edit_dependencies, status: dcf_status_code(e.http_status)
     end
   end
@@ -162,32 +169,34 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     end
   end
 
-  def prepare_dependencies
-    @parent = CustomField.find_by(id: @field.parent_custom_field_id)
-    @parent_keys = parent_value_options(@parent)
-    @child_values = child_value_options(@field)
-    @value_dependencies = @field.value_dependencies || {}
-    @default_value_dependencies = @field.default_value_dependencies || {}
+  # R9: every render reloads the field, so the state hash and the editor never
+  # come from an instance a failed save changed. +posted+ (a 422 after an ok
+  # parse) and +conflict+ (a 409) are ok parse results or nil.
+  def prepare_dependencies(posted: nil, conflict: nil)
+    @field.reload
     @state_hash = RedmineDependingCustomFields::BaseService.state_hash(@field)
+    @parent = RedmineDependingCustomFields::DependencyRules.parent_of(@field)
+    @parent_available = @parent.present? &&
+                        RedmineDependingCustomFields::FieldRelevance.relevant?(@parent, @project)
+    @posted_payload = posted
+    @conflict_payload = conflict
   end
 
-  # [key, label] pairs for the matrix axes.
-  def parent_value_options(cf)
-    return [] unless cf
-
-    value_options(cf)
+  # The service's ok parse result (SP-17: no second parse); nil after a
+  # parser error and on the legacy path.
+  def posted_payload(service)
+    result = service&.parsed_payload
+    result&.ok? ? result : nil
   end
 
-  def child_value_options(cf)
-    value_options(cf)
-  end
+  # The 409 is raised in the service preamble before any parse, so this is
+  # the request's only parse, after authorization. A String only.
+  def conflict_payload
+    raw = params[:dependencies_json]
+    return nil unless raw.is_a?(String)
 
-  def value_options(cf)
-    if RedmineDependingCustomFields::FieldRelevance.enum_family?(cf)
-      cf.enumerations.order(:position).map { |e| [e.id.to_s, e.name] }
-    else
-      Array(cf.possible_values).map { |v| [v.to_s, v.to_s] }
-    end
+    result = RedmineDependingCustomFields::DependencyPayload.parse(raw)
+    result&.ok? ? result : nil
   end
 
   def value_params
@@ -200,12 +209,18 @@ class ProjectCustomFieldConfigurationController < ApplicationController
                   enumerations: %i[name position active]).to_h.symbolize_keys
   end
 
+  # dependencies_json is passed on as posted (the service refuses anything
+  # but a String) and wins over the nested params, the deprecated fallback
+  # when the key is absent.
   def dependency_params
-    {
-      value_dependencies:         unsafe_hash(params[:value_dependencies]),
-      default_value_dependencies: unsafe_hash(params[:default_value_dependencies]),
-      state_hash:                 params[:state_hash]
-    }
+    out = { state_hash: params[:state_hash] }
+    if params.key?(:dependencies_json)
+      out[:dependencies_json] = params[:dependencies_json]
+    else
+      out[:value_dependencies] = unsafe_hash(params[:value_dependencies])
+      out[:default_value_dependencies] = unsafe_hash(params[:default_value_dependencies])
+    end
+    out
   end
 
   def unsafe_hash(value)

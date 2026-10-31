@@ -41,7 +41,11 @@ RSpec.describe 'Project custom field configuration saves (characterization)', ty
       expect(stores(child)).to eq([{}, {}])
       event = audit_events(child).last
       expect([event.action, event.status]).to eq(%w[update_dependencies success])
-      expect(JSON.parse(event.after_value)).to eq('value_dependencies' => {}, 'default_value_dependencies' => {})
+      # Flipped by WP-27: was after_value == the full mapping ('value_dependencies' => {},
+      # 'default_value_dependencies' => {}) and before_value NULL; now the compact delta v2.
+      after = JSON.parse(event.after_value)
+      expect(after.values_at('v', 'source', 'links', 'defaults', 'removed')).to eq([2, 'form', 0, 0, 2])
+      expect(JSON.parse(event.before_value).values_at('v', 'links', 'defaults')).to eq([2, 2, 1])
     end
 
     # The matrix cells are bare checkboxes (no hidden companion) and every row
@@ -50,8 +54,12 @@ RSpec.describe 'Project custom field configuration saves (characterization)', ty
     it 'clears the mapping of a project-only field from an all-unticked submit with blank defaults' do
       child = depending_pair(is_for_all: false, projects: [project])
       get custom_field_configuration_field_dependencies_path(project, child)
-      cells = Nokogiri::HTML(response.body).css('[name^="value_dependencies"]')
-      expect(cells.map { |c| c['type'] }.uniq).to eq(%w[checkbox])
+      # Flipped by WP-27: was one bare checkbox cell per link ([name^="value_dependencies"]
+      # all of type checkbox); now the editor root and one blank dependencies_json input.
+      page = Nokogiri::HTML(response.body)
+      expect(page.css('[name^="value_dependencies"], [name^="default_value_dependencies"]')).to be_empty
+      expect(page.css('fieldset[data-dcf-editor]').size).to eq(1)
+      expect(page.css('input[name="dependencies_json"]').map { |input| input['value'] }).to eq([''])
 
       patch custom_field_configuration_update_dependencies_path(project, child),
             params: { state_hash: RedmineDependingCustomFields::BaseService.state_hash(child),

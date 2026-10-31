@@ -244,6 +244,21 @@ row) — these are the guard against a future prune being added to §E:
   en); Format column derives label from the field-format registry (fix #14).
 - T-UI-7 Overview renders inline inside the settings tab via the helper (no
   dependence on dedicated-controller ivars — fix #5).
+- From 0.1.0 (Amendment A5, WP-27), in `spec/requests/dcf_project_custom_field_configuration_spec.rb`
+  unless noted: T-UI-4 and T-UI-7 (dependency page) assert the editor root in
+  project mode instead of the matrix; T-DEPJ-1 to T-DEPJ-25 of
+  `large_lists_project_design.md` section 15 (JSON save and v2 delta, brackets,
+  `{}` clears, 4,200 links, unreadable and oversize payloads, offenders and the
+  dirty re-render, JSON over nested params, 409 conflict mapping, the legacy
+  clear, GET markup and escaping, scope banner, parent notices, import
+  metadata, R9 resubmit, parse counts, closed project, Save gate and noscript,
+  long numbers, the escaped field name, refusals before any parse); T-DEP-7 to
+  T-DEP-13 in `spec/services/dcf_dependency_mapping_service_spec.rb` (T-CASC-1
+  there too); T-DEP-9 in `spec/services/dcf_dependency_delta_spec.rb`; the
+  project half of `spec/requests/dependency_payload_contract_spec.rb`; jsdom
+  project cases in `test/js/dcf_dependency_editor.test.js`; the opt-in browser
+  spec `spec/system/dcf_project_dependency_editor_spec.rb` (`DCF_SYSTEM_SPECS=1`;
+  Save gate, unload warning, failed-save re-render, conflict, import).
 
 ## 9. I18n / routing / integration
 

@@ -7,7 +7,9 @@ require_relative '../rails_helper'
 # byte to the admin transport of WP-22, with the placeholder base replaced by
 # the stored digest. The fields hold the lists of the JS side, so nothing is
 # pruned and the stored mapping equals the golden; a stale base is refused.
-# WP-27 adds the project half here, with the same goldens and fields.
+# WP-27 adds the project half: each golden posted unchanged to the project
+# dependency page (the placeholder base is ignored there), stored as posted
+# and audited with source and import in the compact delta.
 RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
   fixtures :users
 
@@ -215,6 +217,56 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
       record.dependencies_json = raw
       expect(record).not_to be_valid
       expect(record.errors.details[:value_dependencies]).to eq([{ error: :dcf_stale_dependencies }])
+    end
+  end
+
+  # WP-27 (quality 5.6): the same goldens and fields on the project path,
+  # posted as the browser does (multipart, the current state hash) by a
+  # manager of a project; the stored mapping must not depend on the key
+  # order of the golden (array-index keys come first in it).
+  describe 'project dependency page (PATCH update_dependencies, WP-27)' do
+    let(:project) { dcf_create_project }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+
+    before { allow(User).to receive(:current).and_return(dcf_manager(project)) }
+
+    def patch_json(field, raw)
+      state = RedmineDependingCustomFields::BaseService.state_hash(CustomField.find(field.id))
+      patch custom_field_configuration_update_dependencies_path(project, field),
+            params: { dependencies_json: raw, state_hash: state }, headers: { 'CONTENT_TYPE' => 'multipart/form-data' }
+    end
+
+    golden_names.each do |name|
+      it "saves #{name}.json as posted, ignores the placeholder base and audits source and import" do
+        _parent, child = contract_fields(name)
+        raw = golden(name)
+        expect(raw.scan(placeholder).size).to eq(1)
+        allow(payload).to receive(:parse).and_call_original
+
+        expect { patch_json(child, raw) }.to change(events, :count).by(1)
+
+        expect(response).to redirect_to(custom_field_configuration_field_dependencies_path(project, child))
+        expect(payload).to have_received(:parse).once
+        links, defaults = expected_mapping(raw)
+        record = CustomField.find(child.id)
+        expect(record.value_dependencies.to_hash).to eq(links)
+        expect(record.default_value_dependencies.to_hash).to eq(defaults)
+        expect(record.value_dependencies.values.flatten).to all(be_a(String))
+        expect(record.format_store.keys & %w[version source import base dependencies_json]).to eq([])
+        row = events.order(:id).last
+        after = JSON.parse(row.after_value)
+        expect([row.action, row.status, row.custom_field_id]).to eq(['update_dependencies', 'success', child.id])
+        expect(after['mapping_sha256']).to eq(payload.digest(links, defaults))
+        expect(after['mapping_sha256']).to eq(payload.stored_digest(record))
+        if name.start_with?('import_')
+          expect(after['source']).to eq('import')
+          expect(after['import']).to eq(JSON.parse(raw)['import'])
+          expect(after['import']['mode']).to eq(name.delete_prefix('import_'))
+        else
+          expect(after['source']).to eq('editor')
+          expect(after).not_to have_key('import')
+        end
+      end
     end
   end
 end

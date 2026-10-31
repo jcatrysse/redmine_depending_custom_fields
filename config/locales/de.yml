@@ -54,7 +54,6 @@ de:
   text_global_field_warning: "Dieses Feld ist global (wird von jedem Projekt verwendet). Änderungen betreffen alle Projekte."
   text_confirm_cross_project_change: "Diese Änderung wirkt sich projektübergreifend oder auf verwendete Werte aus. Bitte prüfen und bestätigen."
   text_dcf_confirm_understand: "Mir ist bewusst, dass dies andere Projekte / vorhandene Daten betrifft."
-  text_dependency_matrix_help: "Markieren Sie die erlaubten untergeordneten Werte je übergeordnetem Wert und wählen Sie optional einen Standardwert pro übergeordnetem Wert."
   text_manage_standard_custom_fields_info: "Wenn deaktiviert, werden Standard-Listen- und Schlüssel/Wert-Felder von der Delegation auf Projektebene ausgeschlossen (die abhängigen Formate des Plugins bleiben verfügbar)."
   text_block_removal_when_used_info: "Wenn aktiviert, kann ein Wert, der noch von Tickets verwendet wird, nicht entfernt werden."
   notice_value_added: "Wert hinzugefügt."
@@ -193,6 +192,8 @@ de:
   label_dcf_export_links: "Verknüpfungen exportieren (CSV)"
   text_dcf_export_help: "Exportiert die aktuell im Editor angezeigten Verknüpfungen einschließlich nicht gespeicherter Änderungen als UTF-8-CSV-Datei mit einer Verknüpfung pro Zeile. Eine Tabellenkalkulation kann Werte, die mit =, +, - oder @ beginnen, als Formeln ausführen: Öffnen Sie solche Dateien mit Vorsicht oder schützen Sie diese Zellen."
   label_dcf_export_protect_formulas: "Zellen schützen, die eine Tabellenkalkulation als Formel ausführen würde"
+  text_dcf_parent_not_available: "Das übergeordnete Feld %{name} ist in diesem Projekt nicht verfügbar. Diese Zuordnung kann daher nur von einem Administrator in den Einstellungen des benutzerdefinierten Feldes geändert werden."
+  text_dcf_parent_missing: "Das übergeordnete Feld dieses Feldes existiert nicht mehr, daher kann keine Abhängigkeitszuordnung bearbeitet werden. Ein Administrator kann ein anderes übergeordnetes Feld wählen."
 
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:

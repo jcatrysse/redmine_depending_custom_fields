@@ -179,6 +179,13 @@ See Operations Spec §B for the exact algorithm and the journal/cache note.
    this field's values; reject unknown/orphan.
 5. Save model; audit; flash `notice_dependencies_saved`.
 
+From 0.1.0 (Amendment A5, WP-27) the matrix is the shared dependency editor
+(project mode) and the mapping travels as one `dependencies_json` field; the
+service validates every offender at once (Operations Spec F/G as built).
+Orphans (links whose parent key or child value is no current value) are
+reported by the editor on load and removed by the next save, which counts
+them as `orphans_removed` in the audit row.
+
 ## 15. Default value dependency flow
 
 - Per parent value, optionally choose a default child (must be among allowed
@@ -251,6 +258,11 @@ Next request returns 403; no cached authorization.
 - On load, orphan/invalid dependency entries are flagged (not auto-deleted);
   saving the matrix re-sanitizes them. A "clean up invalid mappings" action may
   be offered (audited).
+- From 0.1.0 (WP-27): the editor reports orphans on load (the admin form's
+  notice and copy) and its next save drops them; the audit row counts them
+  (`orphans_removed`). A posted key that is no current value is refused with
+  `error_invalid_dependency` (all offenders in the audit summary), never
+  pruned silently; only the admin transport prunes (D6, BC-02).
 
 ## 25. Behaviour: existing CustomValue records reference a value being
        renamed/removed

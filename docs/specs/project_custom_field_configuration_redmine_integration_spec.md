@@ -252,6 +252,12 @@ label key required so Redmine's role screen shows a readable name.
 - Reuse existing matrix JS/CSS. Add minimal CSS only if needed (scope badges) to
   the plugin's existing `assets/` and run `redmine:plugins:assets`.
 - No new JS framework.
+- From 0.1.0 (Amendment A5, WP-27): the dependency page renders the shared
+  editor; its model script, script and stylesheet come only from the head hook
+  (`ClientConfig.editor_page?` covers this controller on every action), once
+  each. `edit_dependencies.html.erb` adds no asset of its own (no
+  `content_for`, no inline script); the matrix rule `.dcf-dependencies-matrix`
+  is removed. Project views adding `dcf_config.css` is WP-28's.
 
 ## 12. Audit model — see Data Model & Audit specs.
 

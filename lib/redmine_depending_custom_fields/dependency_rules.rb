@@ -400,7 +400,9 @@ module RedmineDependingCustomFields
 
     # Strict check of a mapping against the parent and child keys, in vd order
     # then dd order, one Problem per [type, parent_key, child_key]. Empty
-    # exactly when DependencyMappingService#validate_mapping! passes.
+    # exactly when DependencyMappingService#validate_mapping! passes, apart
+    # from its check for several defaults on a single-value field (JSON path,
+    # shape_defaults!, WP-27). parent_keys and child_keys may be Hashes (keys).
     def mapping_problems(vd, dd, parent_keys:, child_keys:)
       parents = key_set(parent_keys)
       children = key_set(child_keys)

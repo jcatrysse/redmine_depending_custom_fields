@@ -430,14 +430,17 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
   end
 
   describe 'successful saves above the audit cap (UN-51, PC-19)' do
-    it 'saves a mapping whose audit JSON is above 16,384 bytes and stores the row shrunk (T-AUD-10)' do
+    # Changed by WP-27 (was: the full mapping stored shrunk with payload_truncated,
+    # payload_bytes and payload_sha256): the compact delta v2 of a mapping whose
+    # full JSON is above the cap is stored byte-identical, without markers; the
+    # marker case stays covered by the AddValueService example below.
+    it 'saves a mapping whose full JSON is above 16,384 bytes and stores the compact delta unshrunk (T-AUD-10)' do
       parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: DcfLargeList.names(10, prefix: 'P'))
       children = DcfLargeList.names(200)
       child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: children,
                              parent: parent)
       mapping = DcfLargeList.full(parent.possible_values, children)
-      after = { value_dependencies: mapping, default_value_dependencies: {} }
-      full_json = ActiveSupport::JSON.encode(after)
+      full_json = ActiveSupport::JSON.encode(value_dependencies: mapping, default_value_dependencies: {})
       expect(full_json.bytesize).to be > 16_384
 
       service('DependencyMappingService', child, { value_dependencies: mapping }).call
@@ -446,9 +449,9 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       row = events.where(status: 'success').order(:id).last
       expect(row.after_value.bytesize).to be <= 16_384
       parsed = JSON.parse(row.after_value)
-      expect(parsed['payload_truncated']).to be(true)
-      expect(parsed['payload_bytes']).to eq(full_json.bytesize)
-      expect(parsed['payload_sha256']).to eq(Digest::SHA256.hexdigest(full_json))
+      expect(parsed.keys & %w[payload_truncated payload_bytes payload_sha256]).to eq([])
+      expect(parsed.values_at('v', 'links', 'added', 'truncated')).to eq([2, 2_000, 2_000, true])
+      expect(ActiveSupport::JSON.encode(parsed)).to eq(row.after_value)
     end
 
     it 'adds a value above the cap and stores a bounded row' do

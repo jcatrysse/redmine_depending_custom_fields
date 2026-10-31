@@ -54,7 +54,6 @@ en:
   text_global_field_warning: "This field is global (used by every project). Changes affect all projects."
   text_confirm_cross_project_change: "This change has cross-project or in-use impact. Please review and confirm."
   text_dcf_confirm_understand: "I understand this affects other projects / existing data."
-  text_dependency_matrix_help: "Tick the allowed child values for each parent value, and optionally pick a default child per parent."
   text_manage_standard_custom_fields_info: "When disabled, standard list and key/value custom fields are excluded from project-level delegation (the plugin's depending formats remain available)."
   text_block_removal_when_used_info: "When enabled, a value that is still used by issues cannot be removed."
   notice_value_added: "Value added."
@@ -193,6 +192,8 @@ en:
   label_dcf_export_links: "Export links (CSV)"
   text_dcf_export_help: "Exports the links currently shown in the editor, including unsaved changes, as a UTF-8 CSV file with one link per line. A spreadsheet can run values that start with =, +, - or @ as formulas: open such files with care or protect these cells."
   label_dcf_export_protect_formulas: "Protect cells that a spreadsheet would run as formulas"
+  text_dcf_parent_not_available: "The parent field %{name} is not available in this project, so this mapping can only be changed by an administrator in the custom field settings."
+  text_dcf_parent_missing: "The parent field of this field no longer exists, so no dependency mapping can be edited. An administrator can choose another parent field."
 
   # Model errors, shown after the field name
   activerecord:

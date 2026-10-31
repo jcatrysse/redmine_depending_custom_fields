@@ -55,6 +55,30 @@ right to see what changed in that project.
 | `error_message` | text | yes | NULL | populated on `validation_failed`/`error`/`forbidden` |
 | `created_at` | datetime | no | — | when (no `updated_at`; rows are immutable) |
 
+**`update_dependencies` rows from 0.1.0 (Amendment A5, WP-27).** `before_value`
+(NULL before) is `{"v":2,"links":N,"defaults":N,"mapping_sha256":"<64 hex>"}`;
+`after_value` is the compact delta v2 (`v`, `source`, `links`, `defaults`,
+`mapping_sha256`, `added`, `removed`, `orphans_removed`, `defaults_changed`,
+`parents_changed`, `sample` with `added`, `removed` and `defaults`, `truncated`,
+and `import` `{mode, rows}` only for `source` `import`). `links` counts the
+distinct links, `defaults` the parent values with a default; `truncated` is
+always present and true when a sample list is shorter than its full set.
+Samples hold at most 20 entries and 4,000 JSON bytes per list, labels of this
+field and its parent cut to 80 JSON bytes, at most 3 child labels per default,
+in value order; a key that is no value of either field is shown as stored,
+never looked up elsewhere. `mapping_sha256` is `DependencyPayload.digest` of
+the mapping (keys and values as sets), so a row's `before` equals the
+previous project row's `after` unless the mapping changed elsewhere (admin
+form, API). The worst case is about 12 KB, so AuditPayload never shrinks the
+row and no `payload_truncated`, `payload_bytes` or `payload_sha256` marker
+appears (those mark other rows above 16,384 bytes). **Client-reported
+metadata (SP-12):** `source` (`editor`, `import`, or `form` for the
+deprecated nested params) and `import` come from the browser and are
+informational only, never used for authorization or compliance; the
+server-computed counts, samples and digest are authoritative. Rows written
+before 0.1.0 keep the full mapping; no view reads `before_value` or
+`after_value`.
+
 ### Indexes
 - `index_dcf_audit_on_project_created (project_id, created_at)` — project view.
 - `index_dcf_audit_on_cf_created (custom_field_id, created_at)` — per-field history.
@@ -94,6 +118,18 @@ right to see what changed in that project.
   when the parent-side cascade touched children.
 - `validation_failed` / `save_failed` / `authorization_failed`:
   `error_message` + attempted input summary (sanitized; no secrets).
+- `update_dependencies` examples (0.1.0, WP-27): success summary
+  `Updated dependency mapping (import, replace, 5000 rows): +40/-10 links, 2
+  orphaned removed, 2 default(s) changed, 23 parent value(s)` (source part
+  `(editor)`, `(form)` or `(import, <mode>, <rows> rows)`; a no-op save is
+  audited too); a refused payload `dependencies_json rejected: invalid_json (1
+  bytes)` with `error_message` `error_invalid_dependency_payload` (or
+  `error_dcf_dependencies_too_large_to_send` for `too_large`); a refused
+  mapping `unknown parent keys: 2 [ZZ, YY]; unknown child values: 1 [nope];
+  defaults not linked: 1 [B / c2]; several defaults on a single-value field: 1
+  [A]` with `error_message` `error_invalid_dependency`; a request that reaches
+  the service without the permission `authorization_failed` with
+  `error_message` `error_forbidden` and no summary.
 
 ## 6. Transactional guarantee
 

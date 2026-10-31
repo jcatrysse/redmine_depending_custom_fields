@@ -138,6 +138,20 @@ Per operation, only:
 - `dependencies`: `value_dependencies` (hash, sanitized), `default_value_dependencies` (hash, sanitized).
 No other keys are permitted; nested `custom_field` blobs are rejected.
 
+From 0.1.0 (Amendment A5, WP-27) `dependencies` takes `dependencies_json`
+(plus `state_hash`): a String of at most 4 MiB (`DependencyPayload::MAX_BYTES`)
+in payload schema v1, checked by the one parser `DependencyPayload.parse!`
+inside the service. A run of 20 or more digits outside strings is refused
+before `JSON.parse` (`number_too_long`, SP-01); anything but a String (a
+nested param, an array, an uploaded file, which is never read) is
+`not_a_string`; blank is an error, never a clear. The controller only copies
+the value, so the core `authorize` filter, `require_active_project` and the
+service preamble (permission check, `authorization_failed` row) all run
+before any parse (SP-20b); the 409 branch parses once, after the preamble.
+The nested `value_dependencies` / `default_value_dependencies` remain
+accepted when `dependencies_json` is absent (deprecated in 0.1.0, removable
+no earlier than 0.2.0).
+
 ## 16. CSRF expectations
 
 - HTML forms with Rails authenticity token; standard `protect_from_forgery`.
@@ -157,6 +171,15 @@ No other keys are permitted; nested `custom_field` blobs are rejected.
   the actor could already see them.
 - IP/user-agent stored for traceability; treat as personal data per the
   installation's policy (documented; purge task optional).
+- `update_dependencies` audit rows (0.1.0, WP-27) hold counts, the mapping
+  digest and samples whose labels are only those of the edited field and its
+  parent (a key that is neither field's value is shown as stored, never looked
+  up in another field, so a role-invisible field is never named); offender
+  keys of a refused mapping go only to the audit summary, never to a flash;
+  every flash interpolation is escaped once (`translate_error`) and the page
+  escapes field names and values once (ERB, JSON-encoded data attributes). No
+  database error, SQL or other field's value reaches a flash, the page or a
+  row. `source` and `import` are client-reported and informational (SP-12).
 
 ## 19. Safe defaults
 

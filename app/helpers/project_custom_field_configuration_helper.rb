@@ -65,6 +65,15 @@ module ProjectCustomFieldConfigurationHelper
     names
   end
 
+  # A core-like flash box for a page banner (UX-10): core's notice_icon on
+  # 6.0 and later (it takes the type as a String), the class background
+  # icon on 5.1. The text is escaped once; no id, core's own boxes carry
+  # flash_<type>.
+  def dcf_flash_box(type, text)
+    icon = respond_to?(:notice_icon) ? notice_icon(type.to_s) : ''.html_safe
+    content_tag(:div, icon + text, class: "flash #{type}")
+  end
+
   # Icon helper guarded for Redmine 5.x (no sprite_icon) — falls back to icon-*.
   def dcf_icon(name, label = nil)
     if respond_to?(:sprite_icon)

@@ -54,7 +54,6 @@ fr:
   text_global_field_warning: "Ce champ est global (utilisé par tous les projets). Les modifications affectent tous les projets."
   text_confirm_cross_project_change: "Cette modification a un impact inter-projets ou sur des valeurs utilisées. Veuillez vérifier et confirmer."
   text_dcf_confirm_understand: "Je comprends que cela affecte d'autres projets / des données existantes."
-  text_dependency_matrix_help: "Cochez les valeurs enfants autorisées pour chaque valeur parente et choisissez éventuellement une valeur enfant par défaut par parent."
   text_manage_standard_custom_fields_info: "Lorsque désactivé, les champs liste et clé/valeur standard sont exclus de la délégation au niveau du projet (les formats dépendants du plugin restent disponibles)."
   text_block_removal_when_used_info: "Lorsque activé, une valeur encore utilisée par des demandes ne peut pas être supprimée."
   notice_value_added: "Valeur ajoutée."
@@ -193,6 +192,8 @@ fr:
   label_dcf_export_links: "Exporter les liens (CSV)"
   text_dcf_export_help: "Exporte les liens actuellement affichés dans l'éditeur, y compris les modifications non enregistrées, dans un fichier CSV UTF-8 avec un lien par ligne. Un tableur peut exécuter comme formules les valeurs commençant par =, +, - ou @ : ouvrez ces fichiers avec prudence ou protégez ces cellules."
   label_dcf_export_protect_formulas: "Protéger les cellules qu'un tableur exécuterait comme des formules"
+  text_dcf_parent_not_available: "Le champ parent %{name} n'est pas disponible dans ce projet. Ce mappage ne peut donc être modifié que par un administrateur dans les paramètres du champ personnalisé."
+  text_dcf_parent_missing: "Le champ parent de ce champ n'existe plus, aucun mappage des dépendances ne peut donc être modifié. Un administrateur peut choisir un autre champ parent."
 
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:
