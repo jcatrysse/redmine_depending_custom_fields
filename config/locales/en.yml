@@ -201,6 +201,7 @@ en:
   label_dcf_sort_az: "Sort A-Z"
   label_dcf_sort_za: "Sort Z-A"
   text_dcf_sort_confirm: "All values of this field (%{count}) will be sorted alphabetically and the current order will be replaced. Continue?"
+  text_dcf_page_scope_save: "Save applies to the values shown on this page only."
 
   # Model errors, shown after the field name
   activerecord:

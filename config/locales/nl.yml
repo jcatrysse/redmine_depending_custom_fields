@@ -201,6 +201,7 @@ nl:
   label_dcf_sort_az: "Sorteren A-Z"
   label_dcf_sort_za: "Sorteren Z-A"
   text_dcf_sort_confirm: "Alle waarden van dit veld (%{count}) worden alfabetisch gesorteerd en de huidige volgorde wordt vervangen. Doorgaan?"
+  text_dcf_page_scope_save: "Opslaan geldt alleen voor de waarden die op deze pagina worden getoond."
 
   # Modelfouten, getoond na de veldnaam
   activerecord:

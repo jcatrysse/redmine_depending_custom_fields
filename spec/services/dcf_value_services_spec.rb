@@ -1147,6 +1147,454 @@ RSpec.describe 'DCF value operation services' do
     end
   end
 
+  # --- Update enumerations, page mode (T-ENP, WP-30) ----------------------
+  describe 'UpdateEnumerationsService page mode (WP-30)' do
+    let(:klass) { RedmineDependingCustomFields::UpdateEnumerationsService }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+
+    # The project first, so its statements stay out of the captured ones.
+    before { project }
+
+    def page_save(field, rows, extra = {})
+      klass.new(project: project, field: field, user: user,
+                params: { batch_scope: 'page', enumerations: rows }.merge(extra)).call
+    end
+
+    # The rows the page-mode form posts for +enums+: name and active, no
+    # position; overrides by enumeration id.
+    def page_rows(enums, overrides = {})
+      enums.each_with_object({}) do |enum, out|
+        over = overrides[enum.id] || {}
+        active = over.key?(:active) ? over[:active] : enum.active?
+        out[enum.id.to_s] = { 'name' => over.key?(:name) ? over[:name] : enum.name, 'active' => active ? '1' : '0' }
+      end
+    end
+
+    def ordered(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:position, :id).to_a
+    end
+
+    def enum_state(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name, :position, :active)
+    end
+
+    def rows_of(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def after_of(row)
+      JSON.parse(row.after_value)
+    end
+
+    def expect_refused(key)
+      raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(key) }
+    end
+
+    def many(count)
+      field = dcf_enum_field(names: [])
+      CustomFieldEnumeration.insert_all(
+        (1..count).map { |i| { custom_field_id: field.id, name: format('N%04d', i), position: i, active: true } }
+      )
+      CustomField.find(field.id)
+    end
+
+    # The SQL statements of the block (schema, cache and transaction ones
+    # left out).
+    def statements(&block)
+      sqls = []
+      callback = lambda do |*, payload|
+        next if payload[:name].to_s.match?(/\A(?:SCHEMA|CACHE|TRANSACTION)\z/)
+        next if payload[:sql].to_s.match?(/\A\s*(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/i)
+
+        sqls << payload[:sql].to_s
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record', &block)
+      sqls
+    end
+
+    def enum_updates(sqls)
+      sqls.grep(/\AUPDATE\s+[`"]?custom_field_enumerations[`"]?\s/i)
+    end
+
+    it 'applies a subset and leaves the other rows untouched, with one success row (T-ENP-1)' do
+      field = dcf_enum_field(names: %w[X Y Z W])
+      x, y, z, w = ordered(field)
+      untouched = enum_state(field).values_at(2, 3)
+      expect { page_save(field, page_rows([x, y], x.id => { name: 'X2' }, y.id => { active: false })) }
+        .to change { rows_of(field).where(action: 'update_enumerations', status: 'success').count }.by(1)
+      expect(x.reload.name).to eq('X2')
+      expect(y.reload.active).to be false
+      expect(enum_state(field).values_at(2, 3)).to eq(untouched)
+      expect([z.reload.name, w.reload.name]).to eq(%w[Z W])
+    end
+
+    it 'ignores posted positions and never renumbers stored ones (T-ENP-2)' do
+      field = dcf_enum_field(names: %w[X Y Z W])
+      enums = ordered(field)
+      enums.zip([2, 5, 7, 11]).each { |enum, position| enum.update_column(:position, position) }
+      x, y = enums
+      rows = page_rows([x, y], x.id => { name: 'X2' })
+      rows[x.id.to_s]['position'] = '3'
+      rows[y.id.to_s]['position'] = '1'
+      sqls = statements { page_save(field, rows) }
+      expect(ordered(field).map(&:position)).to eq([2, 5, 7, 11])
+      expect(ordered(field).map(&:name)).to eq(%w[X2 Y Z W])
+      expect(enum_updates(sqls).grep(/position/i)).to be_empty
+      row = rows_of(field).last
+      expect(after_of(row)).not_to have_key('reordered')
+      expect(row.changes_summary).not_to include('reordered')
+    end
+
+    it 'leaves the state hash unchanged on an untouched page save and accepts any position value' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      field.enumerations.order(:position).last.update_column(:position, 9)
+      before = RedmineDependingCustomFields::BaseService.state_hash(field)
+      ['', 'abc', '-1', '9' * 20, nil].each do |position|
+        rows = page_rows(ordered(field).first(2))
+        rows.each_value { |attrs| attrs['position'] = position }
+        page_save(field, rows)
+      end
+      page_save(field, page_rows(ordered(field).reverse))
+      expect(RedmineDependingCustomFields::BaseService.state_hash(field.reload)).to eq(before)
+      expect(ordered(field).map(&:position)).to eq([1, 2, 9])
+    end
+
+    it 'refuses a foreign id and applies none of the save (T-ENP-3)' do
+      field = dcf_enum_field(names: %w[X Y])
+      other = dcf_enum_field(name: 'Other', names: %w[Z])
+      own = ordered(field).first
+      alien = other.enumerations.first
+      rows = page_rows([own], own.id => { name: 'Renamed' })
+            .merge(alien.id.to_s => { 'name' => 'Hacked', 'active' => '0' })
+      expect { page_save(field, rows) }.to expect_refused(:error_reorder_mismatch)
+      expect(own.reload.name).to eq('X')
+      expect(alien.reload).to have_attributes(name: 'Z', active: true)
+      row = rows_of(field).last
+      expect([row.action, row.status, row.error_message, row.changes_summary])
+        .to eq(['validation_failed', 'validation_failed', 'error_reorder_mismatch', nil])
+    end
+
+    it 'refuses an empty, missing or non-Hash enumerations param (T-ENP-3, G5)' do
+      field = dcf_enum_field(names: %w[X Y])
+      before = enum_state(field)
+      [{}, nil, [], 'x', [{ 'name' => 'x' }], ActionController::Parameters.new({})].each do |value|
+        expect { page_save(field, value) }.to expect_refused(:error_reorder_mismatch)
+      end
+      expect do
+        klass.new(project: project, field: field, user: user, params: { batch_scope: 'page' }).call
+      end.to expect_refused(:error_reorder_mismatch)
+      expect(enum_state(field)).to eq(before)
+      expect(rows_of(field).where(status: 'validation_failed').count).to eq(7)
+    end
+
+    it 'refuses unknown, malformed, foreign and duplicate keys without an existence oracle (T-ENP-3, SP-20c)' do
+      parent = dcf_enum_field(name: 'Parent', names: %w[P])
+      field = dcf_enum_field(format: 'depending_enumeration', name: 'Mid', names: %w[X Y], parent: parent)
+      child = dcf_enum_field(format: 'depending_enumeration', name: 'Kid', names: %w[C], parent: field)
+      x, = ordered(field)
+      max = CustomFieldEnumeration.maximum(:id)
+      bad = [(max + 1000).to_s, '0', '-5', "00#{x.id}", "#{x.id}abc", "#{x.id}.0", ' ' + x.id.to_s,
+             parent.enumerations.first.id.to_s, child.enumerations.first.id.to_s]
+      allow(CustomFieldEnumeration).to receive(:find).and_call_original
+      bad.each do |key|
+        rows = page_rows([x], x.id => { name: 'Renamed' }).merge(key => { 'name' => 'Junk', 'active' => '1' })
+        expect { page_save(field, rows) }.to expect_refused(:error_reorder_mismatch)
+        row = rows_of(field).last
+        expect([row.error_message, row.changes_summary, row.before_value, row.after_value])
+          .to eq(['error_reorder_mismatch', nil, nil, nil])
+      end
+      expect { page_save(field, { x.id => { 'name' => 'A' }, x.id.to_s => { 'name' => 'B' } }) }
+        .to expect_refused(:error_reorder_mismatch)
+      expect(CustomFieldEnumeration).not_to have_received(:find)
+      expect(x.reload.name).to eq('X')
+      expect([parent, child].map { |f| f.enumerations.first.reload.name }).to eq(%w[P C])
+    end
+
+    it 'refuses a row that is not a Hash with 422, never a TypeError (G5)' do
+      field = dcf_enum_field(names: %w[X Y])
+      x, y = ordered(field)
+      [{ x.id.to_s => 'x' }, { x.id.to_s => ['x'] }, page_rows([y]).merge(x.id.to_s => nil)].each do |rows|
+        expect { page_save(field, rows) }.to expect_refused(:error_reorder_mismatch)
+      end
+      expect(enum_state(field).map { |r| r[1] }).to eq(%w[X Y])
+    end
+
+    it 'accepts Integer and String keys, symbol attributes and ids from different pages' do
+      field = many(30)
+      first, *, last = ordered(field)
+      page_save(field, { first.id => { name: 'First' }, last.id.to_s => { 'name' => 'Last', 'active' => '1' } })
+      expect(first.reload).to have_attributes(name: 'First', active: false)
+      expect(last.reload).to have_attributes(name: 'Last', active: true)
+    end
+
+    it 'treats a missing active param as unticked, as in full mode' do
+      field = dcf_enum_field(names: %w[X Y])
+      x = ordered(field).first
+      page_save(field, { x.id.to_s => { 'name' => 'X' } })
+      expect(x.reload.active).to be false
+    end
+
+    it 'refuses a rename onto the active name of a row not submitted (T-ENP-4)' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y = ordered(field)
+      expect { page_save(field, page_rows([x, y], x.id => { name: ' Z ' }, y.id => { active: false })) }
+        .to expect_refused(:error_value_duplicate)
+      expect(x.reload.name).to eq('X')
+      expect(y.reload.active).to be true
+    end
+
+    it 'refuses reactivating a submitted row whose name an unsubmitted active row holds (T-ENP-4)' do
+      field = dcf_enum_field(names: %w[X Y X])
+      stale = ordered(field).first
+      stale.update_column(:active, false)
+      expect { page_save(field, page_rows([stale], stale.id => { active: true })) }
+        .to expect_refused(:error_value_duplicate)
+      expect(stale.reload.active).to be false
+    end
+
+    it 'accepts a rename onto an inactive name, a swap and deactivating one of a duplicate pair (T-ENP-4)' do
+      field = dcf_enum_field(names: %w[X Y Z W W])
+      x, y, z, w1, w2 = ordered(field)
+      page_save(field, page_rows([w2], w2.id => { active: false }))
+      expect([w1.reload.active, w2.reload.active]).to eq([true, false])
+      z.update_column(:active, false)
+      page_save(field, page_rows([x], x.id => { name: 'Z' }))
+      expect(x.reload.name).to eq('Z')
+      page_save(field, page_rows([x.reload, y], x.id => { name: 'Y' }, y.id => { name: 'Z' }))
+      expect([x.reload.name, y.reload.name]).to eq(%w[Y Z])
+    end
+
+    it 'refuses two submitted rows ending with the same active name' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y = ordered(field)
+      expect { page_save(field, page_rows([x, y], x.id => { name: 'Q' }, y.id => { name: 'Q' })) }
+        .to expect_refused(:error_value_duplicate)
+      expect([x.reload.name, y.reload.name]).to eq(%w[X Y])
+    end
+
+    # Decision (WP-30): the merged state is checked whole, as full mode does,
+    # so an active duplicate already stored among rows not submitted blocks
+    # the page until one of them is renamed or deactivated.
+    it 'refuses a save while two unsubmitted active rows share a name, as full mode does' do
+      field = dcf_enum_field(names: %w[X D D])
+      x, d1 = ordered(field)
+      expect { page_save(field, page_rows([x], x.id => { name: 'X2' })) }.to expect_refused(:error_value_duplicate)
+      expect { save_enums(field, x.id => { name: 'X2' }) }.to expect_refused(:error_value_duplicate)
+      page_save(field, page_rows([d1], d1.id => { name: 'D1' }))
+      expect(d1.reload.name).to eq('D1')
+    end
+
+    it 'refuses a blank name and applies nothing else of the page' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y = ordered(field)
+      expect { page_save(field, page_rows([x, y], x.id => { name: '  ' }, y.id => { active: false })) }
+        .to expect_refused(:error_value_blank)
+      expect([x.reload.name, y.reload.active]).to eq(['X', true])
+    end
+
+    it 'rolls the whole page back when a row fails model validation' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y = ordered(field)
+      expect { page_save(field, page_rows([x, y], x.id => { active: false }, y.id => { name: 'N' * 61 })) }
+        .to expect_refused(:error_save_failed)
+      expect([x.reload.active, y.reload.name]).to eq([true, 'Y'])
+      row = rows_of(field).last
+      expect([row.action, row.status]).to eq(%w[save_failed save_failed])
+      expect(row.error_message).not_to match(/UPDATE|INSERT|SELECT|N{61}/)
+      expect(row.changes_summary).to be_nil
+    end
+
+    it 'refuses every scope but a blank one or exactly page, never storing it (T-ENP-5)' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x = ordered(field).first
+      before = enum_state(field)
+      ['full', 'PAGE', 'Page', ' page', "page\n", 'pages', 'SCOPE-JUNK', :page, 1, ['page'], { 'x' => 'page' }].each do |scope|
+        expect { page_save(field, page_rows([x], x.id => { name: 'R' }), batch_scope: scope) }
+          .to expect_refused(:error_reorder_mismatch)
+        row = rows_of(field).last
+        expect([row.action, row.status, row.error_message, row.changes_summary, row.before_value, row.after_value])
+          .to eq(['validation_failed', 'validation_failed', 'error_reorder_mismatch', nil, nil, nil])
+      end
+      expect(rows_of(field).map { |r| r.attributes.values.join(' ') }.join).not_to include('SCOPE-JUNK')
+      expect { save_enums(field, { x.id => { position: 3 } }, batch_scope: 'full') }.to expect_refused(:error_reorder_mismatch)
+      expect(enum_state(field)).to eq(before)
+    end
+
+    it 'audits scope page and the submitted row count; N counts every value (T-ENP-6)' do
+      field = dcf_enum_field(names: %w[X Y Z W])
+      x, y, z = ordered(field)
+      z.update_column(:active, false)
+      page_save(field, page_rows([x, y], x.id => { name: 'X2' }))
+      row = rows_of(field).last
+      expect([row.action, row.status]).to eq(%w[update_enumerations success])
+      expect(row.changes_summary).to eq('Saved 2 of 4 enumeration value(s) (page): renamed 1')
+      expect(after_of(row)).to eq('renamed' => ['X2'], 'scope' => 'page', 'rows' => 2)
+      expect(JSON.parse(row.before_value)).to eq('renamed' => ['X'])
+      expect(row.affected_child_field_ids).to be_nil
+      page_save(field, page_rows([x.reload, y], x.id => { active: false }, y.id => { name: 'Y2' }))
+      expect(rows_of(field).last.changes_summary).to eq('Saved 2 of 4 enumeration value(s) (page): renamed 1, deactivated 1')
+      page_save(field, page_rows(ordered(field).first(3)))
+      row = rows_of(field).last
+      expect(row.changes_summary).to eq('Saved 3 of 4 enumeration value(s) (page): no changes')
+      expect(after_of(row)).to eq('scope' => 'page', 'rows' => 3)
+    end
+
+    it 'caps the audit lists at DELTA_CAP in page mode' do
+      field = many(30)
+      enums = ordered(field).first(25)
+      page_save(field, page_rows(enums, enums.to_h { |e| [e.id, { active: false }] }))
+      after = after_of(rows_of(field).last)
+      expect(after['deactivated'].size).to eq(klass::DELTA_CAP + 1)
+      expect(after['deactivated'].last).to eq('(+5 more)')
+      expect(after['rows']).to eq(25)
+    end
+
+    it 'keeps the full-mode audit shape: no scope or rows key' do
+      field = dcf_enum_field(names: %w[X Y])
+      x = ordered(field).first
+      save_enums(field, x.id => { name: 'X2' })
+      row = rows_of(field).last
+      expect(row.changes_summary).to eq('Saved 2 enumeration value(s): renamed 1')
+      expect(after_of(row).keys).to eq(['renamed'])
+    end
+
+    it 'clears the default when page mode deactivates its value, and keeps it otherwise (T-ENP-7)' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y, z = ordered(field)
+      field.update!(default_value: y.id.to_s)
+      page_save(field, page_rows([x, z], x.id => { active: false }))
+      expect(field.reload.default_value).to eq(y.id.to_s)
+      page_save(field, page_rows([y, z]))
+      expect(field.reload.default_value).to eq(y.id.to_s)
+      2.times { |i| dcf_custom_value(field, y.id, customized_id: 910_000 + i) }
+      page_save(field, page_rows([y, z], y.id => { active: false }))
+      expect(field.reload.default_value).to be_blank
+      row = rows_of(field).last
+      expect(row.changes_summary).to eq('Saved 2 of 3 enumeration value(s) (page): deactivated 1, default value cleared')
+      expect(row.affected_values_count).to eq(2)
+    end
+
+    it 'keeps full mode strict: a blank or absent scope with a partial payload is refused (T-ENP-8)' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x = ordered(field).first
+      [{}, { batch_scope: nil }, { batch_scope: '' }, { batch_scope: '  ' }].each do |extra|
+        partial = enum_payload(field, x.id => { name: 'Renamed' })
+        partial.delete(ordered(field).last.id.to_s)
+        expect do
+          klass.new(project: project, field: field, user: user, params: { enumerations: partial }.merge(extra)).call
+        end.to expect_refused(:error_reorder_mismatch)
+      end
+      expect(x.reload.name).to eq('X')
+      field.enumerations.order(:position).last.update_column(:position, 9)
+      save_enums(field.reload, {}, batch_scope: '')
+      expect(ordered(field).map(&:position)).to eq([1, 2, 3])
+      expect(rows_of(field).last.changes_summary).to eq('Saved 3 enumeration value(s): reordered')
+    end
+
+    it 'refuses a stale state_hash with 409 before the scope and id checks (T-ENP-9)' do
+      field = dcf_enum_field(names: %w[c b a])
+      a = ordered(field).last
+      stale = RedmineDependingCustomFields::BaseService.state_hash(field)
+      RedmineDependingCustomFields::SortValuesService
+        .new(project: project, field: field, user: user, params: { direction: 'asc' }).call
+      before = enum_state(field)
+      expect { page_save(field, page_rows([a.reload], a.id => { name: 'A' }), state_hash: stale) }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e|
+          expect([e.key, e.http_status]).to eq([:error_stale_edit, :conflict])
+        }
+      expect(enum_state(field)).to eq(before)
+      row = rows_of(field).last
+      expect([row.status, row.error_message]).to eq(%w[validation_failed error_stale_edit])
+      expect { page_save(field, {}, state_hash: 'stale', batch_scope: 'junk') }.to expect_refused(:error_stale_edit)
+      expect { page_save(field, { '0' => { 'name' => 'x' } }, state_hash: 'stale') }.to expect_refused(:error_stale_edit)
+      page_save(field, page_rows([a.reload], a.id => { name: 'A' }), state_hash: '')
+      expect(a.reload.name).to eq('A')
+    end
+
+    it 'gives 409 to a page opened before a save on another page' do
+      field = many(30)
+      first, *, last = ordered(field)
+      opened = RedmineDependingCustomFields::BaseService.state_hash(field)
+      page_save(field, page_rows([last], last.id => { name: 'Elsewhere' }), state_hash: opened)
+      expect { page_save(field, page_rows([first], first.id => { name: 'Mine' }), state_hash: opened) }
+        .to expect_refused(:error_stale_edit)
+      expect(first.reload.name).to eq('N0001')
+    end
+
+    it 'refuses a list-family field in page mode with error_format_unsupported (T-ACT-3)' do
+      list = dcf_list_field(values: %w[A B], is_for_all: false, projects: [project])
+      expect { page_save(list, { '1' => { 'name' => 'x' } }, batch_scope: 'junk') }
+        .to expect_refused(:error_format_unsupported)
+      expect(list.reload.possible_values).to eq(%w[A B])
+    end
+
+    it 'refuses a user without the permission in page mode' do
+      field = dcf_enum_field(names: %w[X Y])
+      x = ordered(field).first
+      expect do
+        klass.new(project: project, field: field, user: dcf_plain_member(project),
+                  params: { batch_scope: 'page', enumerations: page_rows([x], x.id => { active: false }) }).call
+      end.to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.http_status).to eq(:forbidden) }
+      expect(x.reload.active).to be true
+    end
+
+    it 'leaves a role-invisible child byte-identical and out of every row' do
+      other_role = dcf_create_role
+      parent = dcf_enum_field(name: 'Parent', names: %w[P1 P2 P3])
+      child = dcf_enum_field(format: 'depending_enumeration', name: "HIDDEN-CHILD-#{SecureRandom.hex(3)}",
+                             names: %w[SECRET-V], parent: parent)
+      p1, p2 = ordered(parent)
+      secret = child.enumerations.first
+      dcf_set_dependencies(child, value_dependencies: { p1.id.to_s => [secret.id.to_s], p2.id.to_s => [secret.id.to_s] })
+      child.update!(visible: false, role_ids: [other_role.id])
+      store = CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first
+      page_save(parent, page_rows([p1], p1.id => { active: false }))
+      expect { page_save(parent, page_rows([p1.reload, p2], p2.id => { name: 'P3' })) }
+        .to expect_refused(:error_value_duplicate)
+      expect(CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first).to eq(store)
+      rows_of(parent).each do |row|
+        expect(row.affected_child_field_ids).to be_nil
+        expect(row.attributes.values.join(' ')).not_to include('HIDDEN-CHILD')
+        expect(row.attributes.values.join(' ')).not_to include('SECRET-V')
+      end
+    end
+
+    # G6: the invariance form, never absolute counts.
+    it 'runs the same statements for 600 and 6,000 values; an untouched page writes nothing' do
+      small = many(600)
+      large = many(6_000)
+      warm = dcf_enum_field(names: %w[V W])
+      page_save(warm, page_rows(ordered(warm), ordered(warm).first.id => { name: 'V2' }))
+      counts = [small, large].map do |field|
+        enums = ordered(field)[100, 25]
+        sqls = statements { page_save(field, page_rows(enums, enums.first.id => { name: 'Renamed' })) }
+        [enum_updates(sqls).size, sqls.size]
+      end
+      expect(counts.first).to eq(counts.last)
+      expect(counts.first.first).to eq(1)
+      sqls = statements { page_save(large, page_rows(ordered(large)[200, 25])) }
+      expect(enum_updates(sqls)).to be_empty
+    end
+
+    # G6 on the submitted side: no lookup or write per submitted row.
+    it 'runs the same statements for 25 and 500 submitted rows; 500 untouched rows write nothing' do
+      field = many(1_200)
+      warm = dcf_enum_field(names: %w[V W])
+      page_save(warm, page_rows(ordered(warm), ordered(warm).first.id => { name: 'V2' }))
+      counts = [[0, 25, 'R1'], [600, 500, 'R2']].map do |start, size, name|
+        enums = ordered(field)[start, size]
+        sqls = statements { page_save(field, page_rows(enums, enums.first.id => { name: name })) }
+        expect(rows_of(field).last.changes_summary).to eq("Saved #{size} of 1200 enumeration value(s) (page): renamed 1")
+        [enum_updates(sqls).size, sqls.size]
+      end
+      expect(counts.last).to eq(counts.first)
+      expect(counts.first.first).to eq(1)
+      sqls = statements { page_save(field, page_rows(ordered(field)[100, 500])) }
+      expect(rows_of(field).last.changes_summary).to eq('Saved 500 of 1200 enumeration value(s) (page): no changes')
+      expect(enum_updates(sqls)).to be_empty
+    end
+  end
+
   # --- Audit (T-AUD) -----------------------------------------------------
   describe 'audit integration' do
     it 'writes exactly one success event (T-AUD-1)' do

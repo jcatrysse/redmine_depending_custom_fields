@@ -14,7 +14,10 @@ module RedmineDependingCustomFields
   # `possible_values` with no id, position or active flag, and keep the
   # per-operation endpoints (§A–§D).
   #
-  # Params: `enumerations` => { "<id>" => { name:, position:, active: } }.
+  # Params: `enumerations` => { "<id>" => { name:, position:, active: } } and
+  # `batch_scope`: absent or blank is full mode (every row, positions applied);
+  # exactly 'page' is page mode (WP-30): a subset of the rows, names and
+  # active flags only, positions never read or written.
   #
   # Deactivating a value is non-destructive and reversible: it removes the value
   # from every picker (`possible_values_records` scopes to `enumerations.active`)
@@ -34,18 +37,87 @@ module RedmineDependingCustomFields
 
     def perform!
       raise OperationError.new(:error_format_unsupported) unless enum_family?
+      return perform_page! if page_mode?
 
       rows = submitted_rows
       validate_names!(rows)
       validate_no_active_duplicates!(rows)
 
-      delta = apply!(rows)
+      delta = apply!(rows, positions: true)
       clear_dangling_default!(delta[:deactivated_ids])
 
       Outcome.new(before: delta[:before], after: delta[:after],
                   summary: summary_for(rows, delta),
                   affected_projects_count: affected_projects_count,
                   affected_values_count: deactivated_usage(delta[:deactivated_ids]))
+    end
+
+    # Page mode: the submitted rows are checked together with the stored
+    # names of every row not submitted, so a page cannot create an active
+    # duplicate with a value on another page.
+    def perform_page!
+      stored = field.enumerations.reorder(:position, :id).pluck(:id, :name, :active)
+      rows = page_rows(stored)
+      validate_names!(rows)
+      validate_no_active_duplicates!(rows + unsubmitted_rows(stored, rows))
+
+      delta = apply!(rows, positions: false)
+      clear_dangling_default!(delta[:deactivated_ids])
+      delta[:after][:scope] = 'page'
+      delta[:after][:rows] = rows.length
+
+      Outcome.new(before: delta[:before], after: delta[:after],
+                  summary: "Saved #{rows.length} of #{stored.length} enumeration value(s) (page): " \
+                           "#{summary_detail(delta)}",
+                  affected_projects_count: affected_projects_count,
+                  affected_values_count: deactivated_usage(delta[:deactivated_ids]))
+    end
+
+    # Only a blank scope selects full mode and only the String 'page' page
+    # mode; anything else is refused. The posted value is never stored.
+    def page_mode?
+      scope = @params[:batch_scope]
+      return false if scope.nil? || (scope.is_a?(String) && scope.strip.empty?)
+      return true if scope.is_a?(String) && scope == 'page'
+
+      raise OperationError.new(:error_reorder_mismatch)
+    end
+
+    # The submitted rows in stored order, each with its record. The keys must
+    # be a non-empty set of this field's ids, compared as strings (no to_i),
+    # each with a Hash of attributes; any other key refuses the whole save.
+    def page_rows(stored)
+      submitted = @params[:enumerations]
+      submitted = submitted.to_unsafe_h if submitted.respond_to?(:to_unsafe_h)
+      raise OperationError.new(:error_reorder_mismatch) unless submitted.is_a?(Hash) && submitted.any?
+
+      by_key = submitted.each_with_object({}) do |(key, attrs), out|
+        raise OperationError.new(:error_reorder_mismatch) if out.key?(key.to_s) || !attrs.is_a?(Hash)
+
+        out[key.to_s] = attrs
+      end
+      ids = stored.map { |id, _name, _active| id.to_s }
+      raise OperationError.new(:error_reorder_mismatch) unless (by_key.keys - ids).empty?
+
+      records = field.enumerations.where(id: by_key.keys.map(&:to_i)).index_by { |enum| enum.id.to_s }
+      raise OperationError.new(:error_reorder_mismatch) unless records.size == by_key.size
+
+      ids.select { |id| by_key.key?(id) }.map do |id|
+        attrs = by_key[id]
+        {
+          enum:   records.fetch(id),
+          name:   normalize(attrs['name'] || attrs[:name]),
+          active: ActiveModel::Type::Boolean.new.cast(attrs['active'] || attrs[:active]) || false
+        }
+      end
+    end
+
+    # The stored name and active flag of every row not submitted, normalized
+    # as a full-mode submit of the same row would be.
+    def unsubmitted_rows(stored, rows)
+      submitted = rows.to_h { |row| [row[:enum].id, true] }
+      stored.reject { |id, _name, _active| submitted.key?(id) }
+            .map { |_id, name, active| { name: normalize(name), active: active } }
     end
 
     # Rows in the submitted display order, each paired with its record. The
@@ -93,7 +165,9 @@ module RedmineDependingCustomFields
       raise OperationError.new(:error_value_duplicate) if active_names.uniq.length != active_names.length
     end
 
-    def apply!(rows)
+    # positions: true (full mode) renumbers the rows 1..N in the given
+    # order; false (page mode) never writes a position.
+    def apply!(rows, positions:)
       renamed = []
       activated = []
       deactivated = []
@@ -118,7 +192,7 @@ module RedmineDependingCustomFields
           end
           changes[:active] = row[:active]
         end
-        if enum.position.to_i != position
+        if positions && enum.position.to_i != position
           reordered = true
           changes[:position] = position
         end
@@ -164,6 +238,10 @@ module RedmineDependingCustomFields
     end
 
     def summary_for(rows, delta)
+      "Saved #{rows.length} enumeration value(s): #{summary_detail(delta)}"
+    end
+
+    def summary_detail(delta)
       after = delta[:after]
       parts = []
       parts << "renamed #{after[:renamed].length}" if after[:renamed].present?
@@ -171,8 +249,7 @@ module RedmineDependingCustomFields
       parts << "deactivated #{after[:deactivated].length}" if after[:deactivated].present?
       parts << 'reordered' if after[:reordered]
       parts << 'default value cleared' if @default_cleared
-      detail = parts.any? ? parts.join(', ') : 'no changes'
-      "Saved #{rows.length} enumeration value(s): #{detail}"
+      parts.any? ? parts.join(', ') : 'no changes'
     end
   end
 end

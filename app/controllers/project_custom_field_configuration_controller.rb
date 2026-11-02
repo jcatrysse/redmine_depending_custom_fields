@@ -246,12 +246,27 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   def value_params
     # `enumerations` arrives as a hash of hashes keyed by enumeration id; permit
     # only the three editable attributes per row (same shape core permits in
-    # CustomFieldEnumerationsController#update_each_params). direction is a
-    # scalar (sort_values); q and page are read from params, never permitted.
-    params.permit(:value, :position, :old_value, :new_value, :enumeration_id,
-                  :default_value, :confirm, :state_hash, :direction,
-                  ordered_values: [],
-                  enumerations: %i[name position active]).to_h.symbolize_keys
+    # CustomFieldEnumerationsController#update_each_params). direction
+    # (sort_values) and batch_scope (update_enumerations) are scalars; q and
+    # page are read from params, never permitted.
+    out = params.permit(:value, :position, :old_value, :new_value, :enumeration_id,
+                        :default_value, :confirm, :state_hash, :direction, :batch_scope,
+                        ordered_values: [],
+                        enumerations: %i[name position active]).to_h.symbolize_keys
+    # permit drops an Array or Hash batch_scope; a marker keeps it refused
+    # (422) instead of falling back to full mode. The value is never echoed.
+    out[:batch_scope] = :invalid if params.key?(:batch_scope) && !out.key?(:batch_scope)
+    # Next to numeric keys permit drops a non-numeric key or a non-Hash row;
+    # page mode refuses such a body (422) instead of saving the rest.
+    out[:enumerations] = :invalid if out[:batch_scope] == 'page' && dropped_rows?(out[:enumerations])
+    out
+  end
+
+  def dropped_rows?(permitted)
+    raw = params[:enumerations]
+    return false unless raw.is_a?(ActionController::Parameters)
+
+    !permitted.is_a?(Hash) || permitted.size != raw.keys.size
   end
 
   # dependencies_json is passed on as posted (the service refuses anything

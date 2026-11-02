@@ -217,6 +217,7 @@
 * Added: A save is refused when someone else changed the dependency mapping after the page was opened; the editor then shows the current version and your version (use, keep or export yours).
 * Added: Search on the project values page for fields with more than 25 values, and pagination for fields with more than 500 values.
 * Added: Sort A-Z / Sort Z-A buttons on the project values page; members with 'Manage project custom field configuration' get the new action automatically.
+* Added: Page-scoped save of Key/Value list values on paginated or filtered pages, with a warning before leaving unsaved changes.
 * Changed: The admin form sends the dependency mapping as one field (custom_field[dependencies_json]) and is submitted as multipart/form-data while the editor is active.
 * Changed: Saving the admin form without touching the dependencies leaves the stored mapping unchanged.
 * Changed: Changing the parent field in the admin form removes links that do not match the new parent's values.

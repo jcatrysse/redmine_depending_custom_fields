@@ -7,10 +7,14 @@
 <% list_state = @values_page.list_state %>
 <% clear_path = custom_field_configuration_field_path(@project, @field, @show_usage ? { show_usage: 1 } : {}) %>
 <% state_fields = list_state.empty? ? nil : render(partial: 'list_state_fields', locals: { state: list_state }) %>
+<%# Page mode (WP-30): an enumeration page that is filtered or paginated and
+    shows rows saves only those rows; its script guards unsaved edits. %>
+<% page_mode = enum_family && @values_page.batch_scope == 'page' && @rows.any? %>
 
 <% content_for :header_tags do %>
   <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
   <%= javascript_include_tag 'dcf_value_reorder', plugin: 'redmine_depending_custom_fields' if sortable %>
+  <%= javascript_include_tag 'dcf_values_page', plugin: 'redmine_depending_custom_fields' if page_mode %>
 <% end %>
 
 <div class="contextual">
@@ -101,31 +105,49 @@
         </table>
         <p class="buttons"><%= submit_tag l(:button_save) %></p>
       <% end %>
-  <% elsif enum_family %>
-    <%# A filtered or paginated page shows only some rows, and the batch save
-        takes the full set, so the rows are read-only here; delete links keep
-        the list state. %>
-    <table class="list dcf-values">
-      <thead>
-        <tr>
-          <th><%= l(:label_dcf_value) %></th>
-          <th><%= l(:field_active) %></th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <% @rows.each do |row| %>
-          <tr data-dcf-value="<%= row.key %>">
-            <td><%= row.label %></td>
-            <td class="dcf-active"><%= row.active ? l(:general_text_Yes) : l(:general_text_No) %></td>
-            <td>
-              <%= delete_link(custom_field_configuration_remove_value_path(
-                    @project, @field, list_state.merge(enumeration_id: row.key, state_hash: @state_hash))) %>
-            </td>
+  <% elsif page_mode %>
+    <%# Page mode: the form posts the rows of this page only (batch_scope
+        page) with names and active flags, never positions; the server checks
+        duplicates against every value. data-dcf-warn-unsaved carries core's
+        text unless the user turned the warning off. %>
+    <% warn_unsaved = User.current.pref.warn_on_leaving_unsaved == '0' ? nil : l(:text_warn_on_leaving_unsaved) %>
+    <%= form_tag(custom_field_configuration_update_enumerations_path(@project, @field),
+                 method: :patch, class: 'dcf-enumerations-form',
+                 data: { dcf_page_scope: '1', dcf_warn_unsaved: warn_unsaved }) do %>
+      <%= hidden_field_tag :state_hash, @state_hash, id: nil %>
+      <%= hidden_field_tag :batch_scope, 'page', id: nil %>
+      <%= state_fields %>
+      <table class="list dcf-values">
+        <thead>
+          <tr>
+            <th><%= l(:label_dcf_value) %></th>
+            <th><%= l(:field_active) %></th>
+            <th></th>
           </tr>
-        <% end %>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          <% @rows.each do |row| %>
+            <tr data-dcf-value="<%= row.key %>">
+              <td>
+                <%= text_field_tag "enumerations[#{row.key}][name]", row.label, size: 30, id: nil,
+                                   'aria-label': l(:label_dcf_value) %>
+              </td>
+              <td class="dcf-active">
+                <%= hidden_field_tag "enumerations[#{row.key}][active]", 0, id: nil %>
+                <%= check_box_tag "enumerations[#{row.key}][active]", 1, row.active, id: nil,
+                                  title: l(:field_active), 'aria-label': l(:field_active) %>
+              </td>
+              <td>
+                <%= delete_link(custom_field_configuration_remove_value_path(
+                      @project, @field, list_state.merge(enumeration_id: row.key, state_hash: @state_hash))) %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+      <p class="dcf-page-scope-note"><%= l(:text_dcf_page_scope_save) %></p>
+      <p class="buttons"><%= submit_tag l(:button_save) %></p>
+    <% end %>
   <% else %>
       <table class="list dcf-values">
         <thead>

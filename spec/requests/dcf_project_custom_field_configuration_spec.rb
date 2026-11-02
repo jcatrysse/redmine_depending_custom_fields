@@ -2171,26 +2171,34 @@ RSpec.describe 'Project custom field configuration', type: :request do
       end
     end
 
-    describe 'enumeration pages before WP-30' do
-      it 'renders a filtered page read-only with list-state delete links' do
+    describe 'enumeration pages in page mode (WP-30)' do
+      # Changed by WP-30 (was: read-only rows): a filtered page renders the
+      # page-mode form; the delete links keep q and state_hash.
+      it 'renders a filtered page as the page-mode form with list-state delete links' do
         enum = enum_with(30)
         get show_path(enum, q: 'n002')
         expect(row_values.size).to eq(10)
-        expect(doc.css('form.dcf-enumerations-form')).to be_empty
-        expect(doc.css('input[name^="enumerations["]')).to be_empty
+        form = doc.at_css('form.dcf-enumerations-form')
+        expect(form['data-dcf-page-scope']).to eq('1')
+        expect(hidden('batch_scope', form).map { |n| n['value'] }).to eq(['page'])
+        expect(hidden('q', form).map { |n| n['value'] }).to eq(['n002'])
+        expect(form.css('input[type="text"][name$="[name]"]').map { |n| n['value'] })
+          .to eq((20..29).map { |i| format('N%04d', i) })
         expect(doc.css('input.dcf-position, .dcf-sort-handle')).to be_empty
         links = doc.css('table.dcf-values a.icon-del')
         expect(links.size).to eq(10)
         links.each { |a| expect(query_of(a['href'])).to include('q' => 'n002', 'state_hash' => service.state_hash(enum)) }
-        expect(doc.css('table.dcf-values tbody tr').first.text).to include('N0020')
       end
 
-      it 'renders a paginated page read-only with the page in the delete links' do
+      # Changed by WP-30 (was: read-only rows): a paginated page renders the
+      # page-mode form with the page in the form and in the delete links.
+      it 'renders a paginated page as the page-mode form with the page in the delete links' do
         enum = enum_with(520)
         get show_path(enum, page: 2)
         expect(row_values.size).to eq(25)
-        expect(doc.css('form.dcf-enumerations-form')).to be_empty
-        expect(doc.css('input[name^="enumerations["]')).to be_empty
+        form = doc.at_css('form.dcf-enumerations-form')
+        expect(hidden('page', form).map { |n| n['value'] }).to eq(['2'])
+        expect(form.css('input[name^="enumerations["][name$="[name]"]').size).to eq(25)
         doc.css('table.dcf-values a.icon-del').each { |a| expect(query_of(a['href'])['page']).to eq('2') }
         expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_large, max: 500))
       end
@@ -3075,6 +3083,627 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response).to have_http_status(422)
         expect(doc.at_css('#flash_error').text.strip).to eq(storage_flash(child))
         expect(parent.reload.possible_values).to eq(%w[B A])
+      end
+    end
+  end
+
+  describe 'page-scoped enumeration save (WP-30)' do
+    let(:manager) { dcf_manager(project) }
+    let(:service) { RedmineDependingCustomFields::BaseService }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+    let(:asset) { ->(name, ext) { /#{name}(-[0-9a-f]{7,}\.#{ext}|\.#{ext}\?\d+)\z/ } }
+
+    before { as(manager) }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def show_path(field, params = {}, in_project = project)
+      custom_field_configuration_field_path(in_project, field, params)
+    end
+
+    def save_path(field, in_project = project)
+      custom_field_configuration_update_enumerations_path(in_project, field)
+    end
+
+    def enum_with(count, inactive: [])
+      field = dcf_enum_field(names: [], is_for_all: true)
+      CustomFieldEnumeration.insert_all(
+        (1..count).map do |i|
+          { custom_field_id: field.id, name: format('N%04d', i), position: i, active: !inactive.include?(i) }
+        end
+      )
+      CustomField.find(field.id)
+    end
+
+    def ordered(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:position, :id).to_a
+    end
+
+    def enum_state(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name, :position, :active)
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def page_form
+      doc.css('form[data-dcf-page-scope]')
+    end
+
+    def scripts
+      doc.css('script[src]').map { |node| node['src'] }
+    end
+
+    def values_page_scripts
+      scripts.grep(asset.call('dcf_values_page', 'js'))
+    end
+
+    def hidden(name, scope = doc)
+      scope.css(%(input[type="hidden"][name="#{name}"]))
+    end
+
+    def query_of(href)
+      Rack::Utils.parse_nested_query(URI.parse(href).query.to_s)
+    end
+
+    def flash_error
+      doc.at_css('#flash_error')&.text.to_s.strip
+    end
+
+    # The named, enabled controls of a form, as a browser posts them: text
+    # and hidden inputs, checked boxes, the submit. Pairs in document order.
+    def form_pairs(form, submit: true)
+      form.css('input[name], select[name], textarea[name], button[name]').each_with_object([]) do |node, pairs|
+        next if node['disabled']
+        next if %w[checkbox radio].include?(node['type']) && !node['checked']
+        next if node['type'] == 'submit' && !submit
+
+        pairs << [node['name'], node['value'].to_s]
+      end
+    end
+
+    # Posts the pairs of the rendered page form, urlencoded, with +changes+
+    # ({ name => value }) applied and the checkboxes of +untick+ (enumerations)
+    # unticked, so only their hidden '0' is posted.
+    def post_form(form, changes = {}, untick = [])
+      dropped = untick.map { |enum| ["enumerations[#{enum.id}][active]", '1'] }
+      pairs = form_pairs(form).reject { |pair| %w[_method authenticity_token].include?(pair.first) || dropped.include?(pair) }
+      pairs = pairs.map { |name, value| [name, changes.key?(name) ? changes[name] : value] }
+      patch form['action'], params: URI.encode_www_form(pairs),
+                            headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+    end
+
+    def name_key(enum)
+      "enumerations[#{enum.id}][name]"
+    end
+
+    describe 'markup (T-PAG-8, T-ASSET-3, T-ASSET-4)' do
+      it 'renders the page-mode form on a paginated enumeration page' do
+        field = enum_with(520)
+        get show_path(field, page: 2)
+        expect(response).to have_http_status(200)
+        expect(page_form.size).to eq(1)
+        form = page_form.first
+        expect(form['action']).to eq(save_path(field))
+        expect(form['method']).to eq('post')
+        expect(form['class'].split).to eq(['dcf-enumerations-form'])
+        expect(form['data-dcf-page-scope']).to eq('1')
+        expect(form['data-dcf-warn-unsaved']).to eq(I18n.t(:text_warn_on_leaving_unsaved))
+        expect(hidden('_method', form).map { |n| n['value'] }).to eq(['patch'])
+        expect(hidden('batch_scope', form).map { |n| [n['value'], n['id']] }).to eq([['page', nil]])
+        expect(hidden('state_hash', form).map { |n| [n['value'], n['id']] }).to eq([[service.state_hash(field), nil]])
+        expect(hidden('page', form).map { |n| n['value'] }).to eq(['2'])
+        expect(hidden('q', form)).to be_empty
+        enums = ordered(field)[25, 25]
+        names = form.css('input[type="text"][name^="enumerations["]')
+        expect(names.map { |n| [n['name'], n['value'], n['id'], n['aria-label']] })
+          .to eq(enums.map { |e| [name_key(e), e.name, nil, I18n.t(:label_dcf_value)] })
+        enums.each do |enum|
+          controls = form.css(%(input[name="enumerations[#{enum.id}][active]"]))
+          expect(controls.map { |n| [n['type'], n['value'], n['id']] }).to eq([['hidden', '0', nil], ['checkbox', '1', nil]])
+          expect(controls.last['checked']).to eq('checked')
+          expect([controls.last['title'], controls.last['aria-label']]).to eq([I18n.t(:field_active)] * 2)
+        end
+        expect(form.css('[name$="[position]"], input.dcf-position, .dcf-sort-handle')).to be_empty
+        expect(form.css('form')).to be_empty
+        expect(form.ancestors('form')).to be_empty
+        expect(form.css('[type="submit"]').size).to eq(1)
+        expect(form.at_css('p.dcf-page-scope-note').text).to eq(I18n.t(:text_dcf_page_scope_save))
+        expect(doc.css('.dcf-page-scope-note').size).to eq(1)
+        expect(doc.css('[data-dcf-page-scope], [data-dcf-warn-unsaved]').size).to eq(1)
+        expect(doc.css('form.dcf-reorder-form, form[action$="/values/reorder"]')).to be_empty
+        expect(values_page_scripts.size).to eq(1)
+        expect(scripts.grep(/dcf_value_reorder/)).to be_empty
+        expect(scripts.size).to eq(scripts.uniq.size)
+        ids = doc.css('#content [id]').map { |node| node['id'] }
+        expect(ids.size).to eq(ids.uniq.size)
+      end
+
+      it 'renders the page-mode form on a filtered enumeration page with q and no page' do
+        field = enum_with(30, inactive: [21])
+        get show_path(field, q: 'n002')
+        form = page_form.first
+        expect(form.css('input[type="text"][name^="enumerations["]').size).to eq(10)
+        expect(hidden('q', form).map { |n| n['value'] }).to eq(['n002'])
+        expect(hidden('page', form)).to be_empty
+        expect(form.css('input[type="checkbox"]').map { |n| n['checked'] }.count(nil)).to eq(1)
+        expect(values_page_scripts.size).to eq(1)
+      end
+
+      it 'keeps full mode, list pages and pages without rows free of page mode' do
+        full = dcf_enum_field(names: %w[X Y Z])
+        list = dcf_list_field(values: (1..520).map { |i| format('Value %04d', i) }, is_for_all: true)
+        cases = [show_path(full), show_path(list), show_path(list, q: 'value 001'), show_path(enum_with(30), q: 'zzz'),
+                 show_path(dcf_enum_field(names: [])), show_path(dcf_enum_field(names: []), q: 'x')]
+        cases.each do |path|
+          get path
+          expect(response).to have_http_status(200)
+          expect(page_form).to be_empty, path
+          expect(doc.css('[data-dcf-warn-unsaved], .dcf-page-scope-note, input[name="batch_scope"]')).to be_empty, path
+          expect(values_page_scripts).to be_empty, path
+        end
+        get show_path(full)
+        form = doc.at_css('form.dcf-enumerations-form')
+        expect(form.css('input.dcf-position').size).to eq(3)
+        expect(form.attributes.keys.grep(/\Adata-/)).to be_empty
+        get project_path(project)
+        expect(values_page_scripts).to be_empty
+      end
+
+      it 'omits data-dcf-warn-unsaved when the user preference is off, keeps it without a preference row' do
+        field = enum_with(520)
+        manager.pref.update!(warn_on_leaving_unsaved: '0')
+        get show_path(field)
+        expect(page_form.first['data-dcf-warn-unsaved']).to be_nil
+        expect(page_form.first['data-dcf-page-scope']).to eq('1')
+        expect(values_page_scripts.size).to eq(1)
+        manager.pref.update!(warn_on_leaving_unsaved: '1')
+        get show_path(field)
+        expect(page_form.first['data-dcf-warn-unsaved']).to eq(I18n.t(:text_warn_on_leaving_unsaved))
+        fresh = dcf_manager(project)
+        UserPreference.where(user_id: fresh.id).delete_all
+        as(User.find(fresh.id))
+        get show_path(field)
+        expect(page_form.first['data-dcf-warn-unsaved']).to eq(I18n.t(:text_warn_on_leaving_unsaved))
+      end
+
+      it 'escapes the warn text and the value names exactly once (G5)' do
+        xss = '"><img src=x onerror=alert(1)>'
+        field = enum_with(520)
+        ordered(field)[0].update_column(:name, '"><script>alert(1)</script>')
+        original = I18n.t(:text_warn_on_leaving_unsaved, locale: :en)
+        I18n.backend.store_translations(:en, text_warn_on_leaving_unsaved: xss)
+        begin
+          get show_path(field)
+        ensure
+          I18n.backend.store_translations(:en, text_warn_on_leaving_unsaved: original)
+        end
+        # Core's own layout puts the same text into its warnLeavingUnsaved
+        # script, so the raw markup of the form tag is checked.
+        tag = response.body[/<form[^>]*data-dcf-page-scope[^>]*>/]
+        expect(tag).to include('data-dcf-warn-unsaved="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"')
+        expect(tag).not_to include('<img')
+        expect(response.body).not_to include('<script>alert(1)</script>')
+        expect(response.body).not_to include('&amp;quot;')
+        expect(page_form.first['data-dcf-warn-unsaved']).to eq(xss)
+        expect(page_form.first.css('input[type="text"]').first['value']).to eq('"><script>alert(1)</script>')
+        expect(doc.css('#content img, #content script')).to be_empty
+      end
+
+      it 'exposes the four hooks dcf_values_page.js selects on a filtered paginated page (contract pin)' do
+        field = enum_with(1_200)
+        get show_path(field, q: 'n0', page: 2)
+        expect(doc.css('form[data-dcf-page-scope][data-dcf-warn-unsaved]').size).to eq(1)
+        expect(doc.css('form.dcf-values-filter').size).to eq(1)
+        expect(doc.css('span.pagination a').size).to be > 1
+        expect(doc.css('form.dcf-values-sort').size).to eq(2)
+        doc.css('form.dcf-values-sort').each do |form|
+          expect(form.at_css('[type="submit"]')['data-confirm']).to eq(I18n.t(:text_dcf_sort_confirm, count: 1_200))
+        end
+        expect(doc.css('form.dcf-values-filter input#dcf_values_q').size).to eq(1)
+        expect(doc.css('form[data-dcf-page-scope] form, form.dcf-values-sort[data-dcf-page-scope]')).to be_empty
+      end
+
+      it 'renders the page-mode page in German and French without missing translations (G4, G8)' do
+        field = enum_with(520)
+        [['de', :de], ['fr', :fr]].each do |language, locale|
+          manager.update_column(:language, language)
+          I18n.with_locale(I18n.locale) { get show_path(field, page: 2) }
+          expect(response.body).not_to include('translation missing')
+          expect(response.body).not_to include('translation_missing')
+          expect(doc.at_css('p.dcf-page-scope-note').text).to eq(I18n.t(:text_dcf_page_scope_save, locale: locale))
+          expect(page_form.first['data-dcf-warn-unsaved']).to eq(I18n.t(:text_warn_on_leaving_unsaved, locale: locale))
+        end
+      end
+
+      it 'has the registry texts for the WP-30 key in the four locales' do
+        registry = File.read(File.expand_path('../../docs/specs/large_lists_i18n_registry.md', __dir__),
+                             encoding: 'UTF-8')
+        row = registry.lines.find { |line| line.start_with?('| `text_dcf_page_scope_save` | WP-30 |') }
+        cells = row.split(' | ').map(&:strip)
+        texts = cells[4, 4].map { |cell| cell.delete_suffix(' |').delete_suffix('|').strip }
+        [:en, :de, :fr, :nl].each_with_index do |locale, i|
+          raw = I18n.backend.send(:translations).dig(locale, :text_dcf_page_scope_save)
+          expect(raw).to eq(texts[i]), locale.to_s
+        end
+      end
+    end
+
+    describe 'saving (T-ENP-R1)' do
+      it 'saves the rendered page form and redirects back to the page (T-ENP-R1)' do
+        field = enum_with(520)
+        get show_path(field, page: 2)
+        first, second = ordered(field)[25, 2]
+        untouched = enum_state(field).reject { |id, *| [first.id, second.id].include?(id) }
+        post_form(page_form.first, { name_key(first) => 'Renamed' }, [second])
+        expect(response).to redirect_to(show_path(field, page: 2))
+        expect(flash[:notice]).to eq(I18n.t(:notice_values_saved))
+        expect(first.reload.name).to eq('Renamed')
+        expect(second.reload.active).to be false
+        expect(enum_state(field).reject { |id, *| [first.id, second.id].include?(id) }).to eq(untouched)
+        row = rows(field).last
+        expect(row.changes_summary).to eq('Saved 25 of 520 enumeration value(s) (page): renamed 1, deactivated 1')
+        follow_redirect!
+        expect(page_form.first.css('input[type="text"]').first['value']).to eq('Renamed')
+      end
+
+      it 'keeps a filtering q and the page; an unfiltered first page redirects bare' do
+        field = enum_with(1_600)
+        get show_path(field, q: 'n1', page: 3)
+        form = page_form.first
+        expect(hidden('page', form).map { |n| n['value'] }).to eq(['3'])
+        target = form.css('input[type="text"]').first
+        post_form(form, target['name'] => 'Changed')
+        expect(response).to redirect_to(show_path(field, q: 'n1', page: 3))
+        expect(query_of(response.location)).to eq('q' => 'n1', 'page' => '3')
+        get show_path(field)
+        post_form(page_form.first)
+        expect(response).to redirect_to(show_path(field))
+        expect(response.location).not_to include('?')
+      end
+
+      it 'keeps the session per_page across the redirect' do
+        allow(Setting).to receive(:per_page_options_array).and_return([25, 100])
+        field = enum_with(520)
+        get show_path(field, per_page: 100, page: 2)
+        expect(page_form.first.css('input[type="text"]').size).to eq(100)
+        post_form(page_form.first)
+        expect(response).to redirect_to(show_path(field, page: 2))
+        follow_redirect!
+        expect(page_form.first.css('input[type="text"]').size).to eq(100)
+      end
+
+      it 'refuses a duplicate with 422 and re-renders the same page with a fresh state hash' do
+        field = enum_with(520)
+        get show_path(field, page: 2)
+        posted_hash = hidden('state_hash', page_form.first).first['value']
+        target = ordered(field)[25]
+        post_form(page_form.first, name_key(target) => 'N0001')
+        expect(response).to have_http_status(422)
+        expect(flash_error).to eq(I18n.t(:error_value_duplicate))
+        expect(target.reload.name).to eq('N0026')
+        form = page_form.first
+        expect(hidden('page', form).map { |n| n['value'] }).to eq(['2'])
+        expect(hidden('state_hash', form).first['value']).to eq(service.state_hash(field))
+        expect(hidden('state_hash', form).first['value']).to eq(posted_hash)
+        expect(form.css('input[type="text"]').first['value']).to eq('N0026')
+        expect(values_page_scripts.size).to eq(1)
+      end
+
+      it 're-renders a 409 with the posted q and page, links from the show path, and the resubmit passes' do
+        field = enum_with(1_200)
+        get show_path(field, q: 'n0', page: 2)
+        form = page_form.first
+        posted_hash = hidden('state_hash', form).first['value']
+        ordered(field).last.update_column(:name, 'Elsewhere')
+        post_form(form, form.css('input[type="text"]').first['name'] => 'Mine')
+        expect(response).to have_http_status(409)
+        expect(flash_error).to eq(I18n.t(:error_stale_edit))
+        expect(response.body).not_to include('Mine')
+        form = page_form.first
+        expect(hidden('batch_scope', form).map { |n| n['value'] }).to eq(['page'])
+        expect(hidden('q', form).map { |n| n['value'] }).to eq(['n0'])
+        expect(hidden('page', form).map { |n| n['value'] }).to eq(['2'])
+        expect(hidden('state_hash', form).first['value']).not_to eq(posted_hash)
+        hrefs = doc.css('span.pagination a[href]').map { |a| a['href'] }
+        expect(hrefs).not_to be_empty
+        hrefs.each { |href| expect(URI.parse(href).path).to eq(show_path(field)) }
+        expect(values_page_scripts.size).to eq(1)
+        post_form(form, form.css('input[type="text"]').first['name'] => 'Mine')
+        expect(response).to redirect_to(show_path(field, q: 'n0', page: 2))
+      end
+
+      it 'answers 409 to a page form opened before a sort (T-SORT-2 with page mode)' do
+        field = enum_with(520)
+        get show_path(field, page: 2)
+        form = page_form.first
+        patch custom_field_configuration_sort_values_path(project, field), params: { direction: 'desc' }
+        before = enum_state(field)
+        post_form(form)
+        expect(response).to have_http_status(409)
+        expect(enum_state(field)).to eq(before)
+      end
+    end
+
+    describe 'refusals (T-ENP-R2, G5)' do
+      it 'answers 403 on a closed project with no write and no row (T-ENP-R2)' do
+        closed = dcf_create_project(name: 'Closed', status: :closed)
+        field = enum_with(520)
+        as(dcf_manager(closed))
+        get show_path(field, { page: 2 }, closed)
+        expect(response).to have_http_status(200)
+        expect(page_form.size).to eq(1)
+        target = ordered(field)[25]
+        count = events.count
+        patch save_path(field, closed),
+              params: { batch_scope: 'page', page: '2', state_hash: service.state_hash(field),
+                        enumerations: { target.id.to_s => { name: 'N0026', active: '0' } } }
+        expect(response).to have_http_status(403)
+        expect(response.body).to include(I18n.t(:error_project_archived))
+        expect(target.reload.active).to be true
+        expect(events.count).to eq(count)
+      end
+
+      it 'refuses non-members, members without the permission and anonymous users before any write' do
+        field = enum_with(520)
+        target = ordered(field)[25]
+        params = { batch_scope: 'page', enumerations: { target.id.to_s => { name: 'X', active: '0' } } }
+        count = events.count
+        [dcf_create_user("stranger-#{SecureRandom.hex(3)}"), dcf_plain_member(project)].each do |user|
+          as(user)
+          patch save_path(field), params: params
+          expect(response).to have_http_status(403)
+        end
+        as(User.anonymous)
+        patch save_path(field), params: params
+        expect(response).to have_http_status(302)
+        expect(response.location).to match(%r{/login(\?|\z)})
+        expect(target.reload).to have_attributes(name: 'N0026', active: true)
+        expect(events.count).to eq(count)
+      end
+
+      it 'carries an authenticity token and answers 422 without one when forgery protection is on' do
+        field = enum_with(520)
+        target = ordered(field)[0]
+        protection = ActionController::Base.allow_forgery_protection
+        ActionController::Base.allow_forgery_protection = true
+        begin
+          get show_path(field)
+          expect(hidden('authenticity_token', page_form.first).size).to eq(1)
+          patch save_path(field), params: { batch_scope: 'page', enumerations: { target.id.to_s => { name: 'X' } } }
+        ensure
+          ActionController::Base.allow_forgery_protection = protection
+        end
+        expect(response).to have_http_status(422)
+        expect(target.reload).to have_attributes(name: 'N0001', active: true)
+      end
+
+      it 'answers 404 for a field outside the project and 422 for a list field in page mode' do
+        other = dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")
+        foreign = dcf_enum_field(name: "Foreign-#{SecureRandom.hex(3)}", names: %w[SECRET-V], is_for_all: false)
+        foreign.projects = [other]
+        patch save_path(foreign), params: { batch_scope: 'page', enumerations: { foreign.enumerations.first.id.to_s => { name: 'x' } } }
+        expect(response).to have_http_status(404)
+        expect(response.body).not_to include('SECRET-V')
+        list = dcf_list_field(values: %w[A B], is_for_all: true)
+        patch save_path(list), params: { batch_scope: 'page', enumerations: { '1' => { name: 'x' } } }
+        expect(response).to have_http_status(422)
+        expect(response.body).to include(I18n.t(:error_format_unsupported))
+        expect(foreign.enumerations.first.reload.name).to eq('SECRET-V')
+      end
+
+      it 'refuses a foreign, a missing and a hidden field id alike, without an oracle (T-ENP-3, SP-20c)' do
+        field = enum_with(520)
+        visible = dcf_enum_field(name: "Visible-#{SecureRandom.hex(3)}", names: %w[VISIBLE-V])
+        hidden_field = dcf_enum_field(name: "HIDDEN-FIELD-#{SecureRandom.hex(3)}", names: %w[SECRET-V])
+        hidden_field.update!(visible: false, role_ids: [dcf_create_role.id])
+        own = ordered(field)[25]
+        ids = [CustomFieldEnumeration.maximum(:id) + 1_000, visible.enumerations.first.id, hidden_field.enumerations.first.id]
+        outcomes = ids.map do |id|
+          patch save_path(field),
+                params: { batch_scope: 'page', page: '2', state_hash: service.state_hash(field),
+                          enumerations: { own.id.to_s => { name: 'Renamed', active: '1' },
+                                          id.to_s => { name: 'POSTED-JUNK', active: '0' } } }
+          expect(response).to have_http_status(422)
+          expect(response.body).not_to include('POSTED-JUNK')
+          expect(response.body).not_to include('SECRET-V')
+          expect(response.body).not_to include(hidden_field.name)
+          row = rows(field).last
+          [flash_error, row.status, row.error_message, row.changes_summary, row.before_value, row.after_value]
+        end
+        expect(outcomes.uniq).to eq([[I18n.t(:error_reorder_mismatch), 'validation_failed', 'error_reorder_mismatch',
+                                      nil, nil, nil]])
+        expect(own.reload.name).to eq('N0026')
+        expect(visible.enumerations.first.reload).to have_attributes(name: 'VISIBLE-V', active: true)
+        expect(hidden_field.enumerations.first.reload).to have_attributes(name: 'SECRET-V', active: true)
+      end
+
+      it 'refuses an empty page and malformed enumerations params with 422 and one row each, never a 500' do
+        field = enum_with(520)
+        own = ordered(field)[0]
+        bodies = ['batch_scope=page',
+                  'batch_scope=page&enumerations=x',
+                  'batch_scope=page&enumerations[][name]=x',
+                  'batch_scope=page&enumerations[name]=X&enumerations[active]=1',
+                  "batch_scope=page&enumerations[00#{own.id}][name]=R"]
+        bodies.each do |body|
+          expect do
+            patch save_path(field), params: body, headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+          end.to change { rows(field).where(status: 'validation_failed').count }.by(1)
+          expect(response).to have_http_status(422), body
+          expect(flash_error).to eq(I18n.t(:error_reorder_mismatch))
+        end
+        expect(own.reload.name).to eq('N0001')
+      end
+
+      # Strong parameters drop a non-numeric key and a non-Hash row next to
+      # numeric keys; page mode refuses the body instead of saving the rest.
+      it 'refuses a body that mixes valid rows with keys or rows permit drops, applying none (focus-S5)' do
+        field = enum_with(520)
+        own, other = ordered(field)
+        valid = "batch_scope=page&enumerations[#{own.id}][name]=R&enumerations[#{own.id}][active]=1"
+        bodies = ["#{valid}&enumerations[x][name]=y",
+                  "#{valid}&enumerations[#{other.id}]=junk",
+                  "#{valid}&enumerations[#{other.id}abc][name]=N0002",
+                  "#{valid}&enumerations[#{other.id}][]=N0002"]
+        bodies.each do |body|
+          expect do
+            patch save_path(field), params: body, headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+          end.to change { rows(field).where(status: 'validation_failed', error_message: 'error_reorder_mismatch').count }.by(1)
+          expect(response).to have_http_status(422), body
+          expect(flash_error).to eq(I18n.t(:error_reorder_mismatch))
+          expect(response.body).not_to include('junk')
+          expect(rows(field).last.changes_summary).to be_nil
+        end
+        expect(ordered(field).first(2).map(&:name)).to eq(%w[N0001 N0002])
+        expect(rows(field).where(status: 'success')).to be_empty
+        patch save_path(field), params: "#{valid}&enumerations[#{own.id}][foo]=bar",
+                                headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+        expect(response).to redirect_to(show_path(field))
+        expect(own.reload.name).to eq('R')
+      end
+
+      it 'leaves full mode as it was: permit still drops such keys there (T-ACT-21)' do
+        field = dcf_enum_field(names: %w[X Y])
+        x, y = ordered(field)
+        body = "enumerations[#{x.id}][name]=X2&enumerations[#{x.id}][position]=1&enumerations[#{x.id}][active]=1" \
+               "&enumerations[#{y.id}][name]=Y&enumerations[#{y.id}][position]=2&enumerations[#{y.id}][active]=1" \
+               '&enumerations[x][name]=junk'
+        patch save_path(field), params: body, headers: { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+        expect(response).to redirect_to(show_path(field))
+        expect(x.reload.name).to eq('X2')
+      end
+
+      it 'refuses an unknown or non-scalar batch_scope with 422 instead of running full mode (T-ENP-5)' do
+        field = dcf_enum_field(names: %w[X Y Z])
+        x, y, z = ordered(field)
+        full = { x.id.to_s => { name: 'X', position: '3', active: '1' },
+                 y.id.to_s => { name: 'Y', position: '1', active: '1' },
+                 z.id.to_s => { name: 'Z', position: '2', active: '1' } }
+        before = enum_state(field)
+        ['full', 'PAGE', ['page'], { 'x' => 'page' }].each do |scope|
+          expect { patch save_path(field), params: { batch_scope: scope, enumerations: full } }
+            .to change { rows(field).where(status: 'validation_failed', error_message: 'error_reorder_mismatch').count }.by(1)
+          expect(response).to have_http_status(422)
+          expect(flash_error).to eq(I18n.t(:error_reorder_mismatch))
+          expect(rows(field).last.changes_summary).to be_nil
+        end
+        expect(enum_state(field)).to eq(before)
+        patch save_path(field), params: { batch_scope: '', enumerations: full }
+        expect(response).to redirect_to(show_path(field))
+        expect(ordered(field).map(&:name)).to eq(%w[Y Z X])
+      end
+
+      it 'keeps full mode strict over HTTP: a partial submit without batch_scope is refused (T-ACT-21)' do
+        field = dcf_enum_field(names: %w[X Y Z])
+        x = ordered(field).first
+        patch save_path(field), params: { enumerations: { x.id.to_s => { name: 'R', position: '1', active: '1' } } }
+        expect(response).to have_http_status(422)
+        expect(flash_error).to eq(I18n.t(:error_reorder_mismatch))
+        patch save_path(field), params: { batch_scope: 'page', enumerations: { x.id.to_s => { name: 'R', active: '1' } } }
+        expect(response).to redirect_to(show_path(field))
+        expect(x.reload.name).to eq('R')
+      end
+    end
+
+    describe 'parameter budget (T-PARAM-1)' do
+      it 'keeps the page-mode form at per_page 500 well below 4,096 parameters and saves it' do
+        allow(Setting).to receive(:per_page_options_array).and_return([25, 500])
+        field = enum_with(1_200)
+        get show_path(field, per_page: 500)
+        form = page_form.first
+        names = form.css('input[type="text"][name^="enumerations["]')
+        expect(names.size).to eq(500)
+        controls = form.css('input[name], select[name], textarea[name], button[name]').reject { |n| n['disabled'] }
+        expect(controls.size).to be <= (3 * 500) + 8
+        expect(controls.size).to be < 4_096
+        expect(controls.map { |n| n['name'] }.grep(/\[position\]\z/)).to be_empty
+        expect(form['enctype']).to be_nil
+        body = URI.encode_www_form(form_pairs(form))
+        expect(body.count('&') + 1).to be < 4_096
+        target = ordered(field)[499]
+        post_form(form, name_key(target) => 'Last on page')
+        expect(response).to redirect_to(show_path(field))
+        expect(target.reload.name).to eq('Last on page')
+        expect(rows(field).last.changes_summary).to eq('Saved 500 of 1200 enumeration value(s) (page): renamed 1')
+      end
+    end
+
+    # G6: the invariance form, never absolute counts.
+    describe 'query counts (G6)' do
+      before { allow(Setting).to receive(:per_page_options_array).and_return([25, 100]) }
+
+      def queries(field, params)
+        dcf_count_queries { get show_path(field, params) }
+      end
+
+      def text_inputs
+        page_form.first.css('input[type="text"]').size
+      end
+
+      it 'renders the page-mode form with the same statements for 520 and 5,200 values, paginated or filtered' do
+        small = enum_with(520)
+        large = enum_with(5_200)
+        get show_path(small, page: 2)
+        base = queries(small, page: 2)
+        expect(text_inputs).to eq(25)
+        expect(queries(large, page: 2)).to eq(base)
+        expect(text_inputs).to eq(25)
+        filtered = queries(small, q: 'N01', page: 2)
+        expect(text_inputs).to eq(25)
+        expect(queries(large, q: 'N01', page: 2)).to eq(filtered)
+        expect(text_inputs).to eq(25)
+      end
+
+      it 'renders the page-mode form with the same statements for 25 and 100 rows on one page' do
+        field = enum_with(520)
+        get show_path(field, page: 2)
+        c25 = queries(field, per_page: 25, page: 2)
+        expect(text_inputs).to eq(25)
+        c100 = queries(field, per_page: 100, page: 2)
+        expect(text_inputs).to eq(100)
+        expect(c100).to eq(c25)
+      end
+    end
+
+    describe 'hidden children (security)' do
+      it 'never names a role-invisible child or shows its values in page mode' do
+        parent = enum_with(520)
+        p1, p2 = ordered(parent)
+        child = dcf_enum_field(format: 'depending_enumeration', name: "HIDDEN-CHILD-#{SecureRandom.hex(3)}",
+                               names: %w[SECRET-V], parent: parent)
+        secret = child.enumerations.first
+        dcf_set_dependencies(child, value_dependencies: { p1.id.to_s => [secret.id.to_s], p2.id.to_s => [secret.id.to_s] })
+        child.update!(visible: false, role_ids: [dcf_create_role.id])
+        store = CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first
+        check = lambda do
+          expect(response.body).not_to include(child.name)
+          expect(response.body).not_to include('SECRET-V')
+          expect(flash.to_hash.values.join(' ')).not_to include('HIDDEN-CHILD')
+        end
+        get show_path(parent)
+        check.call
+        post_form(page_form.first, {}, [p1])
+        expect(response).to redirect_to(show_path(parent))
+        check.call
+        follow_redirect!
+        check.call
+        post_form(page_form.first, name_key(p2) => 'N0003')
+        expect(response).to have_http_status(422)
+        check.call
+        post_form(page_form.first, 'state_hash' => 'stale')
+        expect(response).to have_http_status(409)
+        check.call
+        expect(p1.reload.active).to be false
+        expect(CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first).to eq(store)
+        rows(parent).each do |row|
+          expect(row.affected_child_field_ids).to be_nil
+          expect([row.changes_summary, row.error_message, row.before_value, row.after_value].join(' '))
+            .not_to match(/HIDDEN-CHILD|SECRET-V/)
+        end
       end
     end
   end
