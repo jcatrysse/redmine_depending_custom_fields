@@ -45,9 +45,9 @@ module RedmineDependingCustomFields
       delta = DependencyDelta.new(old_vd: field.value_dependencies, old_dd: field.default_value_dependencies,
                                   new_vd: vd, new_dd: dd, parent_labels: parent_labels, child_labels: child_labels,
                                   source: input[:source], import: input[:import])
-      field.value_dependencies = vd
-      field.default_value_dependencies = dd
-      field.save!
+      assign_mapping(field, 'value_dependencies', vd)
+      assign_mapping(field, 'default_value_dependencies', dd)
+      save_field!(field)
 
       Outcome.new(before: delta.before, after: delta.after, summary: delta.summary,
                   affected_projects_count: affected_projects_count)

@@ -18,3 +18,13 @@
   </label>
   <em class="info"><%= l(:text_block_removal_when_used_info) %></em>
 </p>
+<p>
+  <%= label_tag 'settings_project_storage_ceiling_kib', l(:label_dcf_project_storage_ceiling) %>
+  <%= number_field_tag 'settings[project_storage_ceiling_kib]',
+        RedmineDependingCustomFields::ProjectStoragePolicy.ceiling_bytes / 1024,
+        id: 'settings_project_storage_ceiling_kib',
+        min: RedmineDependingCustomFields::ProjectStoragePolicy::MIN_CEILING_KIB,
+        max: RedmineDependingCustomFields::ProjectStoragePolicy::MAX_CEILING_KIB, step: 1 %>
+  <em class="info"><%= l(:text_dcf_project_storage_ceiling_info,
+                         kib: number_with_delimiter(RedmineDependingCustomFields::ProjectStoragePolicy::DEFAULT_CEILING_KIB)) %></em>
+</p>

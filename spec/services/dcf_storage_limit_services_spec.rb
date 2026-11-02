@@ -454,14 +454,17 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       expect(ActiveSupport::JSON.encode(parsed)).to eq(row.after_value)
     end
 
-    it 'adds a value above the cap and stores a bounded row' do
-      field = dcf_list_field(values: %w[A], is_for_all: false, projects: [project])
-      service('AddValueService', field, { value: 'v' * 20_000 }).call
+    # Changed by WP-31 (was: AddValueService adding a 20,000-character
+    # value): project pages accept at most 255 characters per new value, so
+    # the marker case renames a value stored before at that length.
+    it 'renames a long value stored before and stores a bounded row' do
+      field = dcf_list_field(values: ['v' * 20_000, 'B'], is_for_all: false, projects: [project])
+      service('RenameValueService', field, { old_value: 'v' * 20_000, new_value: 'Short', confirm: '1' }).call
 
-      expect(field.reload.possible_values.last.length).to eq(20_000)
+      expect(field.reload.possible_values).to eq(%w[Short B])
       row = events.where(status: 'success').order(:id).last
-      expect(row.after_value.bytesize).to be <= 16_384
-      expect(JSON.parse(row.after_value)['payload_truncated']).to be(true)
+      expect(row.before_value.bytesize).to be <= 16_384
+      expect(JSON.parse(row.before_value)['payload_truncated']).to be(true)
     end
   end
 end

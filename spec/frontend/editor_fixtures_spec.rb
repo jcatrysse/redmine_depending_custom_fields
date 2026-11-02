@@ -108,6 +108,14 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
     allow(limits).to receive(:column_limit).and_return(value)
   end
 
+  # Changed by WP-31: project mode always carries the effective limit of
+  # ProjectStoragePolicy.format_store_limit, here the default ceiling of
+  # 2 MiB without a column limit (the setting is fixed, so every database
+  # gives the same files). The storage base of the fixed records is exact.
+  def project_ceiling
+    allow(RedmineDependingCustomFields::ProjectStoragePolicy).to receive(:ceiling_bytes).and_return(2_097_152)
+  end
+
   def render_admin(field)
     allow(User).to receive(:current).and_return(admin)
     view = view_for(CustomFieldsController)
@@ -157,12 +165,14 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
 
   def scenario_project_list
     column_limit(nil)
+    project_ceiling
     parent, child = list_pair
     render_project(child, parent)
   end
 
   def scenario_project_enumeration
     column_limit(nil)
+    project_ceiling
     parent, child = enum_pair
     north = fx_key(parent, 'North')
     south = fx_key(parent, 'South')
@@ -243,6 +253,16 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
     root
   end
 
+  # WP-31: the effective limit, the exact base of the fixed record and the
+  # warn percent; never the values limit.
+  def check_project_storage(root)
+    field = CustomField.find(root['data-dcf-editor-field-id'].to_i)
+    expect(root['data-dcf-editor-storage-limit']).to eq('2097152')
+    expect(root['data-dcf-editor-storage-base']).to eq(limits.base_bytes(field).to_s)
+    expect(root['data-dcf-editor-storage-warn']).to eq('90')
+    expect(root['data-dcf-editor-values-limit']).to be_nil
+  end
+
   def scenario_checks
     enumeration_range = dcf_fixture_range(DcfJsFixtures::ENUMERATION)
     {
@@ -290,12 +310,14 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
                                                   'data-dcf-editor-allow-add-values', 'data-dcf-editor-dirty')
         expect(root.at_css('input')['name']).to eq('dependencies_json')
         expect(JSON.parse(root['data-dcf-editor-child-values']).map { |v| v['key'] }).to eq(%w[Antwerp Brussels Paris Lyon])
+        check_project_storage(root)
       end,
       'project_enumeration' => lambda do |root|
         expect(root['data-dcf-editor-dirty']).to eq('1')
         expect(root['data-dcf-editor-allow-add-values']).to be_nil
         expect(JSON.parse(root['data-dcf-editor-mapping'])['value_dependencies'].size).to eq(2)
         expect(enumeration_keys(root).map(&:to_i)).to all(satisfy { |id| enumeration_range.cover?(id) })
+        check_project_storage(root)
       end,
       'mysql_limit' => lambda do |root|
         expect(root['data-dcf-editor-storage-limit']).to eq('65535')
@@ -315,7 +337,7 @@ RSpec.describe 'Dependency editor fixtures (WP-24)', type: :request do
       root = check_editor(name, fragment)
       instance_exec(root, &scenario_checks.fetch(name))
       expect(html).not_to match(/[\u2013\u2014]/)
-      expect(html).not_to include('storage-base="') if name != 'mysql_limit'
+      expect(html).not_to include('storage-base="') if name.start_with?('admin_')
     end
   end
 

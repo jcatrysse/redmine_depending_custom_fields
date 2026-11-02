@@ -49,8 +49,9 @@ RSpec.describe 'StorageLimits at scale', :large do
     over = IssueCustomField.new(name: "Over-#{SecureRandom.hex(3)}", field_format: 'list', is_for_all: true,
                                 possible_values: DcfLargeList.values_of_yaml_bytes(65_536))
     expect(over.save).to be(false)
+    # Changed by WP-31: the details carry source.
     expect(over.errors.details[:possible_values])
       .to eq([{ error: :dcf_storage_too_large, size: limits.delimited(65_536), limit: limits.delimited(65_535),
-                bytes: 65_536, max_bytes: 65_535, column: 'possible_values' }])
+                bytes: 65_536, max_bytes: 65_535, column: 'possible_values', source: 'column' }])
   end
 end

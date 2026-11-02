@@ -113,9 +113,16 @@ test('mode-specific attributes follow the editor design table', () => {
       assert.equal(root.hasAttribute('data-dcf-editor-allow-add-values'), kind === 'list', file);
       assert.equal(root.hasAttribute('data-dcf-editor-child-values'), kind !== 'list', file);
     }
+    // WP-31: project mode always carries the effective limit, never the values limit.
     const storage = ['storage-limit', 'storage-base', 'storage-warn', 'values-limit']
       .filter((name) => root.hasAttribute(`data-dcf-editor-${name}`));
-    assert.deepEqual(storage, file.startsWith('mysql_limit') ? ['storage-limit', 'storage-base', 'storage-warn', 'values-limit'] : [], file);
+    const expected = { mysql_limit: ['storage-limit', 'storage-base', 'storage-warn', 'values-limit'],
+      project: ['storage-limit', 'storage-base', 'storage-warn'] };
+    assert.deepEqual(storage, expected[file.startsWith('mysql_limit') ? 'mysql_limit' : mode] || [], file);
+    if (mode === 'project') {
+      assert.equal(root.getAttribute('data-dcf-editor-storage-limit'), '2097152', file);
+      assert.match(root.getAttribute('data-dcf-editor-storage-base'), /^[1-9][0-9]*$/, file);
+    }
   });
 });
 

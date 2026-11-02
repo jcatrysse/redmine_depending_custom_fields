@@ -694,7 +694,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
       manager = dcf_manager(project)
       manager.update_column(:language, 'de')
       as(manager)
-      added = 'C' * 1_500
+      # Changed by WP-31 (was: 1,500 characters): a new value has at most
+      # 255 characters (error_dcf_value_length).
+      added = 'C' * 255
 
       # The request switches the locale; with_locale puts it back.
       I18n.with_locale(I18n.locale) do
@@ -905,8 +907,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
       %w[en de fr nl].each do |locale|
         I18n.with_locale(locale) do
           keys.each do |key|
+            # Changed by WP-31: error_dcf_value_length interpolates max.
             error = RedmineDependingCustomFields::OperationError.new(
-              key.to_sym, interpolations: { field: 'F', size: '1', limit: '2' }
+              key.to_sym, interpolations: { field: 'F', size: '1', limit: '2', max: '255' }
             )
             out = translate(error)
             expect(out).to be_a(String)
@@ -3703,6 +3706,500 @@ RSpec.describe 'Project custom field configuration', type: :request do
           expect(row.affected_child_field_ids).to be_nil
           expect([row.changes_summary, row.error_message, row.before_value, row.after_value].join(' '))
             .not_to match(/HIDDEN-CHILD|SECRET-V/)
+        end
+      end
+    end
+  end
+
+  # --- WP-31: project storage ceiling and value length cap (UD-22) ---------
+  # Project design 2.4, 9 and 15, limits design 4.11, quality G12 (gap 12)
+  # and gap 14. The ceiling is stubbed through
+  # ProjectStoragePolicy.ceiling_bytes; stubbed ceilings are far below MySQL
+  # TEXT, so the examples behave the same on PostgreSQL and MariaDB.
+  describe 'project storage ceiling and value length cap (WP-31)' do
+    let(:policy) { RedmineDependingCustomFields::ProjectStoragePolicy }
+    let(:limits) { RedmineDependingCustomFields::StorageLimits }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+    let(:manager) { dcf_manager(project) }
+    let(:multipart) { { 'CONTENT_TYPE' => 'multipart/form-data' } }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def flash_box
+      doc.at_css('#flash_error')
+    end
+
+    def raw(field, column)
+      CustomField.connection.select_value(CustomField.where(id: field.id).select(column).to_sql)
+    end
+
+    def stub_ceiling(bytes)
+      allow(policy).to receive(:ceiling_bytes).and_return(bytes)
+    end
+
+    def yaml_bytes(values)
+      limits.serialized_bytesize(CustomField, 'possible_values', values)
+    end
+
+    def own_list(values)
+      dcf_list_field(values: values, is_for_all: false, projects: [project])
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def show_path(field, params = {})
+      custom_field_configuration_field_path(project, field, params)
+    end
+
+    def editor_root
+      doc.at_css('fieldset[data-dcf-editor]')
+    end
+
+    def state_hash(field)
+      RedmineDependingCustomFields::BaseService.state_hash(CustomField.find(field.id))
+    end
+
+    def save_mapping(field, mapping)
+      patch custom_field_configuration_update_dependencies_path(project, field),
+            params: { dependencies_json: JSON.generate(mapping), state_hash: state_hash(field) }, headers: multipart
+    end
+
+    describe 'storage ceiling on project pages (T-SIZE-R2)' do
+      before { as(manager) }
+
+      it 'refuses an add_value over the ceiling with an audited 422 and writes nothing' do
+        field = own_list(%w[A B])
+        ceiling = yaml_bytes(%w[A B])
+        stub_ceiling(ceiling)
+
+        expect do
+          post custom_field_configuration_add_value_path(project, field), params: { value: 'SECRET_C1' }
+        end.to change(events, :count).by(1)
+
+        expect(response).to have_http_status(422)
+        bytes = yaml_bytes(%w[A B SECRET_C1])
+        expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_values_too_large, field: field.name,
+                                                                               size: limits.delimited(bytes),
+                                                                               limit: limits.delimited(ceiling)))
+        row = rows(field).last
+        expect([row.action, row.status, row.error_message])
+          .to eq(%w[validation_failed validation_failed error_dcf_values_too_large])
+        expect(row.changes_summary).to eq("possible_values: #{bytes} bytes exceeds #{ceiling} (custom field ##{field.id})")
+        expect(response.body).not_to include('SECRET_C1')
+        expect(response.body).not_to include(I18n.t('activerecord.errors.messages.dcf_storage_too_large',
+                                                    size: limits.delimited(bytes), limit: limits.delimited(ceiling)))
+        expect(field.reload.possible_values).to eq(%w[A B])
+      end
+
+      it 'removes a value from a field stored above the ceiling (302, success row)' do
+        field = own_list(%w[Alpha Bravo Charlie])
+        stub_ceiling(10)
+
+        delete custom_field_configuration_remove_value_path(project, field), params: { value: 'Bravo', confirm: '1' }
+
+        expect(response).to have_http_status(302)
+        expect(field.reload.possible_values).to eq(%w[Alpha Charlie])
+        expect([rows(field).last.action, rows(field).last.status]).to eq(%w[remove_value success])
+      end
+
+      it 'escapes the field name once in the ceiling flash' do
+        markup = '<img src=x onerror=alert(1)>'
+        field = dcf_list_field(name: markup, values: %w[A B], is_for_all: false, projects: [project])
+        stub_ceiling(1)
+
+        post custom_field_configuration_add_value_path(project, field), params: { value: 'C' }
+
+        expect(response).to have_http_status(422)
+        expect(flash_box.css('img')).to be_empty
+        expect(flash_box.inner_html).to include(ERB::Util.html_escape(markup))
+        expect(response.body).not_to include(markup)
+        expect(response.body).not_to include('&amp;lt;')
+      end
+
+      it 'ignores a ceiling posted with the request' do
+        field = own_list(%w[A B])
+        stub_ceiling(1)
+        post custom_field_configuration_add_value_path(project, field),
+             params: { value: 'C', dcf_storage_ceiling: (10**12).to_s, project_storage_ceiling_kib: '999999',
+                       custom_field: { dcf_storage_ceiling: (10**12).to_s } }
+        expect(response).to have_http_status(422)
+        expect(rows(field).last.error_message).to eq('error_dcf_values_too_large')
+        expect(field.reload.possible_values).to eq(%w[A B])
+      end
+
+      it 'refuses the JSON dependency save over the ceiling, re-renders it dirty and saves the corrected resubmit ' \
+         '(T-DEPJ-14 with the ceiling)' do
+        parent = dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France])
+        child = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
+                               values: %w[Antwerp Paris], parent: parent)
+        dcf_set_dependencies(child, value_dependencies: { 'Belgium' => %w[Antwerp] })
+        stored = raw(child, 'format_store').bytesize
+        stub_ceiling(stored)
+        grown = { 'Belgium' => %w[Antwerp Paris], 'France' => %w[Antwerp Paris] }
+
+        save_mapping(child, 'value_dependencies' => grown, 'default_value_dependencies' => {})
+
+        expect(response).to have_http_status(422)
+        expect(flash_box.text.strip).to include(child.name)
+        expect(flash_box.text.strip).to include(limits.delimited(stored))
+        expect(rows(child).last.error_message).to eq('error_dcf_mapping_too_large')
+        expect(editor_root['data-dcf-editor-dirty']).to eq('1')
+        expect(JSON.parse(editor_root['data-dcf-editor-mapping'])['value_dependencies']).to eq(grown)
+        expect(doc.css('input[name="dependencies_json"]').map { |input| input['value'] }).to eq([''])
+        expect(editor_root['data-dcf-editor-storage-limit']).to eq(stored.to_s)
+        rendered = doc.at_css('input[name="state_hash"]')['value']
+        expect(rendered).to eq(state_hash(child))
+
+        patch custom_field_configuration_update_dependencies_path(project, child),
+              params: { dependencies_json: JSON.generate('value_dependencies' => { 'France' => %w[Paris] },
+                                                         'default_value_dependencies' => {}),
+                        state_hash: rendered }, headers: multipart
+
+        expect(response).to have_http_status(302)
+        expect(CustomField.find(child.id).value_dependencies).to eq('France' => %w[Paris])
+      end
+
+      # Review round 2 (contracts-r2-1): the editor always posts the
+      # per-parent defaults; an empty set over a mapping stored without them
+      # changes nothing.
+      it 'saves the unchanged mapping of a child stored above the ceiling without its per-parent defaults (302)' do
+        parent = dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France])
+        child = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
+                               values: %w[Antwerp Paris], parent: parent)
+        mapping = { 'Belgium' => %w[Antwerp], 'France' => %w[Paris] }
+        dcf_set_dependencies(child, value_dependencies: mapping)
+        stale = CustomField.find(child.id).format_store.to_hash.except('default_value_dependencies')
+        child.update_column(:format_store, stale)
+        expect(raw(child, 'format_store')).not_to include('default_value_dependencies')
+        stub_ceiling(1)
+
+        save_mapping(child, 'value_dependencies' => mapping, 'default_value_dependencies' => {})
+
+        expect(response).to have_http_status(302)
+        expect([rows(child).last.action, rows(child).last.status]).to eq(%w[update_dependencies success])
+        expect(CustomField.find(child.id).value_dependencies).to eq(mapping)
+      end
+    end
+
+    describe 'a role-invisible child refused by the ceiling (security)' do
+      it 'is never named in the flash, the page, its attributes or the audit rows' do
+        parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: %w[A B])
+        child = dcf_list_field(format: 'depending_list', name: 'CEILING-HIDDEN-CHILD', values: %w[SECRET-CV],
+                               parent: parent)
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[SECRET-CV] })
+        child.update!(visible: false, role_ids: [dcf_create_role.id])
+        stub_ceiling(raw(child, 'format_store').bytesize)
+        as(manager)
+
+        patch custom_field_configuration_rename_value_path(project, parent),
+              params: { old_value: 'A', new_value: "A#{'2' * 20}", confirm: '1' }
+
+        expect(response).to have_http_status(422)
+        expect(flash_box.text.strip).to eq(I18n.t(:error_save_failed))
+        ['CEILING-HIDDEN-CHILD', 'SECRET-CV'].each do |secret|
+          expect(response.body).not_to include(secret)
+          expect(doc.xpath('//@*').map(&:value).join(' ')).not_to include(secret)
+          expect(events.all.map { |row| row.attributes.values.join(' ') }.join(' ')).not_to include(secret)
+        end
+        row = rows(parent).last
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
+        expect(row.changes_summary).to include("custom field ##{child.id}")
+        expect(parent.reload.possible_values).to eq(%w[A B])
+      end
+    end
+
+    describe 'value length cap (T-LEN-1)' do
+      before { as(manager) }
+
+      it 'refuses a 256-character add with an audited 422 that echoes neither the value nor a field name' do
+        field = own_list(%w[A])
+        value = "LONGVALUE#{'z' * 247}"
+        expect(value.length).to eq(256)
+
+        expect { post custom_field_configuration_add_value_path(project, field), params: { value: value } }
+          .to change(events, :count).by(1)
+
+        expect(response).to have_http_status(422)
+        expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_value_length, max: 255))
+        expect(flash_box.text).not_to include(field.name)
+        expect(response.body).not_to include('LONGVALUE')
+        row = rows(field).last
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_value_length])
+        expect(row.attributes.values.join(' ')).not_to include('LONGVALUE')
+        expect(response.body).not_to match(/translation[ _]missing/i)
+        expect(field.reload.possible_values).to eq(%w[A])
+      end
+
+      it 'shows the German text' do
+        field = own_list(%w[A])
+        manager.update_column(:language, 'de')
+        I18n.with_locale(I18n.locale) do
+          post custom_field_configuration_add_value_path(project, field), params: { value: 'z' * 256 }
+        end
+        expect(response).to have_http_status(422)
+        expect(flash_box.text.strip).to eq('Ein Wert darf höchstens 255 Zeichen lang sein.')
+      end
+
+      it 'refuses a 256-character rename of a shared value without the confirmation panel' do
+        field = dcf_list_field(values: %w[A B], is_for_all: true)
+        value = dcf_custom_value(field, 'A')
+
+        patch custom_field_configuration_rename_value_path(project, field),
+              params: { old_value: 'A', new_value: "RENAMED#{'r' * 249}" }
+
+        expect(response).to have_http_status(422)
+        expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_value_length, max: 255))
+        expect(doc.at_css('.dcf-confirm-panel')).to be_nil
+        expect(response.body).not_to include('RENAMED')
+        expect(rows(field).last.error_message).to eq('error_dcf_value_length')
+        expect(value.reload.value).to eq('A')
+      end
+
+      it 'jumps to the page of a 255-character value added with surrounding spaces' do
+        labels = (1..520).map { |i| format('Value %04d', i) }
+        field = own_list(labels)
+        added = "Z#{'z' * 254}"
+        post custom_field_configuration_add_value_path(project, field), params: { value: "  #{added}  " }
+        expect(response).to redirect_to(show_path(field, page: 21))
+        expect(field.reload.possible_values.last).to eq(added)
+      end
+    end
+
+    describe 'project editor storage attributes (gap 14)' do
+      before { as(manager) }
+
+      let(:parent) { dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France]) }
+      let(:child) do
+        field = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
+                               values: %w[Antwerp Paris], parent: parent)
+        dcf_set_dependencies(field, value_dependencies: { 'Belgium' => %w[Antwerp] })
+      end
+
+      it 'renders the effective limit, the base and the warn percent, never a values limit' do
+        get custom_field_configuration_field_dependencies_path(project, child)
+
+        expect(response).to have_http_status(200)
+        record = CustomField.find(child.id)
+        expect(editor_root['data-dcf-editor-storage-limit']).to eq(policy.format_store_limit(record).to_s)
+        expect(editor_root['data-dcf-editor-storage-base']).to eq(limits.base_bytes(record).to_s)
+        expect(editor_root['data-dcf-editor-storage-warn']).to eq('90')
+        expect(editor_root['data-dcf-editor-values-limit']).to be_nil
+      end
+
+      it 'renders the default ceiling on PostgreSQL and SQLite and the stored size of a field above a ceiling' do
+        allow(limits).to receive(:column_limit).and_return(nil)
+        get custom_field_configuration_field_dependencies_path(project, child)
+        expect(editor_root['data-dcf-editor-storage-limit']).to eq('2097152')
+
+        stub_ceiling(10)
+        get custom_field_configuration_field_dependencies_path(project, child)
+        expect(editor_root['data-dcf-editor-storage-limit']).to eq(raw(child, 'format_store').bytesize.to_s)
+      end
+    end
+
+    # Nothing outside save_field! and format_store_limit sets the ceiling.
+    describe 'administration, APIs and issue import' do
+      before do
+        as(dcf_admin)
+        stub_ceiling(1)
+        allow(limits).to receive(:column_limit).and_return(nil)
+      end
+
+      it 'saves a growing list and a growing mapping from the admin form' do
+        field = dcf_list_field(values: %w[A B])
+        values = (1..100).map { |i| "Value #{i}" }
+        patch custom_field_path(field), params: { custom_field: { possible_values: values.join("\n"),
+                                                                  dcf_storage_ceiling: '1' } }
+        expect(response).to have_http_status(302)
+        expect(CustomField.find(field.id).possible_values).to eq(values)
+
+        parent = dcf_list_field(values: %w[P Q])
+        child = dcf_list_field(format: 'depending_list', values: %w[a b], parent: parent)
+        json = JSON.generate('version' => 1, 'source' => 'import', 'import' => { 'mode' => 'merge', 'rows' => 4 },
+                             'value_dependencies' => { 'P' => %w[a b], 'Q' => %w[a b] },
+                             'default_value_dependencies' => {})
+        patch custom_field_path(child), params: { custom_field: { dependencies_json: json } }
+        expect(response).to have_http_status(302)
+        expect(CustomField.find(child.id).value_dependencies).to eq('P' => %w[a b], 'Q' => %w[a b])
+        expect(policy).not_to have_received(:ceiling_bytes)
+      end
+
+      it 'saves a growing list through the plugin JSON API' do
+        field = dcf_list_field(values: %w[A B])
+        values = (1..100).map { |i| "Value #{i}" }
+        put "/depending_custom_fields/#{field.id}.json",
+            params: { custom_field: { possible_values: values, dcf_storage_ceiling: '1' } }
+        expect(response.status).to be_between(200, 204)
+        expect(CustomField.find(field.id).possible_values).to eq(values)
+
+        post '/depending_custom_fields.json',
+             params: { custom_field: { name: "API-#{SecureRandom.hex(3)}", type: 'IssueCustomField', field_format: 'list',
+                                       possible_values: values } }
+        expect(response).to have_http_status(201)
+        expect(policy).not_to have_received(:ceiling_bytes)
+      end
+
+      it 'imports an issue with depending values without touching the ceiling' do
+        parent = dcf_list_field(values: %w[A B])
+        child = dcf_list_field(format: 'depending_list', values: %w[a1 b1], parent: parent)
+        dcf_set_dependencies(child, value_dependencies: { 'B' => %w[b1] })
+        tracker, _status, priority = dcf_issue_infra(project)
+        [parent, child].each { |f| tracker.custom_fields << f unless tracker.custom_fields.include?(f) }
+        import = IssueImport.new(user: dcf_admin)
+        import.settings = { 'mapping' => { 'project_id' => project.id.to_s, 'tracker' => "value:#{tracker.id}",
+                                           'subject' => '0', "cf_#{parent.id}" => '1', "cf_#{child.id}" => '2' } }
+        issue = import.send(:build_object, %w[Imported B b1], 1)
+        issue.priority ||= priority
+        expect(issue.save).to be(true), issue.errors.full_messages.inspect
+        expect(issue.custom_field_value(child)).to eq('b1')
+        expect(policy).not_to have_received(:ceiling_bytes)
+      end
+    end
+
+    # Quality G12 (gap 12) and FM-26. Core stores the posted settings Hash as
+    # is (permit!.to_h) and caches it beyond the transaction.
+    describe 'plugin settings page' do
+      # Redmine 7.0 enables sudo mode by default; the page is the subject.
+      before { allow(Redmine::SudoMode).to receive(:enabled?).and_return(false) }
+      after { Setting.clear_cache }
+
+      let(:path) { plugin_settings_path('redmine_depending_custom_fields') }
+
+      def ceiling_input
+        doc.at_css('input[name="settings[project_storage_ceiling_kib]"]')
+      end
+
+      def post_settings(kib)
+        post path, params: { settings: { manage_standard_custom_fields: '1', block_removal_when_used: '0',
+                                         project_storage_ceiling_kib: kib } }
+      end
+
+      { 'en' => 'Maximum stored size for changes made in project settings (KiB)',
+        'de' => 'Maximale Speichergröße für Änderungen in den Projekteinstellungen (KiB)' }.each do |language, label|
+        it "renders the ceiling field with its label and info text in #{language}" do
+          admin = dcf_admin
+          admin.update_column(:language, language)
+          as(admin)
+          I18n.with_locale(I18n.locale) { get path }
+
+          expect(response).to have_http_status(200)
+          expect(response.body).not_to match(/translation[ _]missing/i)
+          input = ceiling_input
+          expect([input['type'], input['min'], input['max'], input['step'], input['value']])
+            .to eq(%w[number 64 1048576 1 2048])
+          expect(doc.at_css("label[for=\"#{input['id']}\"]").text.strip).to eq(label)
+          kib = I18n.with_locale(language) { ActiveSupport::NumberHelper.number_to_delimited(2048) }
+          info = I18n.t(:text_dcf_project_storage_ceiling_info, kib: kib, locale: language)
+          expect(input.parent.at_css('em.info').text.strip).to eq(info)
+          expect(info).to include(kib)
+          expect(doc.css('input[name="settings[manage_standard_custom_fields]"]').size).to eq(2)
+          expect(doc.css('input[name="settings[block_removal_when_used]"]').size).to eq(2)
+        end
+      end
+
+      it 'stores a non-numeric value as posted and falls back to 2,048 KiB' do
+        as(dcf_admin)
+        post_settings('abc')
+        expect(response).to have_http_status(302)
+        Setting.clear_cache
+        stored = Setting.plugin_redmine_depending_custom_fields
+        expect(stored['project_storage_ceiling_kib']).to eq('abc')
+        expect(stored['block_removal_when_used']).to eq('0')
+        expect(policy.ceiling_bytes).to eq(2_097_152)
+        get path
+        expect(ceiling_input['value']).to eq('2048')
+      end
+
+      it 'raises a value below the minimum to 64 KiB and shows the value that applies' do
+        as(dcf_admin)
+        post_settings('32')
+        Setting.clear_cache
+        expect(policy.ceiling_bytes).to eq(65_536)
+        get path
+        expect(ceiling_input['value']).to eq('64')
+        post_settings('4096')
+        Setting.clear_cache
+        expect(policy.ceiling_bytes).to eq(4_194_304)
+        get path
+        expect(ceiling_input['value']).to eq('4096')
+      end
+
+      # The editor parses data-dcf-editor-storage-limit as at most 16 digits.
+      it 'clamps a value above the maximum to 1,048,576 KiB and keeps the project editor limit parseable' do
+        as(dcf_admin)
+        post_settings('9' * 30)
+        Setting.clear_cache
+        expect(policy.ceiling_bytes).to eq(1_073_741_824)
+        get path
+        expect(ceiling_input['value']).to eq('1048576')
+
+        allow(limits).to receive(:column_limit).and_return(nil)
+        parent = dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France])
+        child = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
+                               values: %w[Antwerp Paris], parent: parent)
+        dcf_set_dependencies(child, value_dependencies: { 'Belgium' => %w[Antwerp] })
+        as(manager)
+        get custom_field_configuration_field_dependencies_path(project, child)
+        expect(response).to have_http_status(200)
+        expect(editor_root['data-dcf-editor-storage-limit']).to eq('1073741824')
+        expect(editor_root['data-dcf-editor-storage-limit']).to match(/\A(0|[1-9][0-9]{0,15})\z/)
+      end
+
+      it 'never renders a stored markup value' do
+        as(dcf_admin)
+        post_settings('"><script>alert(1)</script>')
+        Setting.clear_cache
+        get path
+        expect(response.body).not_to include('<script>alert(1)</script>')
+        expect(ceiling_input['value']).to eq('2048')
+      end
+
+      it 'is for administrators only: a project manager gets 403 and changes nothing' do
+        as(dcf_admin)
+        post_settings('128')
+        Setting.clear_cache
+        as(manager)
+        get path
+        expect(response).to have_http_status(403)
+        post_settings('64')
+        expect(response).to have_http_status(403)
+        Setting.clear_cache
+        expect(Setting.plugin_redmine_depending_custom_fields['project_storage_ceiling_kib']).to eq('128')
+      end
+    end
+
+    describe 'texts (large_lists_i18n_registry.md)' do
+      registry = {
+        en: ['A value can have at most 255 characters.',
+             'Maximum stored size for changes made in project settings (KiB)',
+             'Applies when the values or the dependency mapping of a custom field are changed from a project\'s ' \
+             'settings. The custom field administration and the API are not limited by this setting. Default: 2,048 KiB.'],
+        de: ['Ein Wert darf höchstens 255 Zeichen lang sein.',
+             'Maximale Speichergröße für Änderungen in den Projekteinstellungen (KiB)',
+             'Gilt, wenn die Werte oder die Abhängigkeitszuordnung eines benutzerdefinierten Feldes in den ' \
+             'Einstellungen eines Projekts geändert werden. Die Verwaltung der benutzerdefinierten Felder und die API ' \
+             'sind durch diese Einstellung nicht eingeschränkt. Standard: 2,048 KiB.'],
+        fr: ['Une valeur peut comporter au maximum 255 caractères.',
+             'Taille maximale enregistrée pour les modifications faites dans les paramètres du projet (Kio)',
+             'S\'applique lorsque les valeurs ou le mappage des dépendances d\'un champ personnalisé sont modifiés ' \
+             'depuis les paramètres d\'un projet. L\'administration des champs personnalisés et l\'API ne sont pas ' \
+             'limitées par ce paramètre. Par défaut : 2,048 Kio.'],
+        nl: ['Een waarde mag maximaal 255 tekens bevatten.',
+             'Maximale opgeslagen grootte voor wijzigingen in de projectinstellingen (KiB)',
+             'Geldt wanneer de waarden of de afhankelijkheidskoppeling van een aangepast veld vanuit de instellingen ' \
+             'van een project worden gewijzigd. Het beheer van aangepaste velden en de API worden door deze instelling ' \
+             'niet beperkt. Standaard: 2,048 KiB.']
+      }
+
+      registry.each do |locale, (length, label, info)|
+        it "matches the registry in #{locale}" do
+          expect(I18n.t(:error_dcf_value_length, max: 255, locale: locale)).to eq(length)
+          expect(I18n.t(:label_dcf_project_storage_ceiling, locale: locale)).to eq(label)
+          expect(I18n.t(:text_dcf_project_storage_ceiling_info, kib: '2,048', locale: locale)).to eq(info)
         end
       end
     end

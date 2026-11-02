@@ -24,7 +24,7 @@ module RedmineDependingCustomFields
       field.possible_values = possible_values.reject { |x| x == value }
       field.default_value = nil if field.default_value.to_s == value
       prune_own_deps!(value) if depending?
-      field.save!
+      save_field!(field)
 
       touched = cascade_parent_key!(value, nil, :remove)
 
@@ -52,7 +52,7 @@ module RedmineDependingCustomFields
       end
       if depending?
         prune_own_deps!(value_key)
-        field.save!
+        save_field!(field)
       end
 
       touched = cascade_parent_key!(value_key, nil, :remove)

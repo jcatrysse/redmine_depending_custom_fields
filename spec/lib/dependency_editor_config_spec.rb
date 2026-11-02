@@ -623,7 +623,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
   end
 
   describe '.for_project' do
-    let(:project_always) { always + %w[data-dcf-editor-child-values data-dcf-editor-always-submit] }
+    # Changed by WP-31: project mode always carries the three storage
+    # attributes (the effective limit of ProjectStoragePolicy).
+    let(:project_always) { always + %w[data-dcf-editor-child-values data-dcf-editor-always-submit] + storage }
 
     it 'renders the project attributes of a list child and nothing admin-only' do
       field = fresh(list_child)
@@ -722,12 +724,17 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       allow(limits).to receive(:column_limit).with('possible_values').and_return(possible_values)
     end
 
-    it 'renders none of the four without a column limit (PostgreSQL, SQLite)' do
+    # Changed by WP-31 (was: the project root without them too): project
+    # mode always has the effective limit of ProjectStoragePolicy.
+    it 'renders none of the four on the admin form without a column limit (PostgreSQL, SQLite)' do
       stub_limits(nil, nil)
-      [admin_root(fresh(list_child)), admin_root(fresh(enum_child)), project_root(fresh(list_child), list_parent)]
-        .each do |root|
-          expect(names(root)).not_to include(*storage, 'data-dcf-editor-values-limit')
-        end
+      [admin_root(fresh(list_child)), admin_root(fresh(enum_child))].each do |root|
+        expect(names(root)).not_to include(*storage, 'data-dcf-editor-values-limit')
+      end
+      project = project_root(fresh(list_child), list_parent)
+      expect(names(project)).to include(*storage)
+      expect(names(project)).not_to include('data-dcf-editor-values-limit')
+      expect(project['data-dcf-editor-storage-limit']).to eq('2097152')
     end
 
     it 'renders all four on an admin list child, the base exactly StorageLimits.base_bytes(field)' do
@@ -745,16 +752,61 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
                                            data-dcf-editor-warn-unsaved data-dcf-editor-i18n])
     end
 
+    # Changed by WP-31 (was: '65535' from StorageLimits.column_limit): the
+    # project limit is ProjectStoragePolicy.format_store_limit(field), here
+    # min(65,535, max(2 MiB, stored bytes)).
     it 'renders no values limit for an admin enumeration child and none in project mode' do
       stub_limits(65_535, 65_535)
       enum_root = admin_root(fresh(enum_child))
-      project = project_root(fresh(list_child), list_parent)
+      field = fresh(list_child)
+      project = project_root(field, list_parent)
 
       [enum_root, project].each do |root|
         expect(names(root)).to include(*storage)
         expect(names(root)).not_to include('data-dcf-editor-values-limit')
       end
+      expect(project['data-dcf-editor-storage-limit']).to eq(RedmineDependingCustomFields::ProjectStoragePolicy
+        .format_store_limit(fresh(list_child)).to_s)
       expect(project['data-dcf-editor-storage-limit']).to eq('65535')
+    end
+
+    # WP-31, gap 14: the project limit is the effective format_store limit,
+    # whatever the database.
+    it 'renders the project storage limit of ProjectStoragePolicy.format_store_limit(field) in project mode' do
+      policy = RedmineDependingCustomFields::ProjectStoragePolicy
+      allow(limits).to receive(:column_limit).and_call_original
+      [list_child, enum_child].each do |child|
+        parent = child == list_child ? list_parent : enum_parent
+        root = project_root(fresh(child), parent)
+        expect(root['data-dcf-editor-storage-limit']).to eq(policy.format_store_limit(fresh(child)).to_s)
+        expect(root['data-dcf-editor-storage-base']).to eq(limits.base_bytes(fresh(child)).to_s)
+        expect(root['data-dcf-editor-storage-warn']).to eq('90')
+        expect(names(root)).not_to include('data-dcf-editor-values-limit')
+      end
+
+      allow(policy).to receive(:ceiling_bytes).and_return(10)
+      stub_limits(nil, nil)
+      stored = CustomField.connection.select_value(CustomField.where(id: list_child.id).select(:format_store).to_sql)
+      # The measured instance keeps the accessor it had (nil, or a value set before).
+      [nil, 7].each do |before|
+        field = fresh(list_child)
+        field.dcf_storage_ceiling = before
+        expect(project_root(field, list_parent)['data-dcf-editor-storage-limit']).to eq(stored.bytesize.to_s)
+        expect(field.dcf_storage_ceiling).to eq(before)
+      end
+    end
+
+    # The editor reads the attribute as at most 16 digits (INT_RE of
+    # dcf_dependency_editor.js); a larger value would leave it inert.
+    it 'renders a project storage limit the editor can parse for the largest setting' do
+      stub_limits(nil, nil)
+      ['1' + ('0' * 29), '9765625000000', '1048576'].each do |kib|
+        allow(Setting).to receive(:plugin_redmine_depending_custom_fields)
+          .and_return('project_storage_ceiling_kib' => kib)
+        limit = project_root(fresh(list_child), list_parent)['data-dcf-editor-storage-limit']
+        expect(limit).to match(/\A(0|[1-9][0-9]{0,15})\z/), kib
+        expect(limit).to eq('1073741824'), kib
+      end
     end
 
     it 'renders the values limit and the warn percent alone when only possible_values has a limit' do

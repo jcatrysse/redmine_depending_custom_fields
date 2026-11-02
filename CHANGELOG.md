@@ -218,6 +218,7 @@
 * Added: Search on the project values page for fields with more than 25 values, and pagination for fields with more than 500 values.
 * Added: Sort A-Z / Sort Z-A buttons on the project values page; members with 'Manage project custom field configuration' get the new action automatically.
 * Added: Page-scoped save of Key/Value list values on paginated or filtered pages, with a warning before leaving unsaved changes.
+* Added: Plugin setting for the maximum stored size of changes made in project settings (default 2,048 KiB).
 * Changed: The admin form sends the dependency mapping as one field (custom_field[dependencies_json]) and is submitted as multipart/form-data while the editor is active.
 * Changed: Saving the admin form without touching the dependencies leaves the stored mapping unchanged.
 * Changed: Changing the parent field in the admin form removes links that do not match the new parent's values.
@@ -227,6 +228,7 @@
 * Changed: Links to values that no longer exist are reported by the editor and removed at the next editor save; project audit rows count them.
 * Changed: Project dependency audit rows store a compact summary (counts, samples, SHA-256 of the mapping); sort and reorder audit rows store the SHA-256 of the order. The source and import details are reported by the browser and are informational.
 * Changed: Drag-and-drop ordering is offered only for unfiltered lists with at most 500 values; redirects keep the search and the page; 'Show usage' reports exact counts.
+* Changed: Values added or renamed in project settings are limited to 255 characters, and project-settings changes cannot grow a field beyond the new storage setting.
 * Fixed: Unticking every link clears the mapping; parent values containing [ or ] and mappings with more than about 4,000 links can be saved (admin form and project settings).
 * Fixed: Links to inactive Key/Value list entries are kept on admin saves.
 * Fixed: Correcting a failed dependency save in project settings and saving again no longer reports a conflict.

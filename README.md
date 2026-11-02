@@ -507,6 +507,31 @@ Prefer Key/Value list (depending) for very large lists: its values are rows of
 their own, the mapping stores their ids, and the data sent to the issue form
 is about 2.7 times smaller.
 
+### Performance notes
+
+- Redmine parses the YAML of `possible_values` and `format_store` each time a
+  request loads a custom field: about 14 ms for a List (depending) field with
+  5,570 values over 27 parent values, and 100 to 210 ms for mappings of about
+  0.5 to 2 MB of YAML. A page with several depending fields pays this once
+  per field.
+  `report_sizes` shows the time per field as `load_ms`.
+- Every value of a field is an option of its select on the issue form: about
+  280 KB of option markup at 5,570 values and about 1.25 MB at 25,000. Keep
+  selects below about 10,000 options.
+- The dependency editors send the mapping as one JSON field of at most 4 MiB
+  (see "Dependency editor" for the form bounds); Redmine's `config/boot.rb`
+  sets `RACK_QUERY_PARSER_BYTESIZE_LIMIT` to 32 MiB.
+- Reverse proxies often limit request bodies to 1 MB by default (nginx
+  `client_max_body_size`): raise the limit for very large mappings.
+- A save from a project's settings dumps the YAML of each column it changes
+  once to measure it; only above the storage setting
+  (`project_storage_ceiling_kib`, see "Settings" under "Project-level custom
+  field configuration") does it also parse and dump the stored value once,
+  and once more for a dependency mapping stored without its per-parent
+  defaults.
+  The project dependency page takes the stored size of the mapping from the
+  database value without parsing it again.
+
 ### Tests on MySQL / MariaDB (development)
 
 The specs tagged `:mysql` run only on MySQL or MariaDB. A local run, for
@@ -986,16 +1011,40 @@ required flag, tracker or project applicability.
   audit log, written in the same transaction as the change. Project managers see
   the audit for their project in the settings tab; administrators can view the
   global log at `/dcf_config_audit`.
+* A list value added or renamed here has at most 255 characters (counted as
+  characters, not bytes). Values stored before with more characters are kept:
+  they can be removed, sorted, set as default or renamed to a value of at most
+  255 characters.
+  Key/Value list entries keep Redmine's limit of 60 characters.
 
 ### Settings
 
-Two plugin settings (Administration → Plugins → Configure):
+Three plugin settings (Administration → Plugins → Configure):
 
 * **Allow managing standard list / key-value fields** (`manage_standard_custom_fields`,
   default **on**): turn off to restrict delegation to the plugin's depending
   formats only.
 * **Block removing values that are still in use** (`block_removal_when_used`,
   default off): hardens value removal.
+* **Maximum stored size for changes made in project settings (KiB)**
+  (`project_storage_ceiling_kib`, default **2,048** KiB, minimum 64, maximum
+  1,048,576 (1 GiB); a value that is not a whole number counts as 2,048, a
+  value outside the range counts as the nearest bound): a change from a
+  project's settings, the dependency page and its CSV import included, cannot
+  grow the stored value list or dependency mapping of a field beyond this size,
+  each measured on its own as the YAML Redmine stores. This includes the
+  dependent fields whose parent keys a rename rewrites. A field that is already
+  larger, for example because an administrator made it so, can still shrink or
+  keep its size from project settings, but not grow. The refused change is
+  audited and the message names the field and both sizes (a dependent field
+  you cannot see is not named). The custom field administration, the JSON API
+  and issue imports are not limited by this setting. On MySQL and MariaDB the
+  `TEXT` column limit (65,535 bytes) is smaller and applies first, so the
+  setting matters on PostgreSQL, SQLite and widened columns. The setting
+  limits only what a change writes: a stored mapping that a save rewrites
+  without changing it (for example one stored by an old version without its
+  per-parent defaults) is never refused by it, and a change to such a
+  mapping is measured against the size a save of the stored mapping writes.
 
 ### Migration
 

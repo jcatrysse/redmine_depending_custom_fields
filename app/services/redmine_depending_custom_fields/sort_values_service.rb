@@ -51,7 +51,7 @@ module RedmineDependingCustomFields
       moved = current.each_index.count { |i| current[i] != sorted[i] }
       if moved.positive?
         field.possible_values = sorted
-        field.save!
+        save_field!(field)
       end
       [current, sorted, moved]
     end

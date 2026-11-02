@@ -96,10 +96,50 @@ test('possible-values estimate against data-dcf-editor-values-limit (duplicates 
   assert.ok(below.notice('storage_values'));
 });
 
-test('enumeration and project fixtures never show the possible-values estimate', async () => {
+// WP-31: the project fixtures carry the effective limit (2 MiB) and their
+// tiny mappings stay far below it; admin_enumeration has no limit at all.
+test('enumeration and project fixtures show no estimate: no values limit and a mapping far below the limit', async () => {
   for (const name of ['admin_enumeration', 'project_list', 'project_enumeration']) {
     const p = await E.load(name);
     assert.equal(p.notice('storage_values'), null, name);
     assert.equal(p.notice('storage_mapping'), null, name);
   }
+});
+
+// WP-31 (gap 14): project mode estimates the mapping against
+// ProjectStoragePolicy.format_store_limit, rendered on every database.
+const PROJECT_LIMIT = 2097152;
+const PROJECT_THRESHOLD = Math.ceil((PROJECT_LIMIT * 90) / 100);
+const setBase = (bytes) => (r) => r.setAttribute('data-dcf-editor-storage-base', String(bytes));
+
+test('project fixtures: one mapping warning at 90 percent of the effective limit, none one byte below, never values', async () => {
+  for (const [name, ratio] of [['project_list', 1.2], ['project_enumeration', 1.6]]) {
+    const plain = await E.load(name);
+    assert.equal(plain.root.getAttribute('data-dcf-editor-storage-limit'), String(PROJECT_LIMIT), name);
+    const payload = plain.payload();
+    const cost = Math.ceil(M.utf8Bytes(JSON.stringify({ value_dependencies: payload.value_dependencies,
+                                                        default_value_dependencies: payload.default_value_dependencies })) * ratio);
+    const at = await E.load(name, { tweak: setBase(PROJECT_THRESHOLD - cost) });
+    const shown = warnings(at);
+    assert.equal(shown.length, 1, name);
+    assert.equal(shown[0].getAttribute('data-dcf-ed-notice'), 'storage_mapping', name);
+    assert.equal(shown[0].textContent, at.t('storageEstimate', { label: 'Dependency mapping', size: '1,887,437',
+                                                                 limit: '2,097,152', percent: '90' }), name);
+    assert.equal(at.notice('storage_values'), null, name);
+
+    const below = await E.load(name, { tweak: setBase(PROJECT_THRESHOLD - cost - 1) });
+    assert.equal(warnings(below).length, 0, name);
+  }
+});
+
+test('project fixtures start with the largest limit the server renders (1 GiB) and not with 17 digits', async () => {
+  const limit = (value) => (r) => r.setAttribute('data-dcf-editor-storage-limit', value);
+  const largest = await E.load('project_list', { tweak: limit('1073741824') });
+  assert.equal(largest.editor().inert, false);
+  assert.equal(largest.alerts().length, 0);
+  assert.equal(largest.notice('storage_mapping'), null);
+  assert.equal(largest.form.querySelector('[data-dcf-editor-submit]').disabled, false);
+  const tooLong = await E.load('project_list', { tweak: limit('10000000000000000') });
+  assert.equal(tooLong.editor().inert, true);
+  assert.equal(tooLong.form.querySelector('[data-dcf-editor-submit]').disabled, true);
 });

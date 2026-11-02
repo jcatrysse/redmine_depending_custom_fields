@@ -1595,6 +1595,645 @@ RSpec.describe 'DCF value operation services' do
     end
   end
 
+  # --- Project storage ceiling and value length cap (WP-31, UD-22) ------
+  # The ceiling is stubbed through ProjectStoragePolicy.ceiling_bytes (the
+  # spec seam). Stubbed ceilings are far below MySQL TEXT, so the examples
+  # behave the same on PostgreSQL and MariaDB.
+  describe 'project storage ceiling (WP-31)' do
+    let(:policy) { RedmineDependingCustomFields::ProjectStoragePolicy }
+    let(:limits) { RedmineDependingCustomFields::StorageLimits }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+
+    before { project }
+
+    def stub_ceiling(bytes)
+      allow(policy).to receive(:ceiling_bytes).and_return(bytes)
+    end
+
+    def raw(field, column)
+      CustomField.connection.select_value(CustomField.where(id: field.id).select(column).to_sql)
+    end
+
+    def yaml_bytes(values)
+      limits.serialized_bytesize(CustomField, 'possible_values', values)
+    end
+
+    def own_list(values)
+      dcf_list_field(values: values, is_for_all: false, projects: [project])
+    end
+
+    def refusal
+      yield
+      raise 'expected an OperationError'
+    rescue RedmineDependingCustomFields::OperationError => e
+      e
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def sort(field, params)
+      RedmineDependingCustomFields::SortValuesService
+        .new(project: project, field: field, user: user, params: params).call
+    end
+
+    def map(field, params)
+      RedmineDependingCustomFields::DependencyMappingService
+        .new(project: project, field: field, user: user, params: params).call
+    end
+
+    def save_enums_page(field, overrides)
+      payload = enum_payload(field, overrides).slice(*overrides.keys.map(&:to_s))
+      RedmineDependingCustomFields::UpdateEnumerationsService
+        .new(project: project, field: field, user: user,
+             params: { enumerations: payload, batch_scope: 'page' }).call
+    end
+
+    # Every IssueCustomField save! of the block: [record, ceiling during it].
+    def watch_saves
+      seen = []
+      allow_any_instance_of(IssueCustomField).to receive(:save!).and_wrap_original do |original, *args|
+        seen << [original.receiver, original.receiver.dcf_storage_ceiling]
+        original.call(*args)
+      end
+      seen
+    end
+
+    def updates_of_custom_fields(&block)
+      sqls = []
+      callback = ->(*, payload) { sqls << payload[:sql].to_s }
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record', &block)
+      sqls.grep(/\AUPDATE\s+[`"]?custom_fields[`"]?\s/i)
+    end
+
+    describe 'max(ceiling, persisted bytes) (T-SIZE-6)' do
+      it 'lets a field below the ceiling grow up to it and refuses one byte more with the ceiling as limit' do
+        field = own_list(%w[A B])
+        stored = raw(field, 'possible_values').bytesize
+        stub_ceiling(yaml_bytes(%w[A B CC]))
+        add(field, value: 'CC')
+        expect(field.reload.possible_values).to eq(%w[A B CC])
+
+        bytes = yaml_bytes(%w[A B CC D])
+        ceiling = bytes - 1
+        stub_ceiling(ceiling)
+        error = nil
+        expect { error = refusal { add(CustomField.find(field.id), value: 'D') } }.to change(events, :count).by(1)
+        expect(error.key).to eq(:error_dcf_values_too_large)
+        expect(error.interpolations)
+          .to eq(field: field.name, size: limits.delimited(bytes), limit: limits.delimited(ceiling))
+        row = rows(field).last
+        expect([row.action, row.status, row.error_message])
+          .to eq(%w[validation_failed validation_failed error_dcf_values_too_large])
+        expect(row.changes_summary)
+          .to eq("possible_values: #{bytes} bytes exceeds #{ceiling} (custom field ##{field.id})")
+        expect(field.reload.possible_values).to eq(%w[A B CC])
+        expect(stored).to be < ceiling
+      end
+
+      it 'uses the persisted bytes as the limit of a field stored above the ceiling: it shrinks or keeps size, never grows' do
+        field = own_list(%w[Alpha Bravo Charlie Delta])
+        stored = raw(field, 'possible_values').bytesize
+        stub_ceiling(10)
+
+        error = refusal { add(CustomField.find(field.id), value: 'Echo') }
+        expect(error.key).to eq(:error_dcf_values_too_large)
+        expect(error.interpolations[:limit]).to eq(limits.delimited(stored))
+        expect(rows(field).last.changes_summary)
+          .to eq("possible_values: #{yaml_bytes(%w[Alpha Bravo Charlie Delta Echo])} bytes exceeds #{stored} " \
+                 "(custom field ##{field.id})")
+
+        rename(CustomField.find(field.id), old_value: 'Alpha', new_value: 'Omega', confirm: '1')
+        expect(raw(field, 'possible_values').bytesize).to eq(stored)
+        reorder(CustomField.find(field.id), ordered_values: %w[Delta Charlie Bravo Omega])
+        sort(CustomField.find(field.id), direction: 'asc')
+        expect(CustomField.find(field.id).possible_values).to eq(%w[Bravo Charlie Delta Omega])
+
+        grow = refusal { rename(CustomField.find(field.id), old_value: 'Omega', new_value: 'Omega2', confirm: '1') }
+        expect([grow.key, grow.interpolations[:limit]]).to eq([:error_dcf_values_too_large, limits.delimited(stored)])
+
+        remove(CustomField.find(field.id), value: 'Delta', confirm: '1')
+        expect(CustomField.find(field.id).possible_values).to eq(%w[Bravo Charlie Omega])
+        expect(rows(field).where(status: 'success').pluck(:action))
+          .to eq(%w[rename_value reorder_values sort_values remove_value])
+      end
+
+      # UD-22: a mapping stored before default_value_dependencies existed is
+      # rewritten by any save, which changes no value; the ceiling never
+      # refuses such a write.
+      it 'sorts, reorders and sets the default of a depending list above the ceiling whose stored mapping a save rewrites' do
+        parent = own_list(%w[P Q])
+        child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[c b a],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'P' => %w[a b], 'Q' => %w[c] })
+        # A plain default exists only without a parent field.
+        orphan = dcf_list_field(format: 'depending_list', name: "Orphan-#{SecureRandom.hex(3)}", values: %w[x y],
+                                is_for_all: false, projects: [project])
+        stale = CustomField.find(child.id).format_store.to_hash.except('default_value_dependencies')
+        child.update_column(:format_store, stale)
+        expect(raw(child, 'format_store')).not_to include('default_value_dependencies')
+        orphan_stale = CustomField.find(orphan.id).format_store.to_hash.except('default_value_dependencies')
+        orphan.update_column(:format_store, orphan_stale)
+        expect(raw(orphan, 'format_store')).not_to include('default_value_dependencies')
+        stub_ceiling(1)
+
+        sort(CustomField.find(child.id), direction: 'asc')
+        expect(CustomField.find(child.id).possible_values).to eq(%w[a b c])
+        child.update_column(:format_store, stale)
+        reorder(CustomField.find(child.id), ordered_values: %w[c a b])
+        expect(CustomField.find(child.id).possible_values).to eq(%w[c a b])
+        expect(CustomField.find(child.id).value_dependencies).to eq('P' => %w[a b], 'Q' => %w[c])
+        expect(raw(child, 'format_store')).to include('default_value_dependencies')
+        expect(rows(child).pluck(:action, :status)).to eq([%w[sort_values success], %w[reorder_values success]])
+
+        set_default(CustomField.find(orphan.id), default_value: 'y')
+        expect(CustomField.find(orphan.id).default_value).to eq('y')
+        expect(raw(orphan, 'format_store')).to include('default_value_dependencies')
+        expect(rows(orphan).pluck(:action, :status)).to eq([%w[set_default_value success]])
+      end
+
+      # Review round 2 (contracts-r2-1, semantics-r2-1): a mapping stored
+      # without default_value_dependencies gains that key on any save, so a
+      # write is measured against the row as a save of it would store it.
+      def strip_defaults(field)
+        stale = CustomField.find(field.id).format_store.to_hash.except('default_value_dependencies')
+        field.update_column(:format_store, stale)
+        expect(raw(field, 'format_store')).not_to include('default_value_dependencies')
+        stale
+      end
+
+      # The bytes a save of the stored row writes: the key added as {}.
+      def normalized_bytes(stale)
+        limits.serialized_bytesize(CustomField, 'format_store', stale.merge('default_value_dependencies' => {}))
+      end
+
+      it 'removes and renames values of a depending list above the ceiling whose stored mapping lacks the defaults' do
+        parent = own_list(%w[P Q])
+        child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}",
+                               values: %w[a b c y z], parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'P' => %w[a b], 'Q' => %w[c] })
+        strip_defaults(child)
+        stub_ceiling(1)
+
+        remove(CustomField.find(child.id), value: 'z', confirm: '1')
+        expect(CustomField.find(child.id).possible_values).to eq(%w[a b c y])
+        strip_defaults(child)
+        rename(CustomField.find(child.id), old_value: 'y', new_value: 'x', confirm: '1')
+        expect(CustomField.find(child.id).possible_values).to eq(%w[a b c x])
+        strip_defaults(child)
+        remove(CustomField.find(child.id), value: 'b', confirm: '1')
+        expect(CustomField.find(child.id).value_dependencies).to eq('P' => %w[a], 'Q' => %w[c])
+        strip_defaults(child)
+        rename(CustomField.find(child.id), old_value: 'a', new_value: 'e', confirm: '1')
+        expect(CustomField.find(child.id).value_dependencies).to eq('P' => %w[e], 'Q' => %w[c])
+        expect(rows(child).pluck(:action, :status))
+          .to eq([%w[remove_value success], %w[rename_value success], %w[remove_value success],
+                  %w[rename_value success]])
+
+        stale = strip_defaults(child)
+        values_bytes = raw(child, 'possible_values').bytesize
+        stub_ceiling(values_bytes + 20)
+        expect(raw(child, 'format_store').bytesize).to be > values_bytes + 20
+        grow = refusal { rename(CustomField.find(child.id), old_value: 'c', new_value: 'c-longer', confirm: '1') }
+        expect([grow.key, grow.interpolations[:limit]])
+          .to eq([:error_dcf_mapping_too_large, limits.delimited(normalized_bytes(stale))])
+        expect(normalized_bytes(stale)).to be > raw(child, 'format_store').bytesize
+        expect(CustomField.find(child.id).possible_values).to eq(%w[e c x])
+      end
+
+      # contracts-r2-1: a mapping the write does not change is not assigned,
+      # so format_store stays as stored and the ceiling never measures it.
+      it 'leaves format_store unchanged when a remove, a rename or a resubmit does not change the mapping' do
+        parent = own_list(%w[P Q])
+        child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}",
+                               values: %w[a b y z], parent: parent, is_for_all: false, projects: [project])
+        mapping = { 'P' => %w[a], 'Q' => %w[b] }
+        dcf_set_dependencies(child, value_dependencies: mapping)
+        enum_parent = dcf_enum_field(names: %w[N S])
+        enum_child = dcf_enum_field(format: 'depending_enumeration', names: %w[x y], parent: enum_parent)
+        north = enum_parent.enumerations.find_by(name: 'N').id.to_s
+        x_id, y_id = %w[x y].map { |name| enum_child.enumerations.find_by(name: name).id }
+        dcf_set_dependencies(enum_child, value_dependencies: { north => [x_id.to_s] })
+        [child, enum_child].each { |field| strip_defaults(field) }
+        seen = []
+        allow_any_instance_of(IssueCustomField).to receive(:save!).and_wrap_original do |original, *args|
+          seen << original.receiver.will_save_change_to_attribute?('format_store')
+          original.call(*args)
+        end
+
+        remove(CustomField.find(child.id), value: 'z', confirm: '1')
+        strip_defaults(child)
+        rename(CustomField.find(child.id), old_value: 'y', new_value: 'x', confirm: '1')
+        strip_defaults(child)
+        map(CustomField.find(child.id),
+            dependencies_json: JSON.generate('value_dependencies' => mapping, 'default_value_dependencies' => {}))
+        remove(CustomField.find(enum_child.id), enumeration_id: y_id, confirm: '1')
+
+        expect(seen).to eq([false, false, false, false])
+        expect(CustomField.find(child.id).possible_values).to eq(%w[a b x])
+        expect(CustomField.find(child.id).value_dependencies).to eq(mapping)
+      end
+
+      it 'removes a linked and an unlinked entry of a depending enumeration above the ceiling whose mapping lacks ' \
+         'the defaults' do
+        parent = dcf_enum_field(names: %w[N S])
+        child = dcf_enum_field(format: 'depending_enumeration', names: %w[x y z], parent: parent)
+        north = parent.enumerations.find_by(name: 'N').id.to_s
+        x_id, y_id, z_id = %w[x y z].map { |name| child.enumerations.find_by(name: name).id }
+        dcf_set_dependencies(child, value_dependencies: { north => [x_id.to_s, y_id.to_s] })
+        strip_defaults(child)
+        stub_ceiling(1)
+
+        remove(CustomField.find(child.id), enumeration_id: z_id, confirm: '1')
+        expect(CustomField.find(child.id).enumerations.pluck(:id)).not_to include(z_id)
+        strip_defaults(child)
+        remove(CustomField.find(child.id), enumeration_id: x_id, confirm: '1')
+        expect(CustomField.find(child.id).value_dependencies).to eq(north => [y_id.to_s])
+        expect(rows(child).pluck(:action, :status)).to eq([%w[remove_value success], %w[remove_value success]])
+      end
+
+      it 'removes and same-length renames a parent value whose children above the ceiling lack the defaults, ' \
+         'a role-invisible child included' do
+        parent = own_list(%w[A B C])
+        visible = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[a1 b1],
+                                 parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(visible, value_dependencies: { 'A' => %w[a1], 'B' => %w[b1] })
+        hidden = dcf_list_field(format: 'depending_list', name: 'HIDDEN-LEGACY-CHILD', values: %w[h1],
+                                parent: parent)
+        dcf_set_dependencies(hidden, value_dependencies: { 'A' => %w[h1] })
+        hidden.update!(visible: false, role_ids: [dcf_create_role.id])
+        [visible, hidden].each { |child| strip_defaults(child) }
+        manager = dcf_manager(project)
+        stub_ceiling(1)
+
+        RedmineDependingCustomFields::RenameValueService
+          .new(project: project, field: CustomField.find(parent.id), user: manager,
+               params: { old_value: 'A', new_value: 'Z', confirm: '1' }).call
+        expect(CustomField.find(visible.id).value_dependencies).to eq('B' => %w[b1], 'Z' => %w[a1])
+        expect(CustomField.find(hidden.id).value_dependencies).to eq('Z' => %w[h1])
+
+        [visible, hidden].each { |child| strip_defaults(child) }
+        RedmineDependingCustomFields::RemoveValueService
+          .new(project: project, field: CustomField.find(parent.id), user: manager,
+               params: { value: 'Z', confirm: '1' }).call
+        expect(CustomField.find(parent.id).possible_values).to eq(%w[B C])
+        expect(CustomField.find(visible.id).value_dependencies).to eq('B' => %w[b1])
+        expect(CustomField.find(hidden.id).value_dependencies).to eq({})
+        expect(rows(parent).pluck(:action, :status)).to eq([%w[rename_value success], %w[remove_value success]])
+      end
+
+      it 'measures the persisted bytes only above the ceiling: one dump below it, two above it' do
+        field = own_list(%w[A B])
+        allow(limits).to receive(:persisted_bytes).and_call_original
+        allow(limits).to receive(:serialized_bytesize).and_call_original
+        stub_ceiling(1_000)
+        add(CustomField.find(field.id), value: 'C')
+        expect(limits).not_to have_received(:persisted_bytes)
+        expect(limits).to have_received(:serialized_bytesize).once
+
+        stub_ceiling(5)
+        refusal { add(CustomField.find(field.id), value: 'D') }
+        expect(limits).to have_received(:persisted_bytes).once
+        expect(limits).to have_received(:serialized_bytesize).exactly(3).times
+      end
+
+      # Changed by the WP-31 review round 2 (tests-r2-1, was: the ceiling at
+      # the child's stored size, a tie): the ceiling lies between the
+      # parent's grown list and the child's stored mapping.
+      it 'measures each cascaded child against its own persisted bytes' do
+        parent = own_list(%w[A B])
+        child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: %w[a1],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1] })
+        child_stored = raw(child, 'format_store').bytesize
+        ceiling = yaml_bytes(%w[Z-longer B])
+        expect(ceiling).to be < child_stored
+        stub_ceiling(ceiling)
+
+        rename(CustomField.find(parent.id), old_value: 'A', new_value: 'Z', confirm: '1')
+        expect(CustomField.find(child.id).value_dependencies).to eq('Z' => %w[a1])
+        expect(raw(child, 'format_store').bytesize).to eq(child_stored)
+
+        error = refusal { rename(CustomField.find(parent.id), old_value: 'Z', new_value: 'Z-longer', confirm: '1') }
+        expect([error.key, error.interpolations[:field]]).to eq([:error_dcf_mapping_too_large, child.name])
+        expect(error.interpolations[:limit]).to eq(limits.delimited(child_stored))
+        expect(error.summary).to end_with("(custom field ##{child.id})")
+        expect(CustomField.find(parent.id).possible_values).to eq(%w[Z B])
+
+        remove(CustomField.find(parent.id), value: 'Z', confirm: '1')
+        expect(CustomField.find(parent.id).possible_values).to eq(%w[B])
+        expect(CustomField.find(child.id).value_dependencies).to eq({})
+      end
+    end
+
+    describe 'save_field! (T-SIZE-7)' do
+      it 'leaves the accessor nil after a save, a refusal and an unmapped error' do
+        field = CustomField.find(own_list(%w[A B]).id)
+        add(field, value: 'C')
+        expect(field.dcf_storage_ceiling).to be_nil
+
+        stub_ceiling(5)
+        refusal { add(field, value: 'D') }
+        expect(field.dcf_storage_ceiling).to be_nil
+
+        allow(field).to receive(:save!).and_raise(RuntimeError, 'boom')
+        expect { add(field, value: 'E') }.to raise_error(RuntimeError, 'boom')
+        expect(field.dcf_storage_ceiling).to be_nil
+      end
+
+      it 'leaves the field unlimited for a later save of the same object' do
+        field = CustomField.find(own_list(%w[A B]).id)
+        stub_ceiling(5)
+        refusal { add(field, value: 'C') }
+        field.reload
+        field.possible_values = %w[A B C D E F]
+        expect(field.save).to be(true), field.errors.full_messages.inspect
+      end
+
+      it 'stores through save_field! in every project service, children of a cascade included' do
+        stub_ceiling(4_000_000)
+        parent = own_list(%w[A B C])
+        child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: %w[a1 b1],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1], 'B' => %w[b1] })
+        enum_parent = dcf_enum_field(names: %w[N S])
+        enum_child = dcf_enum_field(format: 'depending_enumeration', names: %w[x y], parent: enum_parent)
+        north = enum_parent.enumerations.find_by(name: 'N').id.to_s
+        x_id = enum_child.enumerations.find_by(name: 'x').id
+        dcf_set_dependencies(enum_child, value_dependencies: { north => [x_id.to_s] })
+        default_enum = dcf_enum_field(names: %w[D1 D2])
+        d1 = default_enum.enumerations.find_by(name: 'D1')
+        default_enum.update!(default_value: d1.id.to_s)
+        page_enum = dcf_enum_field(names: %w[P1 P2])
+        p1 = page_enum.enumerations.find_by(name: 'P1')
+        page_enum.update!(default_value: p1.id.to_s)
+
+        operations = {
+          'add' => -> { add(CustomField.find(parent.id), value: 'D') },
+          'rename with cascade' => lambda {
+            rename(CustomField.find(parent.id), old_value: 'A', new_value: 'A2', confirm: '1')
+          },
+          'remove list' => -> { remove(CustomField.find(parent.id), value: 'C', confirm: '1') },
+          'remove depending enumeration' => lambda {
+            remove(CustomField.find(enum_child.id), enumeration_id: x_id, confirm: '1')
+          },
+          'reorder list' => -> { reorder(CustomField.find(parent.id), ordered_values: %w[D B A2]) },
+          'sort list' => -> { sort(CustomField.find(parent.id), direction: 'asc') },
+          'set default' => -> { set_default(CustomField.find(parent.id), default_value: 'B') },
+          'clear default (full mode)' => -> { save_enums(CustomField.find(default_enum.id), d1.id => { active: false }) },
+          'clear default (page mode)' => -> { save_enums_page(CustomField.find(page_enum.id), p1.id => { active: false }) },
+          'mapping' => -> { map(CustomField.find(child.id), value_dependencies: { 'B' => %w[a1 b1] }) }
+        }
+        expected_ids = { 'rename with cascade' => [parent.id, child.id], 'remove depending enumeration' => [enum_child.id],
+                         'clear default (full mode)' => [default_enum.id], 'clear default (page mode)' => [page_enum.id],
+                         'mapping' => [child.id] }
+        operations.each do |name, operation|
+          seen = watch_saves
+          operation.call
+          expect(seen.map { |record, _| record.id }).to eq(expected_ids.fetch(name, [parent.id])), name
+          expect(seen.map(&:last).uniq).to eq([4_000_000]), name
+          expect(seen.map { |record, _| record.dcf_storage_ceiling }.uniq).to eq([nil]), name
+        end
+      end
+
+      it 'never stores through save_field! when sorting or reordering enumerations' do
+        stub_ceiling(1)
+        field = dcf_enum_field(names: %w[c b a])
+        seen = watch_saves
+        sort(CustomField.find(field.id), direction: 'asc')
+        ids = CustomField.find(field.id).enumerations.order(:position).pluck(:id).map(&:to_s)
+        reorder(CustomField.find(field.id), ordered_values: ids.reverse)
+        expect(seen).to eq([])
+        expect(policy).not_to have_received(:ceiling_bytes)
+      end
+
+      it 'sorts and reorders a list stored above the ceiling with one UPDATE of custom_fields each' do
+        field = own_list(%w[Delta Alpha Charlie Bravo])
+        stub_ceiling(1)
+        updates = updates_of_custom_fields { sort(CustomField.find(field.id), direction: 'asc') }
+        expect(updates.size).to eq(1)
+        updates = updates_of_custom_fields do
+          reorder(CustomField.find(field.id), ordered_values: %w[Delta Charlie Bravo Alpha])
+        end
+        expect(updates.size).to eq(1)
+        expect(CustomField.find(field.id).possible_values).to eq(%w[Delta Charlie Bravo Alpha])
+      end
+
+      it 'removes from a list and a depending list stored above the ceiling, and clears a default above it' do
+        stub_ceiling(1)
+        list = own_list(%w[A B C])
+        parent = own_list(%w[P Q])
+        depending = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[a b],
+                                   parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(depending, value_dependencies: { 'P' => %w[a b], 'Q' => %w[b] },
+                                        default_value_dependencies: { 'P' => 'a' })
+        enum = dcf_enum_field(names: %w[X Y])
+        x = enum.enumerations.find_by(name: 'X')
+        enum.update!(default_value: x.id.to_s)
+
+        remove(CustomField.find(list.id), value: 'B', confirm: '1')
+        remove(CustomField.find(depending.id), value: 'a', confirm: '1')
+        save_enums(CustomField.find(enum.id), x.id => { active: false })
+
+        expect(CustomField.find(list.id).possible_values).to eq(%w[A C])
+        expect(CustomField.find(depending.id).value_dependencies).to eq('P' => %w[b], 'Q' => %w[b])
+        expect(CustomField.find(enum.id).default_value).to be_blank
+      end
+
+      it 'refuses a mapping that grows a depending field above the ceiling and accepts a smaller one' do
+        parent = own_list(%w[P Q])
+        child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[a b],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'P' => %w[a b] })
+        stub_ceiling(raw(child, 'format_store').bytesize)
+
+        error = refusal { map(CustomField.find(child.id), value_dependencies: { 'P' => %w[a b], 'Q' => %w[a b] }) }
+        expect(error.key).to eq(:error_dcf_mapping_too_large)
+        expect(error.interpolations[:limit]).to eq(limits.delimited(raw(child, 'format_store').bytesize))
+
+        map(CustomField.find(child.id), value_dependencies: { 'P' => %w[a] })
+        expect(CustomField.find(child.id).value_dependencies).to eq('P' => %w[a])
+      end
+    end
+
+    # G6, differential form: the ceiling reads a cached setting and measures
+    # in memory, so a project save runs the same statements without it.
+    describe 'query shape (G6)' do
+      it 'runs the same number of queries for a project save with and without the ceiling' do
+        parent = own_list(%w[P Q])
+        fields = Array.new(3) do
+          child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[a b],
+                                 parent: parent, is_for_all: false, projects: [project])
+          dcf_set_dependencies(child, value_dependencies: { 'P' => %w[a] })
+        end
+        policy.ceiling_bytes
+        add(CustomField.find(fields[0].id), value: 'c')
+
+        with = dcf_count_queries { add(CustomField.find(fields[1].id), value: 'c') }
+        allow(policy).to receive(:ceiling_bytes).and_return(nil)
+        without = dcf_count_queries { add(CustomField.find(fields[2].id), value: 'c') }
+
+        expect(with).to eq(without)
+        expect(CustomField.find(fields[1].id).possible_values).to eq(%w[a b c])
+      end
+
+      # Review round 2 (tests-r2-2): above the ceiling a save also measures
+      # the stored value, in memory as well.
+      it 'runs the same number of queries for a project save above the ceiling with and without it' do
+        parent = own_list(%w[P Q])
+        fields = Array.new(3) do
+          child = dcf_list_field(format: 'depending_list', name: "Dep-#{SecureRandom.hex(3)}", values: %w[a b c],
+                                 parent: parent, is_for_all: false, projects: [project])
+          dcf_set_dependencies(child, value_dependencies: { 'P' => %w[a b], 'Q' => %w[c] })
+        end
+        stub_ceiling(1)
+        remove(CustomField.find(fields[0].id), value: 'b', confirm: '1')
+
+        with = dcf_count_queries { remove(CustomField.find(fields[1].id), value: 'b', confirm: '1') }
+        stub_ceiling(nil)
+        without = dcf_count_queries { remove(CustomField.find(fields[2].id), value: 'b', confirm: '1') }
+
+        expect(with).to eq(without)
+        expect(CustomField.find(fields[1].id).value_dependencies).to eq('P' => %w[a], 'Q' => %w[c])
+      end
+    end
+
+    describe 'a role-invisible child (security)' do
+      it 'is never named when the ceiling refuses its cascade, and nothing is written' do
+        parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: %w[A B])
+        child = dcf_list_field(format: 'depending_list', name: 'HIDDEN-CEILING-CHILD', values: %w[SECRET-V1],
+                               parent: parent)
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[SECRET-V1] })
+        child.update!(visible: false, role_ids: [dcf_create_role.id])
+        raw_child = raw(child, 'format_store')
+        value = dcf_custom_value(parent, 'A')
+        stub_ceiling(raw_child.bytesize)
+        manager = dcf_manager(project)
+
+        error = nil
+        expect do
+          error = refusal do
+            RedmineDependingCustomFields::RenameValueService
+              .new(project: project, field: CustomField.find(parent.id), user: manager,
+                   params: { old_value: 'A', new_value: "A#{'2' * 20}", confirm: '1' }).call
+          end
+        end.to change(events, :count).by(1)
+
+        expect(error.key).to eq(:error_save_failed)
+        expect(error.interpolations).to eq({})
+        row = events.order(:id).last
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
+        expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds #{raw_child.bytesize} \(custom field ##{child.id}\)\z/)
+        text = row.attributes.values.join(' ')
+        expect(text).not_to include('HIDDEN-CEILING-CHILD')
+        expect(text).not_to include('SECRET-V1')
+        expect(raw(child, 'format_store')).to eq(raw_child)
+        expect(CustomField.find(parent.id).possible_values).to eq(%w[A B])
+        expect(value.reload.value).to eq('A')
+      end
+    end
+
+    describe 'value length cap (T-LEN-1)' do
+      def expect_length_refusal(field, &block)
+        error = nil
+        expect { error = refusal(&block) }.to change(events, :count).by(1)
+        expect([error.key, error.interpolations, error.http_status, error.audit_status])
+          .to eq([:error_dcf_value_length, { max: 255 }, :unprocessable_entity, 'validation_failed'])
+        row = rows(field).last
+        expect([row.action, row.status, row.error_message])
+          .to eq(%w[validation_failed validation_failed error_dcf_value_length])
+        row
+      end
+
+      %w[list depending_list].each do |format|
+        it "accepts 255 characters and refuses 256 on add for a #{format} field, counting characters" do
+          field = dcf_list_field(format: format, values: %w[A], is_for_all: false, projects: [project])
+          add(CustomField.find(field.id), value: 'a' * 255)
+          add(CustomField.find(field.id), value: "é" * 255)
+          add(CustomField.find(field.id), value: "\u{1F600}" * 255)
+          add(CustomField.find(field.id), value: "  #{'b' * 255}  ")
+          values = CustomField.find(field.id).possible_values
+          expect(values.drop(1).map(&:length)).to eq([255, 255, 255, 255])
+          expect(values.last).to eq('b' * 255)
+
+          ['z' * 256, "é" * 256, "#{'y' * 255} "].each do |value|
+            row = expect_length_refusal(field) { add(CustomField.find(field.id), value: value) }
+            expect(row.attributes.values.join(' ')).not_to include(value[0, 40])
+          end
+          expect(CustomField.find(field.id).possible_values).to eq(values)
+        end
+      end
+
+      it 'checks the length before the duplicate check' do
+        field = own_list(['A'])
+        field.update_column(:possible_values, ['A', 'q' * 256])
+        expect_length_refusal(field) { add(CustomField.find(field.id), value: 'q' * 256) }
+      end
+
+      it 'checks a rename length before the not-found and the duplicate check' do
+        field = own_list(%w[A B])
+        expect_length_refusal(field) do
+          rename(CustomField.find(field.id), old_value: 'Missing', new_value: 'm' * 256, confirm: '1')
+        end
+        field.update_column(:possible_values, ['A', 'q' * 256])
+        expect_length_refusal(field) do
+          rename(CustomField.find(field.id), old_value: 'A', new_value: 'q' * 256, confirm: '1')
+        end
+        expect(CustomField.find(field.id).possible_values).to eq(['A', 'q' * 256])
+      end
+
+      it 'refuses a 256-character rename before the confirmation and before any write, also on a shared field' do
+        field = dcf_list_field(values: %w[A B], is_for_all: true)
+        value = dcf_custom_value(field, 'A')
+        expect_length_refusal(field) { rename(CustomField.find(field.id), old_value: 'A', new_value: 'r' * 256) }
+        expect(value.reload.value).to eq('A')
+        expect(CustomField.find(field.id).possible_values).to eq(%w[A B])
+
+        rename(CustomField.find(field.id), old_value: 'A', new_value: 'r' * 255, confirm: '1')
+        expect(value.reload.value).to eq('r' * 255)
+      end
+
+      it 'leaves longer values stored before untouched and lets them be removed, sorted or renamed to at most 255 characters' do
+        long = 'x' * 300
+        other = 'w' * 300
+        field = own_list([long, 'B', other])
+        value = dcf_custom_value(field, long)
+        add(CustomField.find(field.id), value: 'C')
+        sort(CustomField.find(field.id), direction: 'asc')
+        set_default(CustomField.find(field.id), default_value: long)
+        reorder(CustomField.find(field.id), ordered_values: [long, other, 'B', 'C'])
+        expect(CustomField.find(field.id).possible_values).to eq([long, other, 'B', 'C'])
+
+        rename(CustomField.find(field.id), old_value: long, new_value: long, confirm: '1')
+        expect_length_refusal(field) do
+          rename(CustomField.find(field.id), old_value: long, new_value: 'y' * 256, confirm: '1')
+        end
+        rename(CustomField.find(field.id), old_value: long, new_value: 'Short', confirm: '1')
+        record = CustomField.find(field.id)
+        expect(record.possible_values).to eq(['Short', other, 'B', 'C'])
+        expect(record.default_value).to eq('Short')
+        expect(value.reload.value).to eq('Short')
+
+        remove(CustomField.find(field.id), value: other, confirm: '1')
+        expect(CustomField.find(field.id).possible_values).to eq(%w[Short B C])
+      end
+
+      it 'keeps the core 60-character limit for enumeration names, never the list cap' do
+        field = dcf_enum_field(names: %w[X])
+        add(CustomField.find(field.id), value: 'e' * 60)
+        [61, 256].each do |length|
+          error = refusal { add(CustomField.find(field.id), value: 'f' * length) }
+          expect(error.key).to eq(:error_save_failed)
+        end
+        enum = field.enumerations.find_by(name: 'X')
+        error = refusal { rename(CustomField.find(field.id), enumeration_id: enum.id, new_value: 'g' * 256) }
+        expect(error.key).to eq(:error_save_failed)
+        expect(field.enumerations.pluck(:name)).to contain_exactly('X', 'e' * 60)
+      end
+    end
+  end
+
   # --- Audit (T-AUD) -----------------------------------------------------
   describe 'audit integration' do
     it 'writes exactly one success event (T-AUD-1)' do

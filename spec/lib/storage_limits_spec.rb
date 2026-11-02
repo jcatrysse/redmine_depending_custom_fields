@@ -85,7 +85,9 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
       expect(limits::GUARDED_FORMATS).to eq(%w[list enumeration depending_list depending_enumeration])
       expect(limits::MAPPING_KEYS).to eq(%w[value_dependencies default_value_dependencies])
       expect(limits::ERROR).to eq(:dcf_storage_too_large)
-      expect(limits::Violation.members).to eq([:custom_field_id, :custom_field_name, :column, :attribute, :bytes, :limit])
+      # Changed by WP-31: Violation gains source ('column' or 'ceiling').
+      expect(limits::Violation.members)
+        .to eq([:custom_field_id, :custom_field_name, :column, :attribute, :bytes, :limit, :source])
       expect(limits::Usage.members).to eq([:column, :attribute, :bytes, :limit, :percent])
       expect(limits::Violation.new(bytes: 2, limit: 1).bytes).to eq(2)
     end
@@ -342,10 +344,12 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
 
           stub_limits(column => bytes - 1)
           expect(field.valid?).to be(false)
+          # Changed by WP-31: the details carry source.
           expect(field.errors.details[attribute]).to eq([{ error: :dcf_storage_too_large,
                                                            size: limits.delimited(bytes),
                                                            limit: limits.delimited(bytes - 1),
-                                                           bytes: bytes, max_bytes: bytes - 1, column: column }])
+                                                           bytes: bytes, max_bytes: bytes - 1, column: column,
+                                                           source: 'column' }])
           expect(field.errors.of_kind?(attribute, :dcf_storage_too_large)).to be(true)
           expect(field.errors.details.keys).to eq([attribute])
           expect(field.save).to be(false)
@@ -369,8 +373,9 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
       expect(field.valid?).to be(false)
       expect(field.errors.details.keys).to eq([:possible_values, :value_dependencies])
       violation = limits.violation_in(field)
+      # Changed by WP-31: violation_in rebuilds source.
       expect(violation.to_h).to eq(custom_field_id: nil, custom_field_name: field.name, column: 'possible_values',
-                                   attribute: :possible_values, bytes: pv, limit: 1)
+                                   attribute: :possible_values, bytes: pv, limit: 1, source: 'column')
 
       field.errors.delete(:possible_values)
       expect(limits.violation_in(field).column).to eq('format_store')
@@ -459,11 +464,12 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
       bytes = limits.preview_bytes(field, 'format_store')
       expect(bytes).to be > stored
       expect(field.save).to be(false)
+      # Changed by WP-31: the details carry source.
       expect(field.errors.details[:value_dependencies]).to eq([{ error: :dcf_storage_too_large,
                                                                  size: limits.delimited(bytes),
                                                                  limit: limits.delimited(stored),
                                                                  bytes: bytes, max_bytes: stored,
-                                                                 column: 'format_store' }])
+                                                                 column: 'format_store', source: 'column' }])
       expect(stored_raw(child, 'format_store')).to eq(yaml)
 
       stub_limits('format_store' => bytes)
@@ -488,11 +494,12 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
       expect(field.will_save_change_to_attribute?('possible_values')).to be(true)
       field.name = "#{name}-renamed"
       expect(field.save).to be(false)
+      # Changed by WP-31: the details carry source.
       expect(field.errors.details[:possible_values]).to eq([{ error: :dcf_storage_too_large,
                                                               size: limits.delimited(yaml.bytesize),
                                                               limit: limits.delimited(yaml.chomp.bytesize),
                                                               bytes: yaml.bytesize, max_bytes: yaml.chomp.bytesize,
-                                                              column: 'possible_values' }])
+                                                              column: 'possible_values', source: 'column' }])
       expect(field.errors.details.keys).to eq([:possible_values])
       expect(stored_raw(field, 'possible_values')).to eq(yaml.chomp)
       expect(CustomField.find(field.id).name).to eq(name)
@@ -577,7 +584,8 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
     # Changed by WP-22: the patch also carries the admin transport (public
     # writer, reader and conflict reader, private callbacks and their parse,
     # digest and reset helpers); was private [:dcf_validate_storage_limits]
-    # and public [].
+    # and public []. Changed by WP-31: the public dcf_storage_ceiling
+    # accessor (the project storage ceiling, limits 4.11).
     it 'registers one Symbol validation from CustomFieldValidationPatch, prepended after CustomFieldPatch' do
       expect(validate_callbacks(CustomField)).to eq(1)
       expect(validate_callbacks(IssueCustomField)).to eq(1)
@@ -586,7 +594,8 @@ RSpec.describe 'RedmineDependingCustomFields::StorageLimits' do
                          :dcf_reset_dependencies_json, :dcf_dependencies_payload, :dcf_stored_dependencies_digest,
                          :dcf_forget_dependencies_json])
       expect(patch.instance_methods(false))
-        .to match_array([:dependencies_json=, :dependencies_json, :dcf_dependencies_conflict])
+        .to match_array([:dependencies_json=, :dependencies_json, :dcf_dependencies_conflict,
+                         :dcf_storage_ceiling, :dcf_storage_ceiling=])
       ancestors = CustomField.ancestors
       expect(ancestors.index(patch)).to be < ancestors.index(CustomField)
       expect(ancestors.index(RedmineDependingCustomFields::Patches::CustomFieldPatch)).to be < ancestors.index(CustomField)

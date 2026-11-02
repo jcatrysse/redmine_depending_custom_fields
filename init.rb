@@ -19,7 +19,8 @@ Redmine::Plugin.register :redmine_depending_custom_fields do
   requires_redmine version_or_higher: '5.0'
 
   settings default: { 'manage_standard_custom_fields' => true,
-                      'block_removal_when_used' => false },
+                      'block_removal_when_used' => false,
+                      'project_storage_ceiling_kib' => '2048' },
            partial: 'settings/dcf_project_config'
 end
 

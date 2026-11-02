@@ -14,6 +14,11 @@ module RedmineDependingCustomFields
     # check, which so measures the pruned mapping. Its state lives on the
     # record: the raw value, a round bumped by each assignment and save (the
     # dcf_memo key of the parse and of the stored digest), and the error.
+    #
+    # WP-31 adds the project storage ceiling (limits design 4.11): bytes or
+    # nil, nil by default, never persisted and no safe attribute. Only
+    # BaseService#save_field! and ProjectStoragePolicy.format_store_limit set
+    # it, for one save or one measurement; StorageLimits reads it.
     module CustomFieldValidationPatch
       PAYLOAD_MEMO = :dcf_dependencies_payload
       DIGEST_MEMO = :dcf_stored_dependencies_digest
@@ -24,6 +29,8 @@ module RedmineDependingCustomFields
         base.validate :dcf_validate_storage_limits
         base.after_save :dcf_reset_dependencies_json
       end
+
+      attr_accessor :dcf_storage_ceiling
 
       # Stores the raw value only (any object); before_validation reads it.
       def dependencies_json=(raw)

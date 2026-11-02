@@ -6,10 +6,13 @@ module RedmineDependingCustomFields
   # latter returning an Outcome describing the change for the audit row.
   #
   # Services never call safe_attributes=; they mutate only the specific surface
-  # and persist via the model's save! so the plugin's sanitizer/cache callbacks
-  # run. See Operations Spec §0.
+  # and persist a custom field only through save_field!, which runs the model's
+  # validations and callbacks under the project storage ceiling (WP-31). See
+  # Operations Spec §0.
   class BaseService
     PERMISSION = :manage_project_custom_field_configuration
+    # Keep audit rows small on fields with many values (Audit Spec §3).
+    DELTA_CAP = 20
 
     Outcome = Struct.new(
       :before, :after, :summary,
@@ -199,6 +202,35 @@ module RedmineDependingCustomFields
       value.to_s.strip
     end
 
+    # Every custom field write of a project service (WP-31, UD-22): the
+    # model's save under the project storage ceiling, which only this method
+    # and ProjectStoragePolicy.format_store_limit set. The previous value (nil
+    # outside them) comes back afterwards, also after an exception, so a
+    # later save of the record (admin, API) is not limited.
+    def save_field!(record)
+      previous = record.dcf_storage_ceiling
+      record.dcf_storage_ceiling = ProjectStoragePolicy.ceiling_bytes
+      record.save!
+    ensure
+      record.dcf_storage_ceiling = previous
+    end
+
+    # A new or renamed list value has at most LIST_VALUE_MAX_CHARS characters
+    # (String#length, WP-31). The row and the flash never carry the value.
+    def check_value_length!(value)
+      max = ProjectStoragePolicy::LIST_VALUE_MAX_CHARS
+      return if value.length <= max
+
+      raise OperationError.new(:error_dcf_value_length, summary: "value: #{value.length} characters exceeds #{max}",
+                                                        interpolations: { max: max })
+    end
+
+    def capped(list)
+      return list if list.length <= DELTA_CAP
+
+      list.first(DELTA_CAP) + ["(+#{list.length - DELTA_CAP} more)"]
+    end
+
     def list_family?
       FieldRelevance.list_family?(field)
     end
@@ -262,7 +294,7 @@ module RedmineDependingCustomFields
     def rewrite_own_list_deps!(old, nv)
       vd = (field.value_dependencies || {}).deep_dup
       vd.each { |k, arr| vd[k] = Array(arr).map { |x| x.to_s == old.to_s ? nv : x } }
-      field.value_dependencies = vd
+      assign_mapping(field, 'value_dependencies', vd)
 
       dd = (field.default_value_dependencies || {}).deep_dup
       dd.each do |k, val|
@@ -272,7 +304,7 @@ module RedmineDependingCustomFields
                   val.to_s == old.to_s ? nv : val
                 end
       end
-      field.default_value_dependencies = dd
+      assign_mapping(field, 'default_value_dependencies', dd)
     end
 
     # Prune a removed (child) value/id from this depending field's OWN store.
@@ -280,7 +312,7 @@ module RedmineDependingCustomFields
       v = value.to_s
       vd = (field.value_dependencies || {}).deep_dup
       vd.each { |k, arr| vd[k] = Array(arr).reject { |x| x.to_s == v } }
-      field.value_dependencies = vd
+      assign_mapping(field, 'value_dependencies', vd)
 
       dd = (field.default_value_dependencies || {}).deep_dup
       dd.keys.each do |k|
@@ -291,7 +323,16 @@ module RedmineDependingCustomFields
           dd.delete(k)
         end
       end
-      field.default_value_dependencies = dd
+      assign_mapping(field, 'default_value_dependencies', dd)
+    end
+
+    # Assigns a rewritten mapping only when its content changed (a missing
+    # one reads as {}), so an unchanged mapping leaves format_store as
+    # stored and the ceiling does not measure it (UD-22).
+    def assign_mapping(record, name, mapping)
+      return if mapping == (record.public_send(name) || {})
+
+      record.public_send("#{name}=", mapping)
     end
 
     # Rewrite/prune a parent key across every depending child of this field.
@@ -316,9 +357,9 @@ module RedmineDependingCustomFields
 
         next unless changed
 
-        child.value_dependencies = vd
-        child.default_value_dependencies = dd
-        child.save!
+        assign_mapping(child, 'value_dependencies', vd)
+        assign_mapping(child, 'default_value_dependencies', dd)
+        save_field!(child)
         touched << child.id
       end
       touched

@@ -19,6 +19,10 @@ module RedmineDependingCustomFields
       old = @params[:old_value].to_s
       nv = normalize(@params[:new_value])
       raise OperationError.new(:error_value_blank) if nv.blank?
+
+      # Before the confirmation and any write; a value stored before at
+      # that length may keep its name.
+      check_value_length!(nv) unless nv == old
       raise OperationError.new(:error_field_not_found, http_status: :not_found) unless possible_values.include?(old)
       raise OperationError.new(:error_value_duplicate) if nv != old && possible_values.include?(nv)
 
@@ -36,7 +40,7 @@ module RedmineDependingCustomFields
       field.default_value = nv if field.default_value.to_s == old
       rows = CustomValue.where(custom_field_id: field.id, value: old).update_all(value: nv)
       rewrite_own_list_deps!(old, nv) if depending?
-      field.save!
+      save_field!(field)
 
       touched = cascade_parent_key!(old, nv, :rename)
 

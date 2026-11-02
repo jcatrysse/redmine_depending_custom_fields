@@ -248,8 +248,9 @@ The revision 2 hash contract spec `spec/lib/dcf_value_options_contract_spec.rb` 
 - `StorageLimits.effective_limit(record, column)` returns `[limit, source]`:
   - `limit` is the smaller of `column_limit(...)` and the ceiling, `source` is `'column'` or `'ceiling'`;
   - the ceiling counts only when `record.dcf_storage_ceiling` is set;
-  - the effective ceiling is `max(dcf_storage_ceiling, persisted_bytes)`; `persisted_bytes` (one serialize of `attribute_in_database`) is computed lazily only when the new bytes exceed the ceiling.
+  - the effective ceiling is `max(dcf_storage_ceiling, persisted_bytes)`; `persisted_bytes` (one serialize of `attribute_in_database`) is computed lazily only when the new bytes exceed the ceiling (the editor reads the raw stored size instead, WP-31); for a depending format_store it is the size a save of the stored row writes, its mappings normalized (`StorageLimits.baseline_bytes`, WP-31 review round 2).
   - So a field that an admin already made larger than the ceiling can still be edited at project level as long as the change does not grow it.
+  - The ceiling applies only to a column the write changes; a mapping that only the before_save of a depending format rewrites is never refused by it (UD-22, WP-31).
 - `violations` uses `effective_limit`. `Violation` gains `source`, and `errors.add` passes `source: v.source` with explicit keys (no hash shorthand).
 
 **Owned here:** `app/services/redmine_depending_custom_fields/project_storage_policy.rb`.
@@ -282,7 +283,7 @@ module RedmineDependingCustomFields
 end
 ```
 
-**Plugin setting (WP-31, UD-22).** `init.rb` settings default gains `'project_storage_ceiling_kib' => '2048'`. `app/views/settings/_dcf_project_config.html.erb` gains a number field with the label `label_dcf_project_storage_ceiling` and the info text `text_dcf_project_storage_ceiling_info`. A stored value that is not a plain non-negative integer (for example `abc` posted from the settings page) makes `ceiling_bytes` fall back to 2,048 KiB; values below 64 KiB are raised to 64 KiB. The settings page request spec of section 15 (gap 12) pins the rendering in en and de and the non-numeric fallback.
+**Plugin setting (WP-31, UD-22).** `init.rb` settings default gains `'project_storage_ceiling_kib' => '2048'`. `app/views/settings/_dcf_project_config.html.erb` gains a number field with the label `label_dcf_project_storage_ceiling` and the info text `text_dcf_project_storage_ceiling_info`. A stored value that is not a plain non-negative integer (for example `abc` posted from the settings page) makes `ceiling_bytes` fall back to 2,048 KiB; values below 64 KiB are raised to 64 KiB and values above 1,048,576 KiB (1 GiB, `MAX_CEILING_KIB`) lowered to it, so the editor attribute keeps at most 16 digits (WP-31; the sketch above predates the maximum). The settings page request spec of section 15 (gap 12) pins the rendering in en and de and the non-numeric fallback.
 
 **Service error texts** for project pages (owner: limits) use neutral wording that is correct for both the column and the ceiling, and no README reference (UX-04). See section 11, "requested from limits".
 
@@ -846,7 +847,7 @@ The global CSS keeps only the runtime and wizard rules (frontend area).
 | text_dcf_parent_not_available | WP-27 | `%{name}` | dependency page notice (`parent_of` resolves, parent not relevant) | see large_lists_i18n_registry.md |
 | text_dcf_parent_missing | WP-27 | none | dependency page notice (`parent_of` returns nil) | see large_lists_i18n_registry.md |
 | label_dcf_project_storage_ceiling | WP-31 | none | plugin settings field label | see large_lists_i18n_registry.md |
-| text_dcf_project_storage_ceiling_info | WP-31 | `%{default}` | plugin settings info text | see large_lists_i18n_registry.md |
+| text_dcf_project_storage_ceiling_info | WP-31 | `%{kib}` (not `%{default}`, reserved by Ruby I18n; WP-31) | plugin settings info text | see large_lists_i18n_registry.md |
 
 ### Requested from the limits registry (owner: limits, WP-12, 0.1.0 (M1))
 

@@ -230,8 +230,10 @@ module RedmineDependingCustomFields
     end
 
     # Both modes: payload and form limits, CSV defaults, the storage
-    # attributes (limits design 4.10: only with a column limit), the unsaved
-    # warning preference and the texts of I18N in the current locale.
+    # attributes (limits design 4.10: only with a limit; the admin form has a
+    # column limit on MySQL only, project mode always the effective limit of
+    # WP-31), the unsaved warning preference and the texts of I18N in the
+    # current locale.
     def shared(field, limit, values_limit)
       data = { dcf_editor_max_payload_bytes: DependencyPayload::MAX_BYTES.to_s,
                dcf_editor_max_form_bytes: MAX_FORM_BYTES,
@@ -301,10 +303,11 @@ module RedmineDependingCustomFields
       result.is_a?(DependencyPayload::Result) && result.ok?
     end
 
-    # The project storage limit; WP-31 makes it
-    # ProjectStoragePolicy.format_store_limit(field).
-    def project_storage_limit(_field)
-      StorageLimits.column_limit('format_store')
+    # The project storage limit (WP-31, gap 14): the effective format_store
+    # limit of a project write, never nil, so project mode renders the
+    # storage attributes on every database.
+    def project_storage_limit(field)
+      ProjectStoragePolicy.format_store_limit(field)
     end
 
     private_class_method :identity, :flags, :shared, :editor, :required_warning?, :effective_parent_id,

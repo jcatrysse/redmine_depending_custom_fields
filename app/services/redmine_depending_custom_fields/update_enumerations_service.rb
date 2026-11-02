@@ -26,9 +26,6 @@ module RedmineDependingCustomFields
   # so reactivating restores the previous behaviour. Unlike Remove (§C) this runs
   # no prune and no parent-side cascade — see Operations Spec §E.
   class UpdateEnumerationsService < BaseService
-    # Keep audit rows small on fields with many values (Audit Spec §3).
-    DELTA_CAP = 20
-
     def audit_action
       'update_enumerations'
     end
@@ -212,12 +209,6 @@ module RedmineDependingCustomFields
       }
     end
 
-    def capped(list)
-      return list if list.length <= DELTA_CAP
-
-      list.first(DELTA_CAP) + ["(+#{list.length - DELTA_CAP} more)"]
-    end
-
     # A deactivated value is no longer offered by the field format, so leaving it
     # as `default_value` would pre-select an option no picker shows — and the
     # default picker on this screen lists active values only, so the stale
@@ -227,7 +218,7 @@ module RedmineDependingCustomFields
       return false unless deactivated_ids.map(&:to_s).include?(field.default_value.to_s)
 
       field.default_value = nil
-      field.save!
+      save_field!(field)
       @default_cleared = true
     end
 

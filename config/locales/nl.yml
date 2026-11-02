@@ -202,6 +202,9 @@ nl:
   label_dcf_sort_za: "Sorteren Z-A"
   text_dcf_sort_confirm: "Alle waarden van dit veld (%{count}) worden alfabetisch gesorteerd en de huidige volgorde wordt vervangen. Doorgaan?"
   text_dcf_page_scope_save: "Opslaan geldt alleen voor de waarden die op deze pagina worden getoond."
+  error_dcf_value_length: "Een waarde mag maximaal %{max} tekens bevatten."
+  label_dcf_project_storage_ceiling: "Maximale opgeslagen grootte voor wijzigingen in de projectinstellingen (KiB)"
+  text_dcf_project_storage_ceiling_info: "Geldt wanneer de waarden of de afhankelijkheidskoppeling van een aangepast veld vanuit de instellingen van een project worden gewijzigd. Het beheer van aangepaste velden en de API worden door deze instelling niet beperkt. Standaard: %{kib} KiB."
 
   # Modelfouten, getoond na de veldnaam
   activerecord:

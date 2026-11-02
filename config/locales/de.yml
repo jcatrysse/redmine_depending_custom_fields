@@ -202,6 +202,9 @@ de:
   label_dcf_sort_za: "Z-A sortieren"
   text_dcf_sort_confirm: "Alle Werte dieses Feldes (%{count}) werden alphabetisch sortiert und die aktuelle Reihenfolge wird ersetzt. Fortfahren?"
   text_dcf_page_scope_save: "Speichern betrifft nur die auf dieser Seite angezeigten Werte."
+  error_dcf_value_length: "Ein Wert darf höchstens %{max} Zeichen lang sein."
+  label_dcf_project_storage_ceiling: "Maximale Speichergröße für Änderungen in den Projekteinstellungen (KiB)"
+  text_dcf_project_storage_ceiling_info: "Gilt, wenn die Werte oder die Abhängigkeitszuordnung eines benutzerdefinierten Feldes in den Einstellungen eines Projekts geändert werden. Die Verwaltung der benutzerdefinierten Felder und die API sind durch diese Einstellung nicht eingeschränkt. Standard: %{kib} KiB."
 
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:

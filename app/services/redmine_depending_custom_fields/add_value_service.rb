@@ -16,6 +16,7 @@ module RedmineDependingCustomFields
     end
 
     def add_list_value!(v)
+      check_value_length!(v)
       raise OperationError.new(:error_value_duplicate) if possible_values.include?(v)
 
       values = possible_values.dup
@@ -27,7 +28,7 @@ module RedmineDependingCustomFields
         values << v
       end
       field.possible_values = values
-      field.save!
+      save_field!(field)
 
       Outcome.new(after: { added: v, position: pos }, summary: "Added value '#{v}'",
                   affected_values_count: 0)

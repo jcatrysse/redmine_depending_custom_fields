@@ -17,7 +17,7 @@ module RedmineDependingCustomFields
         current = possible_values.map(&:to_s)
         validate_permutation!(submitted, current)
         field.possible_values = submitted
-        field.save!
+        save_field!(field)
       else
         enums = field.enumerations.to_a
         current = enums.sort_by { |e| [e.position.to_i, e.id] }.map { |e| e.id.to_s }

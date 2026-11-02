@@ -28,7 +28,7 @@ module RedmineDependingCustomFields
       validate_default!(value) if value.present?
 
       field.default_value = value.presence
-      field.save!
+      save_field!(field)
 
       Outcome.new(before: { default_value: before },
                   after:  { default_value: field.default_value },
