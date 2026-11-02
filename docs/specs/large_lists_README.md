@@ -69,7 +69,7 @@ In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships 
 | 9 | [`large_lists_i18n_registry.md`](large_lists_i18n_registry.md) | Every new locale key with its owner WP and en/de/fr/nl text |
 | 10 | [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) | Repo-specific quality protocol: roles, gates G1 to G12, commands, `.codex` scripts, test strategy, definition of done |
 | 11 | [`large_lists_work_packages.md`](large_lists_work_packages.md) | WP-01 to WP-32: scope, files, tests, acceptance, rollback, dependency graph |
-| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research: SD-01 to SD-12 tracked separately (SD-01 is a security issue), plus the defects fixed inside the plan |
+| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research: SD-01 to SD-17 tracked separately (SD-01 and SD-13 to SD-16 are security issues, all five fixed), plus the defects fixed inside the plan |
 | 13 | [`large_lists_review_log.md`](large_lists_review_log.md) | Review lenses, issues and resolutions, critic gaps, remaining risks |
 
 ## Hard rules carried over

@@ -747,6 +747,9 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       expect(stored(child)).to eq([{ 'C' => %w[a1 c1] }, { 'C' => 'a1' }])
     end
 
+    # Changed by WP-32: a TEXT column (MySQL/MariaDB) cannot hold the mapping;
+    # there the body still reaches the model, which refuses it with the
+    # storage error and keeps the stored mapping.
     it 'saves a multipart PUT with a 3 MB dependencies_json (UD-16)' do
       big_parent = dcf_list_field(values: (1..130).map { |i| "Parent value #{i}" })
       children = (1..1_000).map { |i| "Child value number #{i}" }
@@ -754,11 +757,22 @@ RSpec.describe 'Admin custom field dependencies_json (WP-22)', type: :request do
       links = (1..130).to_h { |i| ["Parent value #{i}", children] }
       raw = json(links)
       expect(raw.bytesize).to be_between(3_000_000, max_bytes)
+      limit = limits.column_limit('format_store')
+      raw_before = raw_store(field)
 
       put_field(field, { dependencies_json: raw }, headers: multipart)
 
-      expect_saved(field)
-      expect(stored(field)[0]).to eq(links)
+      if limit && limit < raw.bytesize
+        expect(response).to have_http_status(200)
+        expect(error_box.size).to eq(1)
+        allowed = ActiveSupport::NumberHelper.number_to_delimited(limit)
+        expect(error_box.first)
+          .to match(/\ADependency mapping is too large to store \([\d,]+ bytes, the database allows at most #{allowed} bytes\)\z/)
+        expect(raw_store(field)).to eq(raw_before)
+      else
+        expect_saved(field)
+        expect(stored(field)[0]).to eq(links)
+      end
     end
 
     # Rack refuses an urlencoded body above its query parser limit before

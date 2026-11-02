@@ -61,6 +61,12 @@ Add, after existing registrations (no removal of existing lines):
      plugin *settings* page (a checkbox), **not** a custom-field configuration
      screen — consistent with "no separate admin configuration screen for the
      configuration workflow".
+   - As built in 0.1.0 (Amendment A6, WP-31) the defaults hold three settings:
+     `'manage_standard_custom_fields' => true`, `'block_removal_when_used' =>
+     false` and `'project_storage_ceiling_kib' => '2048'`. The partial
+     `settings/_dcf_project_config.html.erb` adds a number field for the
+     ceiling (min 64, max 1,048,576, step 1) that shows the value that applies;
+     `ProjectStoragePolicy` parses and clamps the stored value on every read.
 
 **Constraints honored:**
 - **No `Rails.configuration.to_prepare`** is added (existing convention; the
@@ -270,15 +276,22 @@ label key required so Redmine's role screen shows a readable name.
 
 ## 11. Assets
 
-- Reuse existing matrix JS/CSS. Add minimal CSS only if needed (scope badges) to
-  the plugin's existing `assets/` and run `redmine:plugins:assets`.
+- As planned: reuse the plugin's existing JS and CSS, add minimal CSS only if
+  needed (scope badges). As built in 0.1.0 the matrix and its CSS are gone;
+  plugin assets are mirrored by Redmine 5.1 at start (or with
+  `redmine:plugins:assets`) and served by the asset pipeline on 6.x and 7.0.
 - No new JS framework.
 - From 0.1.0 (Amendment A5, WP-27): the dependency page renders the shared
   editor; its model script, script and stylesheet come only from the head hook
   (`ClientConfig.editor_page?` covers this controller on every action), once
-  each. `edit_dependencies.html.erb` adds no asset of its own (no
-  `content_for`, no inline script); the matrix rule `.dcf-dependencies-matrix`
-  is removed. Project views adding `dcf_config.css` is WP-28's.
+  each, and no view adds an inline script. The matrix rule
+  `.dcf-dependencies-matrix` is removed.
+- From 0.1.0 (Amendment A6, WP-28 to WP-30; corrected by WP-32): every project
+  view links `dcf_config.css` through `content_for :header_tags`: `show`,
+  `edit_dependencies`, `audit`, the settings tab partial and the admin
+  `dcf_config_audit/index`. `show` also adds `dcf_value_reorder.js` when drag
+  is offered and `dcf_values_page.js` (WP-30) when the page-mode form
+  renders. The editor JS and CSS still come only from the head hook.
 
 ## 12. Audit model — see Data Model & Audit specs.
 

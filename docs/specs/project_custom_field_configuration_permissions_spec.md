@@ -82,6 +82,13 @@ From 0.1.0 (Amendment A6, WP-29) the permission also lists `sort_values`
 (CHANGELOG upgrade note). Non-members, members without the permission and
 managers of another project get 403; anonymous users are sent to the login.
 
+From 0.1.0 (Amendment A6, WP-30 and WP-31) no permission changes: the
+page-scoped save is the existing `update_enumerations` action, and the
+project storage setting is an administrator's plugin setting
+(Administration → Plugins), not a project permission. The admin audit page
+`/dcf_config_audit` stays `require_admin` (WP-32 changed only its query and
+page parameter).
+
 ## 5. Routes requiring the permission
 
 All routes under `/projects/:project_id/custom_field_configuration/...`

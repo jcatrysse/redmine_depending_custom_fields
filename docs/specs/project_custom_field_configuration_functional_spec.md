@@ -180,6 +180,26 @@ An already sorted field is left as it is and still audited.
 - Reorder: update `position`.
 - Always operate through `CustomFieldEnumeration` records, never as string array.
 
+From 0.1.0 (Amendment A6, WP-30) a filtered or paginated values page saves
+the enumeration table in page mode: only the names and active flags of the
+rows shown, never a position; duplicate active names are checked against
+every value of the field; a stale page gets 409 (`error_stale_edit`); a
+default pointing at a value deactivated here is cleared; a note under the
+table says that Save applies to the rows shown only. Unsaved edits trigger
+one question before the page and per-page links, the search and the sort
+buttons, and the browser's question when leaving the page otherwise (off
+with core's 'Warn me when leaving a page with unsaved text'). From 0.1.0
+(Amendment A6, WP-32) a full-mode body that is no Hash of Hashes is refused
+with `error_reorder_mismatch` like page mode (before: an error 500).
+
+From 0.1.0 (Amendment A6, WP-31) every write from project settings is
+limited by the plugin setting `project_storage_ceiling_kib` (default 2,048
+KiB): a change cannot grow the stored value list or dependency mapping of a
+field beyond it, a field already above it can shrink or keep its size, and a
+mapping a save only rewrites is never refused by it. On MySQL and MariaDB
+the column limit applies first. Added or renamed list values have at most
+255 characters, checked before the confirmation panel.
+
 ## 14. Dependency mapping flow
 
 1. Field must have a `parent_custom_field_id`; both fields relevant to project.

@@ -868,11 +868,24 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       expect(counts.first).to eq(counts.last)
     end
 
+    # Changed by WP-32 (UD-38): a TEXT column (MySQL/MariaDB) cannot hold S1 or
+    # S2, so the example skips before the write that does not fit. This file
+    # stubs column_limit to nil, so the guard reads the real column.
+    def skip_unless_column_fits(scenario, column, needed)
+      col = CustomField.columns_hash[column]
+      limit = col.limit || (limits::MYSQL_TEXT_BYTES if col.type == :text && limits.mysql?)
+      return unless limit && limit < needed
+
+      skip "UD-38: #{scenario} needs #{needed} bytes of #{column}, the column limit is #{limit} bytes; " \
+           'run widen_core_columns to cover it'
+    end
+
     [[:list, 'S1'], [:enumeration, 'S2']].each do |kind, scenario|
       it "keeps the #{scenario} editor data attributes within the declared budget (27 x 5,570)", :large do
         parent_values = DcfLargeList.names(27, prefix: 'P')
         child_values = DcfLargeList.names(5_570, prefix: 'C')
         if kind == :list
+          skip_unless_column_fits(scenario, 'possible_values', DcfLargeList.yaml_list_bytes(child_values))
           parent = dcf_list_field(name: "#{scenario} parent", values: parent_values)
           child = dcf_list_field(format: 'depending_list', name: "#{scenario} child", values: child_values,
                                  parent: parent)
@@ -888,6 +901,10 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
           child_keys = CustomFieldEnumeration.where(custom_field_id: child.id).order(:position).pluck(:id).map(&:to_s)
         end
         mapping = DcfLargeList.partition(parent_keys, child_keys)
+        probe = fresh(child)
+        probe.value_dependencies = mapping
+        probe.default_value_dependencies = DcfLargeList.first_child_defaults(mapping)
+        skip_unless_column_fits(scenario, 'format_store', limits.preview_bytes(probe, 'format_store'))
         child = dcf_set_dependencies(child, value_dependencies: mapping,
                                             default_value_dependencies: DcfLargeList.first_child_defaults(mapping))
         view = view_for

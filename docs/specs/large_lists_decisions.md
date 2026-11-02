@@ -603,6 +603,8 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Work packages.** WP-06, WP-11, WP-13, WP-14
 
+**Where the guard applies (WP-32 note; the status above is unchanged).** The same guard (a skip whose message starts with 'UD-38:' and names the bytes needed and the measured column limit, only when that limit is below the fixture) runs in six examples: `spec/lib/depending_format_methods_spec.rb` (S1), `spec/requests/issue_form_contract_spec.rb` (S1, two examples), `spec/requests/context_menu_size_budget_spec.rb` (S1) and, added by WP-32 on the owner's mandate (to be confirmed by the owner), `spec/lib/dependency_editor_config_spec.rb` (the S1 and S2 editor data budget; it reads `CustomField.columns_hash`, because that file stubs `StorageLimits.column_limit` to nil). Two other examples that could not fit TEXT got a MariaDB-correct variant instead of a skip (WP-32): the 3 MB multipart admin save expects the storage error and an unchanged mapping where the column is below the payload, and the Key/Value links query count uses as many parents as the measured column limit holds (5,000 links without a limit).
+
 ### UD-39
 
 **Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Raised by the WP-16 review. On My account and the registration form a depending user field's parent counts as visible for the client data when core renders it as a control on that form; the admin user form keeps the base rule. WP-18 implements it.

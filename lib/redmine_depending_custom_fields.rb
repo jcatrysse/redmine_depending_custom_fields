@@ -16,6 +16,9 @@ module RedmineDependingCustomFields
   FIELD_FORMAT_EXTENDED_USER = 'extended_user'
   FIELD_FORMAT_DEPENDING_LIST = 'depending_list'
   FIELD_FORMAT_DEPENDING_ENUMERATION = 'depending_enumeration'
+  # The posted dependency mapping (up to 4 MiB) stays out of the request log.
+  # Anchored: value_dependencies and the other keys stay readable.
+  LOG_FILTER = /\Adependencies_json\z/.freeze
 
   def self.register_formats
     Redmine::FieldFormat.add FIELD_FORMAT_EXTENDED_USER, ExtendedUserFormat do |format|
@@ -37,4 +40,13 @@ module RedmineDependingCustomFields
     end
   end
 
+  # Appends in place, because env_config keeps a reference to this Array, and
+  # once, because plugin init runs again on every reload.
+  def self.filter_request_log
+    filters = Rails.application.config.filter_parameters
+    filters << LOG_FILTER unless filters.include?(LOG_FILTER)
+    filters
+  end
 end
+
+RedmineDependingCustomFields.filter_request_log

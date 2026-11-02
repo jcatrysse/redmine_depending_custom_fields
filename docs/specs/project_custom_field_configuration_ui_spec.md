@@ -137,6 +137,24 @@ hidden `active=0` so unticking submits. The drag handle only rewrites the hidden
   the per-row Delete button and the live drag of §D — plain string values have no
   id, position or active flag, and core has no table UI for them to copy.
 
+From 0.1.0 (Amendment A6, WP-30), on a filtered or paginated page (above 500
+values, or with a search) the enumeration table is the page-mode form
+`form.dcf-enumerations-form[data-dcf-page-scope]`: per row the name and the
+Active checkbox (no position input, no handle), the hidden `batch_scope`
+`page`, and the note `text_dcf_page_scope_save` ("Save applies to the values
+shown on this page only.") above the one Save. While the form holds unsaved
+edits, `dcf_values_page.js` asks with core's `text_warn_on_leaving_unsaved`
+before the page and per-page links, the search and the sort buttons (one
+question; for a sort button together with its confirmation) and sets the
+browser's leave question; core's preference 'Warn me when leaving a page with
+unsaved text' turns it off (the form then carries no
+`data-dcf-warn-unsaved`).
+
+From 0.1.0 (Amendment A6, WP-31) an added or renamed list value has at most
+255 characters (`error_dcf_value_length`), and a change that would grow a
+field beyond the project storage setting is refused with the field name and
+both sizes (`error_dcf_values_too_large`, `error_dcf_mapping_too_large`).
+
 ## 5. Screen 3 — Dependency mapping (action `edit_dependencies`)
 
 Only for fields with a `parent_custom_field_id`.
@@ -239,6 +257,12 @@ From 0.1.0 (Amendment A6): the values page adds `text_dcf_values_filtered`,
 `label_dcf_sort_az`, `label_dcf_sort_za` and `text_dcf_sort_confirm`
 (`%{count}`) (WP-29), all in en, de, fr and nl.
 
+From 0.1.0 (Amendment A6, WP-30 and WP-31): `text_dcf_page_scope_save`
+(WP-30; core `text_warn_on_leaving_unsaved` is reused), `error_dcf_value_length`
+(`%{max}`), `label_dcf_project_storage_ceiling` and
+`text_dcf_project_storage_ceiling_info` (`%{kib}`) (WP-31), all in en, de, fr
+and nl. WP-32 adds no key (200 flattened keys per locale).
+
 ## 9. Accessibility / no-JS behaviour
 
 - Reordering is drag-only, matching core exactly: no Redmine version from 5.1
@@ -263,6 +287,11 @@ From 0.1.0 (Amendment A6): the values page adds `text_dcf_values_filtered`,
 - The dependency page needs JavaScript from 0.1.0 (UD-16, WP-27): without it
   Save stays disabled and the noscript text explains why; managers change
   mappings with the editor only.
+- Values page from 0.1.0 (Amendment A6, WP-28 to WP-30): the search is a GET
+  form and the pagination links are plain links, so both work without
+  JavaScript, as does the page-mode Save; the leave warning needs JavaScript;
+  the sort buttons are `button_to` forms whose `data-confirm` needs rails-ujs,
+  so without JavaScript they post without the confirmation.
 
 ## 10. Out-of-scope UI
 

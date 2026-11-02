@@ -339,7 +339,7 @@ None. No design of the plan changes the text of an existing plugin key. `field_p
 
 No other existing key is removed. `label_dcf_default` stays (`show.html.erb:157`). The admin matrix partials `_dependencies_matrix.html.erb` and `_default_dependencies.html.erb` (deleted by WP-25) use no plugin key other than the `label_default_value` call fixed in 8.1.
 
-Key count per locale (flattened, nested keys included): 74 in 0.0.16; 84 in 0.1.0 (M1) (+10); 93 in 0.1.0 (M2) (+9); 197 in 0.1.0 (M3) (+105, -1).
+Key count per locale (flattened, nested keys included): 74 in 0.0.16; 86 in 0.1.0 (M1) (+12); 96 in 0.1.0 (M2) (+10); 200 in 0.1.0 (M3) (+105, -1), in en, de, fr and nl (WP-32 measured the M1 and M2 checkpoints 2324ad9 and 63f8dcb and HEAD; WP-32 adds no key).
 
 ## 10. Text decisions taken in this registry
 

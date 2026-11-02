@@ -145,6 +145,23 @@ before 0.1.0 keep the full mapping; no view reads `before_value` or
   a reorder's `before` equals the `after` of the previous sort or reorder when
   no other value operation (add, rename, remove, update_enumerations) ran on
   the field in between.
+- `update_enumerations` in page mode (0.1.0, Amendment A6, WP-30): `after`
+  gains `"scope":"page"` and `"rows":n` (the number of submitted rows); the
+  summary reads `Saved n of N enumeration value(s) (page): <detail>`. A
+  refused `batch_scope` or body gives `validation_failed` with `error_message`
+  `error_reorder_mismatch` and no summary; the posted value is never stored.
+  From 0.1.0 (Amendment A6, WP-32) full mode writes the same row for an
+  `enumerations` that is no Hash of Hashes (it gave a 500 and no row before).
+- Storage refusals (0.1.0, Amendment A6, WP-31): a project write above the
+  column limit or the project storage ceiling gives `validation_failed` with
+  `error_message` `error_dcf_values_too_large` or `error_dcf_mapping_too_large`
+  and the summary `<column>: <bytes> bytes exceeds <limit> (custom field
+  #<id>)`; a cascaded field the user cannot see is recorded the same way while
+  the flash shows `error_save_failed`. A list value above 255 characters gives
+  `error_dcf_value_length` with the summary `value: N characters exceeds 255`,
+  never the value. A database `ValueTooLong` gives `save_failed` with `error_message`
+  `error_dcf_value_too_long`; neither row holds SQL, a database message or a
+  stored value.
 
 ## 6. Transactional guarantee
 
@@ -184,6 +201,13 @@ best-effort audit).
   (which a delegated user could attempt to forge); it is a separate surface that
   only admins can reach. Read-only table, paginated, filterable by
   field/action/date/project. See Integration Spec §3/§5.
+  From 0.1.0 (WP-32, project design 4) the page loads only the listed columns
+  (`AUDIT_COLUMNS` of the project controller: id, project, field id and name,
+  actor id and name, action, status, summary, error message, time; never
+  `before_value`, `after_value` or `affected_child_field_ids`), counts on the
+  unselected scope, shows 50 rows per page and reads the page through
+  `ValuesPage.coerce_page`, so an Array or Hash `page` shows page 1 instead of
+  an error 500.
 
 ## 9. Retention policy
 

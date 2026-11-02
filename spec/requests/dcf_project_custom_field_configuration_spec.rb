@@ -3580,6 +3580,29 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(x.reload.name).to eq('X2')
       end
 
+      # WP-32 (WP-30 input 4): full mode refuses an Array enumerations as page
+      # mode does; it used to raise TypeError (500, no row).
+      it 'refuses an Array enumerations in full mode with 422 and one row, never a 500 (WP-32)' do
+        field = dcf_enum_field(names: %w[X Y])
+        before = enum_state(field)
+        form = { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded' }
+        bodies = ['enumerations[][name]=POSTED-JUNK',
+                  "state_hash=#{service.state_hash(field)}&enumerations[][name]=POSTED-JUNK&enumerations[][active]=1",
+                  'batch_scope=&enumerations[][name]=POSTED-JUNK&enumerations[][position]=1']
+        bodies.each do |body|
+          expect { patch save_path(field), params: body, headers: form }
+            .to change { rows(field).where(status: 'validation_failed', error_message: 'error_reorder_mismatch').count }.by(1)
+          expect(response).to have_http_status(422), body
+          expect(flash_error).to eq(I18n.t(:error_reorder_mismatch))
+          expect(response.body).not_to include('POSTED-JUNK')
+          expect(rows(field).last.changes_summary).to be_nil
+        end
+        patch save_path(field), params: 'state_hash=stale&enumerations[][name]=POSTED-JUNK', headers: form
+        expect(response).to have_http_status(409)
+        expect(enum_state(field)).to eq(before)
+        expect(rows(field).where(status: 'success')).to be_empty
+      end
+
       it 'refuses an unknown or non-scalar batch_scope with 422 instead of running full mode (T-ENP-5)' do
         field = dcf_enum_field(names: %w[X Y Z])
         x, y, z = ordered(field)

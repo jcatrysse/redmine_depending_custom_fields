@@ -396,9 +396,10 @@ Two smaller cleanups the new shape allowed:
 
 ## Amendment A5: The dependency page on the shared editor (0.1.0, WP-27)
 
-Written by WP-27 (`large_lists_work_packages.md`), finalized by WP-32. Design:
+Written by WP-27 (`large_lists_work_packages.md`); finalized by WP-32, which
+added the WP-31 and WP-32 parts below. Design:
 `large_lists_project_design.md` sections 2 to 4, `large_lists_editor_design.md`
-section 7; decisions UD-16, UD-17, UD-23.
+section 7; decisions UD-16, UD-17, UD-22, UD-23.
 
 - **Editor.** `edit_dependencies` renders the shared dependency editor of the
   admin form in project mode (`DependencyEditorConfig.for_project`) inside one
@@ -437,13 +438,32 @@ section 7; decisions UD-16, UD-17, UD-23.
   version, export my version); nothing is applied automatically (UD-17).
   Every re-render reloads the field first, so correcting a failed save and
   saving again no longer gives a 409 (R9).
+- **Storage ceiling (WP-31).** Mapping saves and imports go through
+  `save_field!`, so the project storage ceiling (`project_storage_ceiling_kib`,
+  default 2,048 KiB) applies to them as to every project write: the limit is
+  `StorageLimits.effective_limit`, min(column limit, max(ceiling, the stored
+  bytes)), on a column the write changes only. The mapping is assigned only
+  when it changed (`assign_mapping`), and a depending `format_store` is
+  measured against `StorageLimits.baseline_bytes` (the stored row as a save
+  writes it), so a mapping that a save only rewrites, for example one stored
+  without its per-parent defaults, is never refused by the ceiling. The editor
+  renders `-storage-limit`, `-storage-base` and `-storage-warn` on every
+  database (`ProjectStoragePolicy.format_store_limit`).
+- **Request log (WP-32).** `RedmineDependingCustomFields::LOG_FILTER`
+  (`/\Adependencies_json\z/`) is appended once and in place to
+  `Rails.application.config.filter_parameters` when the plugin loads, so the
+  posted `dependencies_json` of the project page and the admin form's
+  `custom_field[dependencies_json]` show as `[FILTERED]` in the request log;
+  the stored value is unchanged, and the deprecated nested params and every
+  other key stay readable. The client-reported `source` and `import` of the
+  delta stay informational.
 
-## Amendment A6: Search, pagination and sort on the values page (0.1.0, WP-28 and WP-29)
+## Amendment A6: Search, pagination, sort, page-scoped save and storage ceiling on the values page (0.1.0, WP-28 to WP-31)
 
 Written by WP-29 (`large_lists_work_packages.md`) for the parts built by WP-28
-and WP-29; WP-30 and WP-31 add theirs and WP-32 finalizes it. Design:
-`large_lists_project_design.md` sections 5 and 6; decisions UD-21, UD-23,
-UD-24.
+and WP-29; finalized by WP-32 with the WP-30 and WP-31 parts and the WP-32
+full-mode refusal below. Design: `large_lists_project_design.md` sections 5
+to 8 and 11; decisions UD-21, UD-22, UD-23, UD-24.
 
 - **Search (WP-28).** Above 25 values, or whenever `q` is present, the values
   page shows a search box in core filter markup. `q` is folded with
@@ -487,7 +507,51 @@ UD-24.
   ordered keys (list values, or enumeration ids as Strings in
   `[position, id]` order, inactive included); keys are scrubbed to valid UTF-8
   first, so it never raises (`SortValuesService.order_sha256`).
-- **Still to come.** WP-30: the page-scoped enumeration save (`batch_scope`)
-  and its leave warning. WP-31: the project storage ceiling, the 255-character
-  value cap and `save_field!` in every project service (sort and reorder
-  included). The parameter budget of project design 8 is finalized with them.
+- **Page-scoped save (WP-30).** `update_enumerations` takes `batch_scope`:
+  absent or blank is full mode (every row, positions applied, unchanged), the
+  String `page` is page mode, anything else, a non-scalar value included, is
+  an audited 422 `error_reorder_mismatch` (`value_params` sets the marker
+  `:invalid` when permit dropped a posted one; the value is never echoed or
+  stored). Page mode saves names and active flags of a non-empty subset of
+  the field's ids, compared as Strings; a key, row or body that permit drops
+  refuses the whole save. The duplicate check runs on the submitted rows
+  merged with the stored names of the rows not submitted; positions are
+  never read or written; a stale `state_hash` gets 409 first; a default
+  pointing at a value deactivated here is cleared. The audit row adds `scope`
+  `page` and `rows` n after, and the summary reads `Saved n of N enumeration
+  value(s) (page): ...`. Markup: `form.dcf-enumerations-form[data-dcf-page-scope]`
+  with `data-dcf-warn-unsaved` (core `text_warn_on_leaving_unsaved`, absent
+  when the user turned the preference off), hidden `state_hash` and
+  `batch_scope`, no position input and no handle, and
+  `p.dcf-page-scope-note` (`text_dcf_page_scope_save`) above the one Save.
+  `dcf_values_page.js` asks before the page and per-page links, the search
+  and the sort buttons (one question, combined with the sort confirmation)
+  and adds the browser's `beforeunload` question while the form is dirty.
+  Parameter budget (project design 8, T-PARAM-1): the page-mode form at per
+  page 500 has at most 3 x 500 + 8 named controls (`utf8` on 5.1 only),
+  below Rack's 4,096.
+- **Full mode (WP-32).** An `enumerations` that is no Hash of Hashes (for
+  example `enumerations[][name]=x` without `batch_scope`), and a row that is
+  no Hash on a direct service call, are refused like page mode: 422
+  `error_reorder_mismatch`, one `validation_failed` row with summary nil,
+  nothing written, the posted value never echoed. Before, `Array#to_h`
+  raised `TypeError` (500, no row). Decided on the owner's mandate, to be
+  confirmed by the owner.
+- **Storage ceiling (WP-31).** `ProjectStoragePolicy` (`module_function`, no
+  state) reads `project_storage_ceiling_kib` on every call: a whole number
+  of KiB (ASCII digits, surrounding spaces allowed), clamped to 64 to
+  1,048,576, anything else 2,048. `save_field!` sets the accessor
+  `dcf_storage_ceiling` around `record.save!` and restores the previous value
+  in `ensure`; every custom field save of the project services goes through
+  it (add, rename, remove, reorder, sort, set default, the dangling-default
+  clear, the mapping and the parent-key cascade, each child measured on its
+  own; a role-invisible child gives `error_save_failed`). The limit is
+  `StorageLimits.effective_limit`: min(column limit, max(ceiling, the
+  persisted or baseline bytes)), applied only to a column the write changes,
+  so a field above the ceiling can shrink or keep its size but not grow. The
+  255-character cap of added and renamed list values (`String#length`,
+  `error_dcf_value_length`) is checked before the confirmation. The editor's
+  effective limit comes from `ProjectStoragePolicy.format_store_limit`. The
+  settings partial has a number field (min 64, max 1,048,576, step 1) that
+  shows the value that applies. The administration, the APIs and imports set
+  no ceiling.

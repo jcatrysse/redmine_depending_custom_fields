@@ -101,6 +101,30 @@ fields (UD-23), rollback of every chunk when the audit insert fails,
 `ValueTooLong` mapped without SQL, other database errors left unaudited, a
 hidden child left byte-identical, G6 statement counts and an opt-in `:perf`
 sort of 25,000 enumerations.
+Page-scoped enumeration save (Amendment A6, WP-30), service level in
+`spec/services/dcf_value_services_spec.rb` ('UpdateEnumerationsService page
+mode (WP-30)'): T-ENP-1 a subset applied, the other rows untouched, one
+success row; T-ENP-2 posted positions ignored, stored ones never renumbered;
+T-ENP-3 foreign, unknown, malformed, duplicate keys and an empty, missing or
+non-Hash `enumerations` refused without an existence oracle; T-ENP-4 the
+duplicate check merged with the rows not submitted; T-ENP-5 the `batch_scope`
+table (blank full mode, exactly `page`, anything else 422); T-ENP-6 audit
+`scope` and `rows`, N counts every value; T-ENP-7 a deactivated default
+cleared; T-ENP-8 full mode stays strict for a partial payload; T-ENP-9 a stale
+`state_hash` gives 409 before the scope and id checks. From 0.1.0 (Amendment
+A6, WP-32): full mode refuses an Array `enumerations` and a row that is not a
+Hash with `error_reorder_mismatch` (one `validation_failed` row each,
+nothing written).
+Storage ceiling and value cap (Amendment A6, WP-31): `spec/services/
+dcf_project_storage_policy_spec.rb` (constants, statelessness, the parse table
+of `project_storage_ceiling_kib`, the accessor, `effective_limit`,
+`violations` on changed columns only, `format_store_limit`); T-SIZE-6 the
+limit is max(ceiling, the persisted bytes), so a field above the ceiling can
+shrink or keep its size but not grow; T-SIZE-7 `save_field!` sets and
+restores the accessor (also after an exception and when nested) and every
+project service saves through it; T-LEN-1 added and renamed list values at
+most 255 characters, checked before the confirmation, with lengths only in
+the audit row.
 Dependencies: T-DEP-1 valid mapping saves; T-DEP-2 unknown child → 422;
 T-DEP-3 wrong/unknown parent key → 422; T-DEP-4 orphan prevented;
 T-DEP-5 default dependency must be an allowed child; T-DEP-6 matrix uses existing
@@ -295,6 +319,28 @@ row) — these are the guard against a future prune being added to §E:
   `page`, `data-confirm` counting every value, class `dcf-values-sort`, no ids),
   the redirect (keeps `q`, drops the page), escaping, de and fr rendering, the
   registry texts, G6 invariance and a role-invisible child never named.
+- From 0.1.0 (Amendment A6, WP-30), in the request spec: T-ENP-R1 the
+  rendered page-mode form saves and redirects back with `q` and `page`, the
+  markup (`form[data-dcf-page-scope]`, `data-dcf-warn-unsaved`, the note, no
+  position input, `dcf_values_page.js` only there); T-ENP-R2 the refusals
+  (foreign, missing and hidden field ids alike, unknown and non-scalar
+  `batch_scope`, malformed and mixed bodies) each 422 with one row, never a
+  500, never echoed; T-PARAM-1 the page-mode form at per page 500 has at
+  most 3 x 500 + 8 named controls, below 4,096, and saves. From 0.1.0
+  (Amendment A6, WP-32): an Array `enumerations` without `batch_scope` gives
+  422 and one row, a stale one 409.
+- From 0.1.0 (Amendment A6, WP-31): T-SIZE-R2 the storage ceiling on the
+  project pages (values, dependency page, CSV import, cascade, a role-invisible
+  child never named, the editor's effective limit); T-LEN-1 the 255-character
+  cap over HTTP; the settings page tests below.
+- From 0.1.0 (WP-32), `spec/requests/dcf_config_audit_spec.rb`: the admin
+  audit page selects only the listed columns (no `before_value`,
+  `after_value` or `affected_child_field_ids`), counts on the unselected
+  scope, renders the rows as before (50 per page, a deleted project as its id,
+  markup escaped once) and answers an Array, Hash or junk `page` with page 1;
+  `spec/requests/dcf_request_log_filter_spec.rb`: `dependencies_json` is
+  `[FILTERED]` in the logged parameters of both editors (save, 422 and 409),
+  the saved value unchanged, the filter appended once and in place.
 
 ## 9. I18n / routing / integration
 
@@ -320,7 +366,11 @@ row) — these are the guard against a future prune being added to §E:
   order in **one** request with `notice_values_reordered`; a single-value field
   shows no handle; with JavaScript disabled no handle is visible while the
   rename/add forms still work; the browser console stays clean.
-  Last verified: Redmine 6.1 / Chromium, plugin 0.0.15.
+  Last verified: Redmine 6.1 / Chromium, plugin 0.0.15. From 0.1.0 the opt-in
+  browser specs (`DCF_SYSTEM_SPECS=1`, `spec/system`, run on 5.1 and 7.0)
+  cover the dependency editors, the project dependency page and the issue
+  form; the drag, sort and page-scoped save of the values page are covered by
+  request specs and jsdom tests (`test/js`), not by a browser spec.
 
 ## 11. Fixtures / factories
 
@@ -337,6 +387,10 @@ row) — these are the guard against a future prune being added to §E:
 - T-SET-2 Toggling it off removes standard fields from the overview and blocks
   their edit routes (422), without affecting depending formats.
 - T-SET-3 Setting is admin-only (it is a plugin setting under Administration).
+- T-SET-4 (Amendment A6, WP-31) `project_storage_ceiling_kib`: default 2,048
+  (init.rb); the settings page shows the value that applies (text shows 2048,
+  10 shows 64, above the maximum 1048576), never the stored text, in en and
+  de; a saved value limits the next project write.
 
 ## 12. Coverage gate
 

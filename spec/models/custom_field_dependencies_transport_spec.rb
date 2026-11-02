@@ -843,6 +843,10 @@ RSpec.describe 'CustomField dependencies_json transport (WP-22)' do
       expect(dcf_count_queries { expect(nested.save).to be(true) }).to eq(counts[10])
     end
 
+    # Changed by WP-32: 5,000 links of seven-digit ids need about 71 KB of
+    # format_store. On a column with a limit (MySQL/MariaDB TEXT) the large
+    # mapping keeps as many parents as fit the measured limit; without a
+    # limit it is 5,000 links as before.
     it 'costs the same queries for 10 and 5,000 Key/Value links: a nested save plus the two enumeration loads' do
       enum_parent = dcf_enum_field(names: (1..100).map { |i| "P#{i}" })
       parent_ids = enum_parent.enumerations.order(:position).map { |e| e.id.to_s }
@@ -850,18 +854,33 @@ RSpec.describe 'CustomField dependencies_json transport (WP-22)' do
         id = dcf_enum_field(format: 'depending_enumeration', names: (1..50).map { |i| "c#{i}" }, parent: enum_parent).id
         [CustomField.find(id), CustomFieldEnumeration.where(custom_field_id: id).order(:position).map { |e| e.id.to_s }]
       end
+      limit = limits.column_limit('format_store')
+      large = lambda do |field, child_ids|
+        links = parent_ids.to_h { |key| [key, child_ids] }
+        while limit
+          probe = CustomField.find(field.id)
+          probe.value_dependencies = links
+          break if limits.preview_bytes(probe, 'format_store') <= limit
+
+          links = links.first(links.size - 1).to_h
+        end
+        links
+      end
+      sizes = []
       counts = [10, 5_000].map do |size|
         field, child_ids = new_child.call
         links = if size == 10
                   parent_ids.first(10).to_h { |key| [key, [child_ids.first]] }
                 else
-                  parent_ids.to_h { |key| [key, child_ids] }
+                  large.call(field, child_ids)
                 end
         field.dependencies_json = json(links)
         count = dcf_count_queries { expect(field.save).to be(true), field.errors.full_messages.inspect }
-        expect(stored(field)[0].values.sum(&:size)).to eq(size)
+        sizes << stored(field)[0].values.sum(&:size)
         count
       end
+      expect(sizes).to eq([10, limit ? sizes[1] : 5_000])
+      expect(sizes[1]).to be >= 2_500
       expect(counts[0]).to eq(counts[1])
 
       # Differential: value_keys loads the field's and the parent's enumerations.

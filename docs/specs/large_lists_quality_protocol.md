@@ -51,7 +51,7 @@ Paths: `$S` = `<planning scratch space, not part of the repository>`. The plugin
 | UX-10 | G4 icon rule and screenshots |
 | SP-06 | 2.5 S4 escaped flash interpolations in `translate_error(error_or_key)`, called as `translate_error(e)` (gap 4), G5 spec |
 | SP-07 | section 11, reclassified as a security defect (SD-01, UD-03) with a schedule; G5 pinning spec |
-| BC-14 | section 9 upgrade-notes register UN-01..UN-62 (with final WP ids, releases and compat PC ids), G9 checks it; version targets |
+| BC-14 | section 9 upgrade-notes register UN-01..UN-65 (with final WP ids, releases and compat PC ids), G9 checks it; version targets |
 | Consolidation (critic gaps 1, 5, 8, 10, 12, 15; UD-32 resolved) | consolidation table at the top; 2.2 to 2.7, G3, G5, G7, G8, G11, 3.13, 7, 8, 10 |
 
 ## 1. Evidence collected for this design
@@ -918,12 +918,14 @@ Every change an existing 0.0.15 user can notice has one CHANGELOG line. G9 check
 | UN-55 | No browser recursion on cycles | F | WP-10 (0.1.0 (M1)); WP-17 (0.1.0 (M2)) | PC-36 |
 | UN-56 | Mapping no longer embedded in every page | F | WP-18 (0.1.0 (M2)) | PC-37 |
 | UN-57 | Hints announced to screen readers | A | WP-17, WP-18 (0.1.0 (M2)) | PC-40 |
-| UN-58 | Wizard writes only editable fields (SD-01) | S | separate SD-01 PR (0.1.0 (M2) at the latest) | PC-44 |
+| UN-58 | Wizard writes only editable fields (SD-01) | S | separate SD-01 PR (0.0.16, shipped there and not repeated in 0.1.0; WP-32 retag) | PC-44 |
 | UN-59 | Admin form sends one JSON field and is multipart while the editor is active | C U | WP-22, WP-25 (0.1.0 (M3)) | PC-46 |
 | UN-60 | Corrected resubmit after a failed project save no longer gives 409 | F | WP-27 (0.1.0 (M3)) | PC-58 |
 | UN-61 | Project storage ceiling setting and 255-character cap | A C U | WP-31 (0.1.0 (M3)) | PC-62 |
 | UN-62 | Format-change confirmation, leave warning, editor placement on the admin form | C | WP-25 (0.1.0 (M3)) | PC-68 |
 | UN-63 | A required dependent field in or below a stored cycle, a self-parent or a field whose parent is of another type or family needs a value (the 0.0.16 required bypass read the raw parent) | C | WP-18 (0.1.0 (M2)) | PC-70 |
+| UN-64 | The wizard offers only fields the user may edit on every selected issue, and not the dependent fields below such a field (resolves the known limitation of the 0.0.16 Security entry) | F | WP-15 (0.1.0 (M2)); row added by WP-32 | PC-71 |
+| UN-65 | A notes-only issue form save is refused while a managed required radio-style child is blank under a parent value with options | C | WP-19 (0.1.0 (M2)); row added by WP-32 | PC-72 |
 
 Security line (separately tracked as SD-01, section 11; UN-58, PC-44): the context-menu wizard save writes read-only and role-hidden fields. Recommended as its own pull request merged before tagging 0.0.16 (UD-03); it is merged before 0.0.16 is tagged (UD-03 resolved) and therefore long before 0.1.0, the release that ships point 1.
 

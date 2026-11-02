@@ -160,6 +160,30 @@ them from `params` for the page, re-renders and redirects only, through
 `ValuesPage.coerce_query`, `coerce_page` and `coerce_per_page` (WP-28). The
 posted direction is never echoed in the flash, the page or the audit row.
 
+From 0.1.0 (Amendment A6, WP-30) `update_enumerations` takes the scalar
+`batch_scope`: blank is full mode, exactly `page` is page mode, anything else
+an audited 422 `error_reorder_mismatch`. Strong params drop an Array or Hash
+`batch_scope`, and the controller then sets the marker `:invalid`, so such a
+request is refused instead of running full mode; in page mode a key, row or
+body that permit drops refuses the whole save. The posted values are never
+echoed or stored. From 0.1.0 (Amendment A6, WP-32) full mode refuses an
+`enumerations` that is no Hash of Hashes the same way (it raised a 500
+before); the admin audit page reads `page` through `ValuesPage.coerce_page`.
+
+From 0.1.0 (Amendment A6, WP-31) the plugin setting
+`project_storage_ceiling_kib` is parsed on every read by
+`ProjectStoragePolicy`: only a whole number of KiB in ASCII digits counts, it
+is clamped to 64 to 1,048,576, and anything else (text, a negative or
+fractional number, an Array or Hash) gives 2,048; the settings page shows the
+value that applies, never the stored text. The ceiling reaches a record only
+through the accessor `dcf_storage_ceiling`, which is neither a safe attribute
+nor permitted by the plugin API.
+
+From 0.1.0 (WP-32) `dependencies_json` is in
+`Rails.application.config.filter_parameters` (the anchored
+`/\Adependencies_json\z/`), so the request log shows the posted mapping of
+both editors as `[FILTERED]`.
+
 ## 16. CSRF expectations
 
 - HTML forms with Rails authenticity token; standard `protect_from_forgery`.

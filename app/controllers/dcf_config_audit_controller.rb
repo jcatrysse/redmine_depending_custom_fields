@@ -7,6 +7,8 @@ class DcfConfigAuditController < ApplicationController
   before_action :require_admin
   before_action :ensure_audit_table
 
+  # The page loads only the columns the view shows (project design 4), as
+  # the project audit action does; the count stays on the unselected scope.
   def index
     scope = RedmineDependingCustomFields::ConfigAuditEvent.order(created_at: :desc, id: :desc)
     scope = scope.where(custom_field_id: params[:custom_field_id]) if params[:custom_field_id].present?
@@ -14,8 +16,10 @@ class DcfConfigAuditController < ApplicationController
     scope = scope.where(project_id: params[:project_id]) if params[:project_id].present?
 
     @event_count = scope.count
-    @paginator = Redmine::Pagination::Paginator.new(@event_count, 50, params[:page])
-    @events = scope.limit(@paginator.per_page).offset(@paginator.offset).to_a
+    page = RedmineDependingCustomFields::ValuesPage.coerce_page(params[:page])
+    @paginator = Redmine::Pagination::Paginator.new(@event_count, 50, page)
+    @events = scope.select(ProjectCustomFieldConfigurationController::AUDIT_COLUMNS)
+                   .limit(@paginator.per_page).offset(@paginator.offset).to_a
   end
 
   private

@@ -121,10 +121,13 @@ module RedmineDependingCustomFields
     # submitted id set must match the field's exactly: a partial or tampered
     # submit is rejected whole rather than applied in part. A concurrent add or
     # delete is caught earlier by the state hash, so this never fires on a
-    # legitimate save.
+    # legitimate save. A body that is no Hash of Hashes is refused as in page
+    # mode (WP-32).
     def submitted_rows
       submitted = @params[:enumerations]
       submitted = submitted.to_unsafe_h if submitted.respond_to?(:to_unsafe_h)
+      raise OperationError.new(:error_reorder_mismatch) unless submitted.nil? || submitted.is_a?(Hash)
+
       submitted = (submitted || {}).to_h
 
       enums = field.enumerations.to_a
@@ -134,6 +137,8 @@ module RedmineDependingCustomFields
 
       rows = enums.map do |enum|
         attrs = submitted[enum.id.to_s] || submitted[enum.id]
+        raise OperationError.new(:error_reorder_mismatch) unless attrs.is_a?(Hash)
+
         {
           enum:     enum,
           name:     normalize(attrs['name'] || attrs[:name]),

@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-16)
+1. Defects tracked separately (SD-01 to SD-17)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -31,6 +31,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-14 | security (low) | SECURITY: the wizard options action is reachable over non-JSON formats without visibility or edit checks |
 | SD-15 | security (low) | SECURITY: the full dependency mapping is embedded in every page, including the login page |
 | SD-16 | security (low) | SECURITY: the project confirmation panel names dependent fields the manager cannot see |
+| SD-17 | major | On MySQL/MariaDB a list value rename also rewrites stored values that differ only in case or accents |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
 
@@ -48,6 +49,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-02: Wizard save hardening: no journal, :edit_issues instead of core @can[:edit], 7.0 webhooks and updated_on
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
+
 **Correction (review of SD-01).** Wizard saves without a journal do change `updated_on` and `lock_version`: core's `save_custom_field_values` touches the record when only custom values changed (core-5.1 `lib/plugins/acts_as_customizable/lib/acts_as_customizable.rb:149`, probed on 5.1 and 7.0). The effect on 7.0 webhooks still needs checking.
 
 **Severity.** major
@@ -58,6 +61,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-03: Time-entry context menu leaks extended_user group headers and shows depending fields unfiltered
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
+
 **Severity.** minor
 
 **Evidence.** The plugin's ContextMenusControllerPatch only acts on the issue menu (lib/redmine_depending_custom_fields/patches/context_menus_controller_patch.rb:9,26-29). Core time-entry menu: core-7.0 app/controllers/context_menus/time_entries_controller.rb:31-40 and app/views/context_menus/time_entries.html.erb:30-31 render __group_* rows as clickable values and depending fields with all values (critic C3).
@@ -65,6 +70,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Recommendation.** Separate WP after 0.1.0 (M2) reusing SelectionGraph and the __group_* filter for TimeEntry selections; out of the 9 points per D4.
 
 ### SD-04: Workflow-required depending children with no options cannot be saved
+
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
 
 **Severity.** major
 
@@ -74,6 +81,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-05: default_value_dependencies are not applied server-side (REST, CSV import, email)
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
+
 **Severity.** minor
 
 **Evidence.** Per-parent defaults are applied only by the browser runtime (admin mapping); REST API, IssueImport and MailHandler create issues without them (critic C12).
@@ -81,6 +90,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Recommendation.** Separate feature decision: optionally apply defaults in a before_validation for new records when the child is blank and the parent is set, with an opt-in setting.
 
 ### SD-06: copy_from of a Key/Value list (depending) field keeps the source field's enumeration ids
+
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32. Mitigation in 0.1.0: the editor reports such links as links to values that no longer exist and removes them at the first editor save (README 'Dependency editor'; CHANGELOG Upgrade notes).
 
 **Severity.** minor
 
@@ -90,6 +101,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-07: Editing parent values on the core admin page does not cascade into child mappings
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32. Mitigation in 0.1.0: the editor reports the orphaned links and removes them at the next editor save (README 'Dependency editor').
+
 **Severity.** minor
 
 **Evidence.** Renaming or removing a value in the parent's possible_values textarea leaves the child mapping keys unchanged; only project-level rename/remove services cascade (app/services/redmine_depending_custom_fields/base_service.rb:236-261; critic C6).
@@ -97,6 +110,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Recommendation.** Separate feature: optional cascade on admin saves of a parent (rename detection is ambiguous). The 0.1.0 (M3) editor reports such orphans and removes them at the next editor save.
 
 ### SD-08: Deleting a parent field leaves dangling parent_custom_field_id in children
+
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
 
 **Severity.** minor
 
@@ -106,6 +121,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-09: Values containing a comma cannot be imported into multi-value depending fields
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
+
 **Severity.** minor
 
 **Evidence.** value_from_keyword splits multi values on /[;,]/ (lib/redmine_depending_custom_fields/depending_list_format.rb:118); characterized and preserved by WP-06.
@@ -113,6 +130,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Recommendation.** Separate decision: align with core's own multi-value import separator handling or document; not part of the 9 points.
 
 ### SD-10: query_filter_values is asymmetric between the two depending formats
+
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
 
 **Severity.** minor
 
@@ -122,6 +141,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-11: block_removal_when_used is not applied to replace-mode imports
 
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
+
 **Severity.** minor
 
 **Evidence.** The setting is enforced only by RemoveValueService (app/services/redmine_depending_custom_fields/remove_value_service.rb:81, base_service.rb:172-173); a replace import can drop links still used by issues (critic C11).
@@ -129,6 +150,8 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Recommendation.** Separate decision: whether link removal should honour the setting (links are not values; removing links destroys no stored data). Could warn in the import preview with usage counts.
 
 ### SD-12: No report of stored invalid combinations and stored cycles
+
+**Status.** Open, tracked separately and not part of 0.1.0; earliest in a separate work package after 0.1.0 (0.2.0 or later). Recorded by WP-32.
 
 **Severity.** minor
 
@@ -169,6 +192,16 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Evidence.** Found by the WP-12 implementation. `app/views/project_custom_field_configuration/_confirm_panel.html.erb:9` lists `impact.affected_child_fields.map(&:name)`; `UsageCalculator.affected_child_fields` (`app/services/redmine_depending_custom_fields/usage_calculator.rb:69-75`) takes every dependent field through `FieldRelevance.children_of`, without a project or role-visibility filter. A project manager who renames or removes a parent value therefore sees the names of dependent fields that are not used in the project or are hidden for the manager's roles. Plugin rule: a role-invisible field is never named.
 
 **Status.** Fixed in 0.1.0 (M3) by WP-28: `_confirm_panel.html.erb` names a dependent field only when `UsageCalculator.nameable_child?` holds, the WP-12 rule of `BaseService#nameable_field?` (the edited field, an administrator, or a field used in the project and visible to the user, checked fail closed); the line reads `label_affected_child_fields: <count of all affected fields> (<nameable names>)`, so the others are only counted, and the usage and dependency reference counts are unchanged. `spec/services/dcf_usage_calculator_spec.rb` checks both rules give the same answer for the edited field, a visible, a role-hidden, a role-restricted, an out-of-project and a time entry field as a manager and as an administrator, and that a raising check names nothing; `spec/requests/dcf_project_custom_field_configuration_spec.rb` (confirmation panel naming, SD-16) shows a manager's 422 panels for a list rename, a list removal and an enumeration removal through the delete link naming the visible and the role-restricted child but neither the role-hidden (`visible: false`, another role) nor the out-of-project child anywhere in the body, with the count 4; an administrator sees all four names; a panel with only a hidden child shows the count alone, and a name with markup is escaped once. No CHANGELOG line (section 3 has none for SD-16).
+
+### SD-17: On MySQL/MariaDB a list value rename also rewrites stored values that differ only in case or accents
+
+**Status.** Open, found by WP-32 and not fixed there (decided on the owner's mandate, to be confirmed by the owner: no unplanned production change in the release work package); tracked separately, for the owner to decide before 0.1.0 is tagged or in a later work package. Present since the project rename service shipped (0.0.12).
+
+**Severity.** major (data integrity, MySQL and MariaDB only)
+
+**Evidence.** `RenameValueService` rewrites the stored issue values with `CustomValue.where(custom_field_id: field.id, value: old).update_all(value: nv)` (`app/services/redmine_depending_custom_fields/rename_value_service.rb:41`). The comparison follows the column collation; MariaDB's default `utf8mb4_general_ci` ignores case and accents. Probe run by WP-32 (a temporary spec, removed afterwards): a List field with the values `A`, `a` and `B` and one stored value `A` and one `a`; renaming `A` to `C` from project settings leaves `["C", "C"]` on MariaDB 10.11 (Redmine 7.0) and `["C", "a"]` on PostgreSQL. The possible values themselves are compared in Ruby and stay correct, so after the rename the stored `a` values show as `C`. The usage counts of the values page are exact since WP-28 (`UsageCalculator.page_usage` compares as binary), but the rename impact panel and the update do not.
+
+**Recommendation.** Compare exactly on MySQL and MariaDB (a binary comparison such as the one `UsageCalculator.grouped_value_counts` uses) in the rename update and its usage counts, with a `:mysql` request spec that is red first; check the other `where(value: ...)` reads of the services the same way.
 
 ## 2. Defects fixed inside the plan
 

@@ -19,7 +19,9 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Key/value lists can depend on enumerations or depending key/value lists of the same object type
    - `Parent` and `Child` relationships between fields
    - Relation between `Parent` and `Child` values is edited in the dependency
-     editor of the custom field form (see [Dependency editor](#dependency-editor))
+     editor of the custom field form and of a project's settings (see
+     [Dependency editor](#dependency-editor) and
+     [Project dependency page](#project-dependency-page))
    - Dependent fields are never disabled. The values the parent value does not
      allow are hidden and cannot be chosen (options, radio buttons and check
      boxes, never the field itself), so while the parent has no value only the
@@ -114,6 +116,10 @@ options' and the edit style:
 - inactive Key/Value list entries with an 'inactive' badge; their links are
   kept.
 
+The same editor, with the same import, export, conflict and orphan handling,
+is on the dependency page of a project's settings (see
+[Project dependency page](#project-dependency-page)).
+
 The editor needs JavaScript. Without it the form shows a notice and saving
 the form keeps the mapping unchanged. While the editor is active the form is
 sent as `multipart/form-data` and the mapping as one field,
@@ -144,10 +150,66 @@ as multipart, below the 16 MiB Rack buffers
 (`RACK_MULTIPART_BUFFERED_UPLOAD_BYTESIZE_LIMIT`), and 4,128,768 bytes
 (about 3.9 MiB) when sent urlencoded. Raising a `RACK_*` variable does not
 change these bounds. On the server, Redmine's `config/boot.rb` sets
-`RACK_QUERY_PARSER_BYTESIZE_LIMIT` to 32 MiB. Reverse proxies may limit
-request bodies earlier, for example nginx `client_max_body_size` (1 MB by
-default): raise it for very large mappings. Restart Redmine after upgrading
-(new asset files).
+`RACK_QUERY_PARSER_BYTESIZE_LIMIT` to 32 MiB. The bounds are the same on the
+administration form and on the project dependency page.
+
+Reverse proxies may limit request bodies earlier, for example nginx
+`client_max_body_size` (1 MB by default): raise it for very large mappings,
+for both editors, for example to `client_max_body_size 16m;`, which covers
+the 15.5 MiB form bound. A proxy that refuses the body answers HTTP 413
+before Redmine is reached, and the browser shows the proxy's page; the editor
+cannot detect such a limit. Restart Redmine after upgrading (new asset
+files).
+
+### Import and export (CSV)
+
+Two panels below the editor import and export links as CSV, on the
+administration form and on the project dependency page alike:
+
+- Import: paste lines or choose a file, one link per line (parent value,
+  child value). The separator (`;`, `,` or TAB) is detected or chosen, and
+  the first line can be a header. 'Preview' lists the new links and the
+  errors per line; 'Apply' adds the links to the existing ones (merge) or
+  replaces all of them (replace), and 'Undo import' takes the last import
+  back (one level). Nothing is stored until the form or page is saved.
+- Values are matched by their text: exactly, then after Unicode
+  normalization, then ignoring case. Key/Value list entries are matched by
+  name only; entries with the same name, active and inactive ones included,
+  are reported as ambiguous and are not linked. A link to an inactive entry
+  is imported with a warning.
+- 'Add missing child values to the possible values' is offered on the
+  administration form for `List (depending)` fields only; it adds the child
+  values the field does not have yet.
+- A file is read as UTF-8; a file that is not valid UTF-8 is read in the CSV
+  encoding of the current language (`general_csv_encoding`), else as
+  windows-1252. A file is at most 10,000,000 bytes, and an import at most
+  10,000,000 characters and 200,000 lines.
+- Export writes the links of the current editor state, one per line after a
+  header line (parent field name, field name), with a byte order mark, CRLF
+  line ends and the chosen separator (`;`, `,` or TAB; the default follows
+  the CSV separator of the current language).
+
+Spreadsheet formulas: a spreadsheet can run a cell that starts with `=`, `+`,
+`-` or `@` (or with TAB or CR) as a formula when it opens a CSV file. The
+export option 'Protect cells that a spreadsheet would run as formulas' is off
+by default; when it is ticked, such cells get one leading apostrophe. The
+import option 'Remove the formula protection added by the export' removes
+exactly that apostrophe again, so a protected export imports back unchanged.
+Values that do not start that way are never changed.
+
+### Without JavaScript
+
+- Issue forms: every value is offered (all active values for Key/Value list
+  (depending) fields); the server still rejects values the parent value does
+  not allow.
+- Administration form: the editor shows a notice, and saving the form keeps
+  the stored mapping unchanged.
+- Project dependency page: the same notice, and Save stays disabled, so
+  nothing can be saved there.
+- Project values page: the search, the pages and the value forms work,
+  including the Save of a Key/Value list table on a filtered or paginated
+  page; drag-and-drop and the warning before leaving with unsaved changes
+  need JavaScript, and the sort buttons post without their confirmation.
 
 ## Context menu wizard
 
@@ -342,11 +404,16 @@ before this check existed. The guards:
 ## Installation
 
 1. Copy this plugin directory into `plugins` of your Redmine installation.
-2. Run `bundle install` if required and migrate plugins with:
-   `bundle exec rake redmine:plugins`.
-3. Copy plugin assets:
-   `bundle exec rake redmine:plugins:assets`.
-4. Restart Redmine.
+2. Run `bundle install` if required and migrate the plugin:
+   `bundle exec rake redmine:plugins:migrate RAILS_ENV=production`.
+3. Plugin assets: Redmine 5.1 copies them when it starts, unless
+   `mirror_plugins_assets_on_startup` is `false`; then run
+   `bundle exec rake redmine:plugins:assets RAILS_ENV=production`.
+   Redmine 6.0, 6.1 and 7.0 have no such task: run
+   `bundle exec rake assets:precompile RAILS_ENV=production` when
+   `redmine_detect_update` is disabled or the assets are baked into an image.
+4. Restart Redmine and reload open browser tabs. Do the same after every
+   upgrade: new versions bring new asset files.
 
 ## Compatibility
 
@@ -572,8 +639,13 @@ RAILS_ENV=test bundle exec rake redmine:depending_custom_fields:widen_core_colum
   later need `transaction_isolation` instead.
 - Remove a `db/schema.rb` dumped by PostgreSQL: MySQL cannot load its
   expression indexes.
-- On `TEXT` columns one example is reported as pending: it saves a list of
-  5,570 values (81,239 bytes) and needs widened columns.
+- On `TEXT` columns six examples are reported as pending, each with a
+  reason that names the bytes needed and the column limit: their fixtures,
+  a List (depending) field with 5,570 values (81 to 87 KB of
+  `possible_values`) or a mapping of about 79 KB, do not fit `TEXT`. They run
+  after `widen_core_columns`. Two other examples adapt to the column limit: a
+  3 MB mapping expects the storage error, and a query count uses as many
+  links as the column holds.
 
 With the `.codex` scripts, `.codex/test_setup.sh 7.0 --db mysql` writes the
 same `database.yml` and migrates (defaults 127.0.0.1:3307, user and password
@@ -743,6 +815,14 @@ An update that sets `parent_custom_field_id` to the field itself or to one of
 its dependent fields is refused with HTTP 422 and `{"errors": [...]}` (see
 [Circular dependencies](#circular-dependencies)). An id that names no field of
 the same type and family is stored as `null`, as before.
+
+Saves from the dependency editors (the administration form and the project
+dependency page) normalize the stored mapping: per-parent defaults are stored
+as one value for single-value fields and as a list for multi-value fields,
+and the order is normalized. A `GET` can therefore return a different shape
+after such a save. The JSON API itself is unchanged: it does not accept
+`dependencies_json`, and an update that sends only a name keeps the stored
+mapping byte for byte.
 
 ### Errors
 
@@ -975,21 +1055,86 @@ project plus all project custom fields) in a supported format:
 * **Standard `list`** and **standard `enumeration`**: values and the field's
   default value.
 * **`depending_list`** and **`depending_enumeration`**: values **plus** the
-  parent/child dependency matrix. Fields without a parent expose a plain default
-  value; child fields configure per-parent default values in the matrix.
+  dependency mapping, edited on the project dependency page. Fields without a
+  parent expose a plain default value; child fields set per-parent default
+  values in the editor.
 
-Add, rename, remove and reorder values; manage enumeration values; set the
-field's default value; and edit the dependency matrix. Values are reordered by
-dragging the handle to the target position: the same drag handle, and the same
-single control, that Redmine itself uses for enumeration values in
-Administration. Key/value (enumeration) values are edited exactly as
-Administration edits them: the table is one form with a single **Save** that
-applies renames, reordering and the **Active** checkbox together. Unticking
-Active hides the value from every picker without deleting anything, and ticking
-it again brings the value back. For `multiple` fields the
-per-parent default selectors allow choosing several values. The feature
-**cannot** create or delete fields, or change a field's type, visibility,
-required flag, tracker or project applicability.
+Add, rename, remove, reorder and sort values; manage enumeration values; set
+the field's default value; and edit the dependency mapping. For `multiple`
+fields the per-parent default selectors allow choosing several values. The
+feature **cannot** create or delete fields, or change a field's type,
+visibility, required flag, tracker or project applicability.
+
+### Project values page
+
+- Search: above 25 values, or whenever a search is active, a search box
+  filters the values. It matches every word you type, ignoring case and
+  accents.
+- Pages: above 500 values the list is paginated; the number per page follows
+  Redmine's per-page options, at most 500, and a page beyond the last shows
+  the last page. After a change the page comes back with the same search and
+  page; adding a value jumps to the page that holds it.
+- Order: values are reordered by dragging the handle to the target position,
+  the same control Redmine uses for enumeration values in Administration,
+  but only on an unfiltered list of at most 500 values; otherwise a line
+  explains why drag-and-drop is not offered.
+- Sort: 'Sort A-Z' and 'Sort Z-A' are shown whenever the field has more than
+  one value, also on a filtered or paginated page. The browser asks for
+  confirmation with the number of values, and every value of the field is
+  sorted, inactive Key/Value list entries among the active ones; case and
+  accents are ignored and equal values keep their order. No stored issue
+  value, default value or dependency changes, and the page returns to page 1
+  with the search kept. There is no further confirmation step, also for a
+  shared or global field. Roles with the permission 'Manage custom fields'
+  get the sort action without a change to the role.
+- Key/Value list (enumeration) values are edited as Administration edits
+  them: on an unfiltered list that is not paginated, the table is one form
+  with a single **Save** that applies renames, reordering and the **Active**
+  checkbox together. On a filtered or paginated page, **Save** stores the
+  names and **Active** flags of the rows shown only and never changes
+  positions; a note under the table says so. Duplicate active names are
+  checked against every value of the field, and a page opened before another
+  change gets the conflict message. While the page holds unsaved edits, the
+  page and per-page links, the search and the sort buttons ask first (one
+  question; for the sort buttons together with the sort confirmation), and
+  leaving the page any other way gets the browser's question. Redmine's
+  preference 'Warn me when leaving a page with unsaved text' turns this
+  warning off.
+- Unticking **Active** hides the value from every picker without deleting
+  anything, and ticking it again brings the value back.
+- 'Show usage' gives exact counts per value, also for values that differ
+  only in case or accents on MySQL and MariaDB.
+- The project pages load the stylesheet `dcf_config.css`: restart Redmine
+  after upgrading.
+
+### Project dependency page
+
+The dependency page of a `List (depending)` or `Key/Value list (depending)`
+field shows the same dependency editor as the administration form, with the
+same import, export, conflict and orphan handling (see
+[Dependency editor](#dependency-editor)); 'Add missing child values' is only
+on the administration form.
+
+- The page is sent as `multipart/form-data` with the mapping as one field,
+  `dependencies_json`. **Save** stays disabled until the editor has started,
+  so without JavaScript nothing can be saved; a notice says that JavaScript
+  is required.
+- A field shared with other projects, or global, shows a warning banner.
+  Saves and replace imports on such a field need no further confirmation.
+- When the parent field no longer exists, or is not available in the
+  project, a notice replaces the editor.
+- The storage setting of the plugin applies (see [Settings](#settings)).
+- Every save, and every refused attempt, writes an audit row with a compact
+  summary: counts, a few samples and the SHA-256 of the mapping. Its 'source'
+  and 'import' details are reported by the browser and are informational
+  only.
+- Posting `value_dependencies` / `default_value_dependencies` as nested
+  parameters to this page is deprecated: it is accepted throughout 0.1.x,
+  removable no earlier than 0.2.0, and each such request writes one warning
+  to the log. Send `dependencies_json` instead. The safe attributes
+  `value_dependencies` and `default_value_dependencies` of the administration
+  form stay permanently.
+- The request log shows the posted mapping of both editors as `[FILTERED]`.
 
 ### Safety
 
@@ -997,16 +1142,23 @@ required flag, tracker or project applicability.
   field's own dependency entries and the parent keys of every dependent field,
   all in one transaction. Removing a value never deletes issue data (list values
   are left orphaned; in-use enumeration values are deactivated rather than
-  destroyed).
+  destroyed). Known issue on MySQL and MariaDB: the rewrite of the issue values
+  also changes stored values that differ from the renamed value only in case
+  or accents (for example `a` when `A` is renamed), because the database
+  compares them that way.
 * Deactivating an enumeration value is reversible and destroys nothing: stored
-  issue values keep resolving to the (inactive) name and the dependency matrix is
-  left untouched, so reactivating restores the previous behaviour, including for
+  issue values keep resolving to the (inactive) name and the dependency mapping
+  is left untouched, so reactivating restores the previous behaviour, including for
   issues already sitting on a deactivated parent value. The only thing it changes
   besides the flag is the field's default value, which is cleared if it pointed
   at the value being deactivated.
 * Editing a field shared with, or global to, other projects is allowed but
-  surfaced with scope badges, a warning banner, an impact panel and a required
-  confirmation checkbox.
+  surfaced with scope badges and a warning banner. Renaming a list value
+  shows an impact panel and needs a confirmation checkbox when the field is
+  shared or global, when the value is used in other projects, or when
+  dependencies reference it; removing a value needs it also when the value
+  is used in this project. Dependency saves, replace imports and the sort
+  have no such step; the sort asks the browser confirmation only.
 * Every change, and every rejected attempt, is recorded in an append-only
   audit log, written in the same transaction as the change. Project managers see
   the audit for their project in the settings tab; administrators can view the

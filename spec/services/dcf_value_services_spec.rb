@@ -464,9 +464,13 @@ RSpec.describe 'DCF value operation services' do
         expect(CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name)).to eq(names_before)
       end
 
+      # Changed by WP-32: the rows are picked by exact name in Ruby; where(name:)
+      # also matched 'A' under the case- and accent-insensitive MariaDB collation.
       it 'keeps the stored order of ties and sorts desc on the same keys' do
         field = dcf_enum_field(names: ['C', 'b', 'A', "\u00E4"])
-        field.enumerations.where(name: ['b', "\u00E4"]).update_all(active: false)
+        ids = field.enumerations.select { |enum| ['b', "\u00E4"].include?(enum.name) }.map(&:id)
+        CustomFieldEnumeration.where(id: ids).update_all(active: false)
+        expect(enum_state(field)).to eq([['C', 1, true], ['b', 2, false], ['A', 3, true], ["\u00E4", 4, false]])
         sort(field, direction: 'asc')
         expect(enum_state(field)).to eq([['A', 1, true], ["\u00E4", 2, false], ['b', 3, false], ['C', 4, true]])
         sort(field, direction: 'desc')
@@ -491,6 +495,9 @@ RSpec.describe 'DCF value operation services' do
         expect(JSON.parse(rows(field).last.before_value)['order_sha256']).to eq(digest(old_keys))
       end
 
+      # Changed by WP-32: Rails 7.2 and later quote the bound integers on MySQL
+      # (WHEN '12' THEN '1'), so both patterns accept optional quotes and the
+      # ids of every statement are counted, never an empty scan.
       it 'updates only the changed rows, one CASE statement per CHUNK, saving no field (T-SORT-17)' do
         stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
         field = dcf_enum_field(names: %w[E D C B A])
@@ -500,9 +507,11 @@ RSpec.describe 'DCF value operation services' do
         updates = updates_of(sqls, 'custom_field_enumerations')
         expect(updates.size).to eq((4 / 2.0).ceil)
         updates.each do |sql|
-          expect(sql).to match(/SET\s+position\s*=\s*CASE\s+id(\s+WHEN\s+\d+\s+THEN\s+\d+)+\s+ELSE\s+position\s+END/i)
+          expect(sql).to match(/SET\s+position\s*=\s*CASE\s+id(\s+WHEN\s+'?\d+'?\s+THEN\s+'?\d+'?)+\s+ELSE\s+position\s+END/i)
           expect(sql).to include('custom_field_id')
-          expect(sql.scan(/WHEN\s+(\d+)\s+THEN/).flatten).not_to include(middle.to_s)
+          ids = sql.scan(/WHEN\s+'?(\d+)'?\s+THEN/).flatten
+          expect(ids.size).to eq(2)
+          expect(ids).not_to include(middle.to_s)
         end
         expect(updates_of(sqls, 'custom_fields')).to be_empty
         expect(updates_of(sqls, 'custom_values')).to be_empty
@@ -897,6 +906,25 @@ RSpec.describe 'DCF value operation services' do
           .new(project: project, field: field, user: user, params: { enumerations: payload }).call
       end.to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_reorder_mismatch) }
       expect(first.reload.name).to eq('X')
+    end
+
+    # WP-32 (WP-30 input 4): full mode refuses a body that is no Hash of
+    # Hashes, as page mode does, instead of raising TypeError.
+    it 'refuses an Array enumerations and a row that is not a Hash in full mode (WP-32)' do
+      field = dcf_enum_field(names: %w[X Y])
+      x, y = field.enumerations.order(:position).to_a
+      row = { 'name' => 'Y', 'position' => '2', 'active' => '1' }
+      [[{ 'name' => 'x' }], 'junk', { x.id.to_s => 'junk', y.id.to_s => row }, { x.id.to_s => ['x'], y.id.to_s => row },
+       { x.id.to_s => nil, y.id.to_s => row }].each do |enumerations|
+        expect do
+          RedmineDependingCustomFields::UpdateEnumerationsService
+            .new(project: project, field: field, user: user, params: { enumerations: enumerations }).call
+        end.to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_reorder_mismatch) }
+      end
+      expect(field.enumerations.order(:position).pluck(:name, :active)).to eq([['X', true], ['Y', true]])
+      rows = RedmineDependingCustomFields::ConfigAuditEvent.where(custom_field_id: field.id)
+      expect(rows.pluck(:status, :error_message).uniq).to eq([%w[validation_failed error_reorder_mismatch]])
+      expect(rows.count).to eq(5)
     end
 
     it 'clears a dangling default_value when its value is deactivated (T-ACT-5)' do

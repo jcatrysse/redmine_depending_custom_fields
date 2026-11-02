@@ -755,7 +755,7 @@ Implemented by WP-30 (0.1.0 (M3), depends on WP-28). Errors reach the flash thro
 | `update_dependencies` | 4: `_method`, `authenticity_token`, `state_hash`, `dependencies_json`; plus `utf8` on 5.1. Save has `name: nil`. | multipart; JSON at most 4 MiB (editor pre-check, server `too_large`) |
 | `reorder_values` (drag) | at most 500 + 4 | rendered only for 500 values or fewer |
 | `update_enumerations` full mode | at most 4 x 500 + 4 | only when unpaginated and unfiltered |
-| `update_enumerations` page mode | at most 3 x 500 + 7 = 1,507 | `per_page` capped at 500 |
+| `update_enumerations` page mode | at most 3 x 500 + 8 = 1,508 as measured by T-PARAM-1 (`utf8` on 5.1 only; WP-32 aligned the planned 3 x 500 + 7) | `per_page` capped at 500 |
 | sort, add, rename, remove, set default, confirm panel | at most 8 | tiny |
 | search (GET) | at most 4 | query string |
 

@@ -98,6 +98,19 @@ parent-side cascade touched children.
 State-hash = digest of `possible_values` (or enumeration ids+names+positions) +
 own dependency store, used for optimistic concurrency.
 
+From 0.1.0 (Amendment A6, WP-31) every custom field save of an operation goes
+through `BaseService#save_field!` instead of a bare `field.save!`: it sets the
+project storage ceiling (`project_storage_ceiling_kib`, default 2,048 KiB, read
+by `ProjectStoragePolicy` on every call) on the record for the duration of the
+save and restores it in `ensure`. The cascade saves each child the same way.
+The size limit of a changed column is then min(column limit, max(ceiling, the
+stored bytes)), so a project write cannot grow a field beyond the ceiling but
+can shrink it or keep its size; a column the write does not change is not
+measured against the ceiling. A refusal is `error_dcf_values_too_large` or
+`error_dcf_mapping_too_large` (422, audited), or `error_save_failed` for a
+cascaded field the user cannot see. Added and renamed list values have at most
+255 characters (`error_dcf_value_length`), checked before any confirmation.
+
 ## A. Add value
 
 Params: `value` (string), `position` (int, optional).
@@ -277,6 +290,33 @@ The single-value endpoints §B (`rename_value`) and §D (`reorder_values`) still
 accept enumeration params — the list family shares them — but the project screen
 no longer routes enumeration edits through them.
 
+### E as built from 0.1.0: page mode (Amendment A6, WP-30)
+
+`batch_scope` selects the mode. Absent or blank: full mode, steps 1 to 9
+above, unchanged. Exactly the String `page`: page mode, posted by a filtered or
+paginated values page. Anything else, a non-scalar value included, is refused
+with `error_reorder_mismatch` (422, audited; the value is never stored or
+echoed). Page mode:
+
+1. Preamble (a stale `state_hash` answers 409 first); reject `LIST_FAMILY`.
+2. The submitted keys must be a non-empty set of this field's enumeration ids,
+   compared as Strings, each with a Hash of attributes; a key, row or body
+   that strong parameters drop refuses the whole save → `error_reorder_mismatch`.
+3. `normalize` each name; blank → `error_value_blank`.
+4. Duplicate check on the submitted rows merged with the stored names and
+   active flags of every row not submitted → `error_value_duplicate`.
+5. Apply names and active flags of the changed rows; positions are never
+   read or written.
+6. Clear a default pointing at a value deactivated here (as step 8).
+7. Audit once: `after` gains `scope` `page` and `rows` n; the summary reads
+   `Saved n of N enumeration value(s) (page): ...`.
+
+From 0.1.0 (Amendment A6, WP-32) full mode refuses an `enumerations` that is
+no Hash of Hashes (for example `enumerations[][name]=x`) with
+`error_reorder_mismatch` (422, one `validation_failed` row with summary nil,
+nothing written), as page mode does; before, it raised `TypeError` (500, no
+row). Decided on the owner's mandate, to be confirmed by the owner.
+
 ## F. Dependency mapping
 
 Params: `value_dependencies` (hash).
@@ -405,6 +445,13 @@ Params: `direction` (`asc` or `desc`), `state_hash` (optional, as everywhere).
 | Sort direction other than `asc` or `desc` (Amendment A6, WP-29) | 422 | error_reorder_mismatch |
 | Batch save: name taken by another active value | 422 | error_value_duplicate |
 | Batch save: submitted ids do not cover the value set | 422 | error_reorder_mismatch |
+| Batch save: `batch_scope` other than blank or `page`, or a page-mode body with a foreign, duplicate or dropped key or row (Amendment A6, WP-30) | 422 | error_reorder_mismatch |
+| Batch save in full mode: `enumerations` is no Hash of Hashes (Amendment A6, WP-32) | 422 | error_reorder_mismatch |
+| Added or renamed list value above 255 characters (Amendment A6, WP-31) | 422 | error_dcf_value_length |
+| Value list above the column limit or the project storage ceiling (Amendment A6, WP-31) | 422 | error_dcf_values_too_large |
+| Dependency mapping above the column limit or the project storage ceiling (Amendment A6, WP-31) | 422 | error_dcf_mapping_too_large |
+| Storage refusal of a cascaded field the user cannot see, or another failed save | 422 | error_save_failed |
+| Database refused a value as too long (safety net, no SQL or value shown) | 422 | error_dcf_value_too_long |
 | Invalid dependency | 422 | error_invalid_dependency |
 | Dependency payload unreadable (blank, malformed, wrong type or schema, long number) | 422 | error_invalid_dependency_payload |
 | Dependency payload above 4 MiB | 422 | error_dcf_dependencies_too_large_to_send |
