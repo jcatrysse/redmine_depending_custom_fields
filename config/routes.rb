@@ -29,6 +29,9 @@ RedmineApp::Application.routes.draw do
     patch  'custom_field_configuration/fields/:field_id/values/reorder',
            to: 'project_custom_field_configuration#reorder_values',
            as: 'custom_field_configuration_reorder_values'
+    patch  'custom_field_configuration/fields/:field_id/values/sort',
+           to: 'project_custom_field_configuration#sort_values',
+           as: 'custom_field_configuration_sort_values'
     patch  'custom_field_configuration/fields/:field_id/enumerations',
            to: 'project_custom_field_configuration#update_enumerations',
            as: 'custom_field_configuration_update_enumerations'

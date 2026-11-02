@@ -1987,8 +1987,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(doc.text).to include(I18n.t(:text_dcf_values_filtered, count: 1, total: 32))
         expect(doc.text).to include(I18n.t(:text_dcf_drag_reorder_filtered))
         expect(doc.at_css('input#dcf_values_q')['value']).to eq('LODZ')
+        # Changed by WP-29 (was: 2 forms): the two sort buttons are button_to
+        # forms too and carry q without page.
         forms = doc.css('form.dcf-inline-form') + doc.css('form.button_to')
-        expect(forms.size).to eq(2)
+        expect(forms.size).to eq(4)
         forms.each do |form|
           expect(hidden('q', form).map { |n| n['value'] }).to eq(['LODZ'])
           expect(hidden('page', form)).to be_empty
@@ -2502,6 +2504,577 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(doc.css('span.pagination span.items').text).to eq('(1-25/30)')
         get "#{custom_field_configuration_audit_path(project)}?page[]=1"
         expect(response).to have_http_status(200)
+      end
+    end
+  end
+
+  # --- WP-29: sort A-Z / Z-A ----------------------------------------------
+  # Project design 5 and 6 (T-SORT-1..6), UD-23, UD-24, quality G4 and G5.
+  describe 'sort A-Z / Z-A (WP-29)' do
+    let(:manager) { dcf_manager(project) }
+    let(:service) { RedmineDependingCustomFields::BaseService }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+
+    before { as(manager) }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def show_path(field, params = {}, in_project = project)
+      custom_field_configuration_field_path(in_project, field, params)
+    end
+
+    def sort_path(field, in_project = project)
+      custom_field_configuration_sort_values_path(in_project, field)
+    end
+
+    def labels(count, prefix = 'Value')
+      (1..count).map { |i| format('%<prefix>s %<i>04d', prefix: prefix, i: i) }
+    end
+
+    def own_list(values)
+      dcf_list_field(values: values, is_for_all: false, projects: [project])
+    end
+
+    def enum_with(count, inactive: [])
+      field = dcf_enum_field(names: [], is_for_all: true)
+      CustomFieldEnumeration.insert_all(
+        (1..count).map do |i|
+          { custom_field_id: field.id, name: format('N%04d', i), position: i, active: !inactive.include?(i) }
+        end
+      )
+      CustomField.find(field.id)
+    end
+
+    def enum_state(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:position, :id).pluck(:name, :position, :active)
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def row_values
+      doc.css('table.dcf-values tbody tr').map { |tr| tr['data-dcf-value'] }
+    end
+
+    # The sort buttons are found by their action (project design 5): Rails
+    # 6.1 to 8.1 render button_to as a form holding an input[type=submit].
+    def sort_forms
+      doc.css('form[action$="/values/sort"]')
+    end
+
+    def hidden_fields(form)
+      form.css('input[type="hidden"]').reject { |n| n['name'] == 'authenticity_token' }
+          .to_h { |n| [n['name'], n['value']] }
+    end
+
+    def label_of(form)
+      button = form.at_css('[type="submit"]')
+      button.name == 'button' ? button.text.strip : button['value']
+    end
+
+    def confirm_of(form)
+      form.at_css('[data-confirm]')['data-confirm']
+    end
+
+    def query_of(href)
+      Rack::Utils.parse_nested_query(URI.parse(href).query.to_s)
+    end
+
+    # UPDATE statements on the two tables a sort writes.
+    def write_sqls(&block)
+      sqls = []
+      callback = lambda do |*, payload|
+        sql = payload[:sql].to_s
+        sqls << sql if sql.match?(/\AUPDATE\s+[`"]?(custom_fields|custom_field_enumerations)[`"]?\s/i)
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record', &block)
+      sqls
+    end
+
+    describe 'route and permission' do
+      it 'routes PATCH .../values/sort to sort_values and no other verb' do
+        field = own_list(%w[b a])
+        path = sort_path(field)
+        expect(path).to eq("/projects/#{project.to_param}/custom_field_configuration/fields/#{field.id}/values/sort")
+        expect(Rails.application.routes.recognize_path(path, method: :patch))
+          .to include(controller: 'project_custom_field_configuration', action: 'sort_values',
+                      project_id: project.to_param, field_id: field.id.to_s)
+        [:get, :post, :put, :delete].each do |verb|
+          expect { Rails.application.routes.recognize_path(path, method: verb) }
+            .to raise_error(ActionController::RoutingError)
+        end
+      end
+
+      it 'adds sort_values to manage_project_custom_field_configuration (granted to its holders)' do
+        permission = Redmine::AccessControl.permission(:manage_project_custom_field_configuration)
+        expect(permission.actions).to include('project_custom_field_configuration/sort_values',
+                                              'project_custom_field_configuration/reorder_values')
+        expect(permission.require_member?).to be(true)
+        expect(permission.read?).to be(true)
+        expect(Redmine::AccessControl.permissions.count { |p| p.actions.include?('project_custom_field_configuration/sort_values') })
+          .to eq(1)
+      end
+    end
+
+    describe 'sorting (T-SORT-1, T-SORT-2)' do
+      it 'sorts a list A-Z, redirects to the field page and flashes notice_values_sorted (T-SORT-1)' do
+        field = own_list(['b', 'A', "\u00E9", 'a'])
+        patch sort_path(field), params: { direction: 'asc', state_hash: service.state_hash(field) }
+        expect(response).to redirect_to(show_path(field))
+        expect(flash[:notice]).to eq(I18n.t(:notice_values_sorted))
+        expect(field.reload.possible_values).to eq(['A', 'a', 'b', "\u00E9"])
+        row = rows(field).last
+        expect([row.action, row.status, row.changes_summary]).to eq(['sort_values', 'success', 'Sorted 4 value(s) A-Z (4 moved)'])
+        follow_redirect!
+        expect(doc.at_css('#flash_notice').text).to include(I18n.t(:notice_values_sorted))
+        expect(row_values).to eq(['A', 'a', 'b', "\u00E9"])
+      end
+
+      it 'sorts enumerations Z-A with the inactive ones among them; a stale page then gets 409 (T-SORT-2, UD-24)' do
+        field = dcf_enum_field(names: %w[b D a c])
+        field.enumerations.find_by(name: 'a').update!(active: false)
+        old_hash = service.state_hash(field)
+        patch sort_path(field), params: { direction: 'desc', state_hash: old_hash }
+        expect(response).to redirect_to(show_path(field))
+        expect(enum_state(field)).to eq([['D', 1, true], ['c', 2, true], ['b', 3, true], ['a', 4, false]])
+        follow_redirect!
+        expect(row_values).to eq(CustomFieldEnumeration.where(custom_field_id: field.id).order(:position).pluck(:id).map(&:to_s))
+        patch custom_field_configuration_update_enumerations_path(project, field),
+              params: { state_hash: old_hash, enumerations: {} }
+        expect(response).to have_http_status(409)
+      end
+
+      it 'sorts a global and a shared field without a confirmation panel, confirm ignored (UD-23)' do
+        global = dcf_list_field(values: %w[c b a], is_for_all: true)
+        shared = dcf_list_field(values: %w[c b a], is_for_all: false,
+                                projects: [project, dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")])
+        [[global, {}], [shared, { confirm: '0' }]].each do |field, extra|
+          patch sort_path(field), params: { direction: 'asc' }.merge(extra)
+          expect(response).to redirect_to(show_path(field))
+          expect(field.reload.possible_values).to eq(%w[a b c])
+          follow_redirect!
+          expect(doc.css('.dcf-confirm-panel')).to be_empty
+          expect(rows(field).last.status).to eq('success')
+        end
+      end
+
+      it 'lists sort_values rows on the project audit page' do
+        field = own_list(%w[b a])
+        patch sort_path(field), params: { direction: 'asc' }
+        get custom_field_configuration_audit_path(project)
+        cells = doc.css('table.dcf-audit-list tbody tr').first.css('td').map { |td| td.text.strip }
+        expect(cells).to include('sort_values', 'success', 'Sorted 2 value(s) A-Z (2 moved)')
+      end
+    end
+
+    describe 'refusals (T-SORT-3..6, G5)' do
+      def attempt(field, in_project = project, params = { direction: 'asc' })
+        patch sort_path(field, in_project), params: params
+      end
+
+      it 're-renders 409 on a stale state_hash with the posted q, changing nothing (T-SORT-3)' do
+        field = own_list(labels(30).reverse)
+        attempt(field, project, direction: 'asc', state_hash: 'stale', q: 'value')
+        expect(response).to have_http_status(409)
+        expect(doc.at_css('#flash_error').text).to include(I18n.t(:error_stale_edit))
+        expect(doc.at_css('input#dcf_values_q')['value']).to eq('value')
+        expect(field.reload.possible_values).to eq(labels(30).reverse)
+        expect([rows(field).last.status, rows(field).last.error_message]).to eq(%w[validation_failed error_stale_edit])
+        expect(sort_forms.map { |form| hidden_fields(form)['state_hash'] }.uniq).to eq([service.state_hash(field)])
+      end
+
+      it 'refuses any direction but asc or desc with 422 and one row each, never echoing it (T-SORT-5)' do
+        field = own_list(%w[b a])
+        [{}, { direction: '' }, { direction: 'ASC' }, { direction: ' asc' }, { direction: 'up<b>' },
+         { direction: ['asc'] }, { direction: { 'x' => 'asc' } }].each do |extra|
+          expect { attempt(field, project, extra.merge(state_hash: service.state_hash(field))) }
+            .to change { rows(field).count }.by(1)
+          expect(response).to have_http_status(422)
+          expect(doc.at_css('#flash_error').text).to include(I18n.t(:error_reorder_mismatch))
+          row = rows(field).last
+          expect([row.status, row.error_message, row.changes_summary]).to eq(['validation_failed', 'error_reorder_mismatch', nil])
+          expect(response.body).not_to include('up<b>')
+          expect(response.body).not_to include('up&lt;b&gt;')
+        end
+        expect(field.reload.possible_values).to eq(%w[b a])
+      end
+
+      it 'refuses anonymous users, non-members, members without the permission and managers of another project ' \
+         'before any write (T-SORT-4)' do
+        field = dcf_enum_field(names: %w[c b a])
+        before = enum_state(field)
+        count = events.count
+        other = dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")
+        sqls = write_sqls do
+          [dcf_create_user("stranger-#{SecureRandom.hex(3)}"), dcf_plain_member(project), dcf_manager(other)].each do |user|
+            as(user)
+            attempt(field)
+            expect(response).to have_http_status(403)
+          end
+          # G5: an anonymous HTML request is sent to the login (require_login).
+          as(User.anonymous)
+          attempt(field)
+          expect(response).to have_http_status(302)
+          expect(response.location).to match(%r{/login(\?|\z)})
+        end
+        expect(sqls).to be_empty
+        expect(enum_state(field)).to eq(before)
+        expect(events.count).to eq(count)
+      end
+
+      it 'sorts for the manager and for an administrator who is not a member' do
+        [manager, dcf_admin].each do |user|
+          as(user)
+          field = own_list(%w[c b a])
+          attempt(field)
+          expect(response).to redirect_to(show_path(field))
+          expect(field.reload.possible_values).to eq(%w[a b c])
+        end
+      end
+
+      it 'answers 403 on a closed project for the manager and an administrator, with no write and no row (T-SORT-4)' do
+        closed = dcf_create_project(name: 'Closed', status: :closed)
+        field = dcf_list_field(values: %w[c b a], is_for_all: true)
+        count = events.count
+        [dcf_manager(closed), dcf_admin].each do |user|
+          as(user)
+          get show_path(field, {}, closed)
+          expect(response).to have_http_status(200)
+          expect(sort_forms.size).to eq(2)
+          sqls = write_sqls { attempt(field, closed) }
+          expect(response).to have_http_status(403)
+          expect(response.body).to include(I18n.t(:error_project_archived))
+          expect(sqls).to be_empty
+        end
+        expect(field.reload.possible_values).to eq(%w[c b a])
+        expect(events.count).to eq(count)
+      end
+
+      it 'answers 403 on an archived project for the manager and an administrator (T-SORT-6)' do
+        archived = dcf_create_project(name: 'Archived', status: :archived)
+        field = dcf_list_field(values: %w[c b a], is_for_all: true)
+        count = events.count
+        [dcf_manager(archived), dcf_admin].each do |user|
+          as(user)
+          get show_path(field, {}, archived)
+          expect(response).to have_http_status(403)
+          attempt(field, archived)
+          expect(response).to have_http_status(403)
+        end
+        expect(field.reload.possible_values).to eq(%w[c b a])
+        expect(events.count).to eq(count)
+      end
+
+      it 'answers 403 with one authorization_failed row when the request reaches the service without the permission' do
+        field = own_list(%w[b a])
+        as(dcf_plain_member(project))
+        allow_any_instance_of(User).to receive(:allowed_to?).and_wrap_original do |original, action, *args, **opts, &block|
+          if action.is_a?(Hash)
+            true
+          elsif action == :manage_project_custom_field_configuration
+            false
+          else
+            original.call(action, *args, **opts, &block)
+          end
+        end
+        expect { attempt(field) }.to change { rows(field).where(status: 'authorization_failed').count }.by(1)
+        expect(response).to have_http_status(403)
+        row = rows(field).last
+        expect([row.action, row.error_message, row.changes_summary, row.before_value, row.after_value])
+          .to eq(['authorization_failed', 'error_forbidden', nil, nil, nil])
+        expect(field.reload.possible_values).to eq(%w[b a])
+      end
+
+      it 'answers 404 for a field outside the project, 422 for an unsupported format, 403 to a non-member for any id' do
+        other = dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")
+        foreign = dcf_list_field(name: "Foreign-#{SecureRandom.hex(3)}", values: %w[SECRET-V B],
+                                 is_for_all: false, projects: [other])
+        attempt(foreign)
+        expect(response).to have_http_status(404)
+        expect(response.body).not_to include(foreign.name)
+        expect(response.body).not_to include('SECRET-V')
+        bool = IssueCustomField.create!(name: "Bool-#{SecureRandom.hex(3)}", field_format: 'bool', is_for_all: true)
+        attempt(bool)
+        expect(response).to have_http_status(422)
+        as(dcf_create_user("stranger-#{SecureRandom.hex(3)}"))
+        patch custom_field_configuration_sort_values_path(project, 99_999_999), params: { direction: 'asc' }
+        expect(response).to have_http_status(403)
+        expect(foreign.reload.possible_values).to eq(%w[SECRET-V B])
+        expect(rows(foreign).count + rows(bool).count).to eq(0)
+      end
+
+      it 'carries an authenticity token and answers 422 without one when forgery protection is on' do
+        field = own_list(%w[b a])
+        protection = ActionController::Base.allow_forgery_protection
+        ActionController::Base.allow_forgery_protection = true
+        begin
+          get show_path(field)
+          expect(sort_forms.size).to eq(2)
+          sort_forms.each do |form|
+            expect(form.css('input[type="hidden"][name="authenticity_token"]').size).to eq(1)
+            expect(form.css('input[type="hidden"][name="_method"][value="patch"]').size).to eq(1)
+          end
+          attempt(field)
+        ensure
+          ActionController::Base.allow_forgery_protection = protection
+        end
+        expect(response).to have_http_status(422)
+        expect(field.reload.possible_values).to eq(%w[b a])
+        expect(rows(field).count).to eq(0)
+      end
+
+      it 'refuses in order: closed project, then a stale state, then the direction' do
+        closed = dcf_create_project(name: 'Closed', status: :closed)
+        field = dcf_list_field(values: %w[b a], is_for_all: true)
+        as(dcf_manager(closed))
+        attempt(field, closed, direction: 'up', state_hash: 'stale')
+        expect(response).to have_http_status(403)
+        expect(rows(field).count).to eq(0)
+        as(manager)
+        attempt(field, project, direction: 'up', state_hash: 'stale')
+        expect(response).to have_http_status(409)
+        expect(rows(field).last.error_message).to eq('error_stale_edit')
+        attempt(field, project, direction: 'up', state_hash: service.state_hash(field))
+        expect(response).to have_http_status(422)
+        expect(rows(field).last.error_message).to eq('error_reorder_mismatch')
+        expect(field.reload.possible_values).to eq(%w[b a])
+      end
+    end
+
+    describe 'buttons (project design 5)' do
+      it 'shows the sort buttons whenever the field has more than one value' do
+        get show_path(own_list(%w[Only]))
+        expect(sort_forms).to be_empty
+        expect(doc.css('div.dcf-values-toolbar')).to be_empty
+        get show_path(own_list(%w[Only]), q: 'x')
+        expect(doc.css('div.dcf-values-toolbar form.dcf-values-filter').size).to eq(1)
+        expect(sort_forms).to be_empty
+        get show_path(own_list(%w[b a]))
+        expect(doc.css('div.dcf-values-toolbar form[action$="/values/sort"]').size).to eq(2)
+        expect(doc.css('form.dcf-values-filter')).to be_empty
+        get show_path(own_list(labels(30)))
+        expect(doc.css('div.dcf-values-toolbar form.dcf-values-filter').size).to eq(1)
+        expect(doc.css('div.dcf-values-toolbar form[action$="/values/sort"]').size).to eq(2)
+        expect(doc.css('form.dcf-values-filter form, form.dcf-values-filter input[name="direction"]')).to be_empty
+        get show_path(own_list(labels(30)), q: 'zzz')
+        expect(doc.at_css('p.nodata')).not_to be_nil
+        expect(sort_forms.size).to eq(2)
+        get show_path(enum_with(2, inactive: [1]))
+        expect(sort_forms.size).to eq(2)
+      end
+
+      it 'posts direction, state_hash and a filtering q only, never page, A-Z first' do
+        field = own_list(labels(520))
+        get show_path(field, q: 'value', page: 2, show_usage: 1)
+        expect(row_values).to eq(labels(520)[25, 25])
+        forms = sort_forms
+        expect(forms.size).to eq(2)
+        expect(forms.map { |form| form['action'] }.uniq).to eq([sort_path(field)])
+        expect(forms.map { |form| form['method'] }.uniq).to eq(['post'])
+        state = service.state_hash(field)
+        expect(forms.map { |form| hidden_fields(form) }).to eq(
+          [{ '_method' => 'patch', 'direction' => 'asc', 'state_hash' => state, 'q' => 'value' },
+           { '_method' => 'patch', 'direction' => 'desc', 'state_hash' => state, 'q' => 'value' }]
+        )
+        expect(forms.map { |form| label_of(form) }).to eq([I18n.t(:label_dcf_sort_az), I18n.t(:label_dcf_sort_za)])
+        expect(forms.map { |form| confirm_of(form) }.uniq).to eq([I18n.t(:text_dcf_sort_confirm, count: 520)])
+        get show_path(field, page: 3)
+        expect(sort_forms.map { |form| hidden_fields(form).keys.sort }.uniq).to eq([%w[_method direction state_hash]])
+      end
+
+      it 'gives the sort forms the class dcf-values-sort, no ids and nothing of the drag markup (WP-30 hook)' do
+        get show_path(own_list(%w[c b a]))
+        sort_forms.each do |form|
+          expect(form['class'].split).to include('button_to', 'dcf-values-sort')
+          expect(form.css('[id]')).to be_empty
+          expect(form.ancestors('table, form')).to be_empty
+        end
+        toolbar = doc.at_css('div.dcf-values-toolbar').to_html
+        expect(toolbar).not_to include('dcf-sort-handle')
+        expect(toolbar).not_to include('dcf-reorder-form')
+        expect(doc.css('form.dcf-values-sort').size).to eq(2)
+      end
+
+      it 'counts every value in the confirm text, inactive enumerations included, also when filtered' do
+        enum = enum_with(30, inactive: [3, 7])
+        get show_path(enum)
+        expect(sort_forms.map { |form| confirm_of(form) }.uniq).to eq([I18n.t(:text_dcf_sort_confirm, count: 30)])
+        get show_path(enum, q: 'n001')
+        expect(sort_forms.map { |form| confirm_of(form) }.uniq).to eq([I18n.t(:text_dcf_sort_confirm, count: 30)])
+        expect(sort_forms.map { |form| hidden_fields(form)['q'] }.uniq).to eq(['n001'])
+        get show_path(enum_with(520), page: 2)
+        expect(sort_forms.size).to eq(2)
+        sort_forms.each { |form| expect(form.ancestors('form, table')).to be_empty }
+      end
+
+      it 'echoes q escaped once in the sort forms (G5)' do
+        q = '"><img src=x onerror=alert(1)>'
+        get show_path(own_list(labels(30)), q: q)
+        expect(doc.css('div.dcf-values-toolbar img')).to be_empty
+        expect(response.body).not_to include('<img src=x onerror=alert(1)>')
+        expect(sort_forms.size).to eq(2)
+        sort_forms.each { |form| expect(hidden_fields(form)['q']).to eq(q) }
+        expect(response.body).not_to include('&amp;quot;')
+      end
+
+      it 'renders the buttons, the confirm text and the notice in German and French (G4, G8)' do
+        [['de', :de], ['fr', :fr]].each do |language, locale|
+          manager.update_column(:language, language)
+          field = own_list(%w[b a c])
+          I18n.with_locale(I18n.locale) { get show_path(field) }
+          expect(response.body).not_to include('translation missing')
+          expect(response.body).not_to include('translation_missing')
+          expect(sort_forms.map { |form| label_of(form) })
+            .to eq([I18n.t(:label_dcf_sort_az, locale: locale), I18n.t(:label_dcf_sort_za, locale: locale)])
+          expect(sort_forms.map { |form| confirm_of(form) }.uniq)
+            .to eq([I18n.t(:text_dcf_sort_confirm, count: 3, locale: locale)])
+          I18n.with_locale(I18n.locale) { patch sort_path(field), params: { direction: 'asc' } }
+          expect(flash[:notice]).to eq(I18n.t(:notice_values_sorted, locale: locale))
+        end
+      end
+
+      it 'has the registry texts for the WP-29 keys in the four locales' do
+        registry = File.read(File.expand_path('../../docs/specs/large_lists_i18n_registry.md', __dir__),
+                             encoding: 'UTF-8')
+        locales = [:en, :de, :fr, :nl]
+        %w[notice_values_sorted label_dcf_sort_az label_dcf_sort_za text_dcf_sort_confirm].each do |key|
+          row = registry.lines.find { |line| line.start_with?("| `#{key}` | WP-29 |") }
+          cells = row.split(' | ').map(&:strip)
+          texts = cells[4, 4].map { |cell| cell.delete_suffix(' |').delete_suffix('|').strip }
+          locales.each_with_index do |locale, i|
+            raw = I18n.backend.send(:translations).dig(locale, key.to_sym)
+            expect(raw).to eq(texts[i]), "#{key} #{locale}"
+          end
+        end
+      end
+
+      it 'adds no query to the page: the same count for 2 and 500 values (G6)' do
+        small = own_list(%w[b a])
+        large = own_list(labels(500))
+        get show_path(small)
+        small_count = dcf_count_queries { get show_path(small) }
+        large_count = dcf_count_queries { get show_path(large) }
+        expect(sort_forms.size).to eq(2)
+        expect(large_count).to eq(small_count)
+      end
+    end
+
+    describe 'redirect' do
+      it 'keeps a filtering q and drops the page' do
+        field = own_list(labels(1_200).reverse)
+        patch sort_path(field), params: { direction: 'asc', q: 'value', page: '3', state_hash: service.state_hash(field) }
+        expect(response).to redirect_to(show_path(field, q: 'value'))
+        expect(query_of(response.location)).to eq('q' => 'value')
+        follow_redirect!
+        expect(row_values).to eq(labels(25))
+      end
+
+      it 'redirects to the bare field path without a filtering q' do
+        field = own_list(%w[b a])
+        [{}, { q: '' }, { q: " \u0301", page: '2' }, { 'q' => ['x'], 'page' => '4' }].each do |extra|
+          patch sort_path(field), params: { direction: 'desc' }.merge(extra)
+          expect(response).to redirect_to(show_path(field))
+          expect(response.location).not_to include('?')
+        end
+      end
+
+      it 'encodes q in the redirect and keeps nothing else of the request' do
+        field = own_list(labels(30))
+        q = "Va lue&x\r\nSet-Cookie: dcf=1"
+        patch sort_path(field), params: { direction: 'desc', q: q, page: '2', state_hash: service.state_hash(field) }
+        expect(response).to have_http_status(302)
+        expect(response.location).to include('%0D%0A')
+        expect(response.headers['Set-Cookie'].to_s).not_to include('dcf=1')
+        expect(query_of(response.location)).to eq('q' => q)
+      end
+    end
+
+    describe 'hidden children (security)' do
+      let(:other_role) { dcf_create_role }
+
+      def hidden_child(parent)
+        child = dcf_list_field(format: 'depending_list', name: "HIDDEN-CHILD-#{SecureRandom.hex(3)}",
+                               values: %w[SECRET-V], parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[SECRET-V], 'B' => %w[SECRET-V] })
+        child.update!(visible: false, role_ids: [other_role.id])
+        child
+      end
+
+      def expect_unnamed(child)
+        expect(response.body).not_to include(child.name)
+        expect(response.body).not_to include('SECRET-V')
+        expect(flash.to_hash.values.join(' ')).not_to include('HIDDEN-CHILD')
+      end
+
+      it 'never names a role-invisible child or shows its values when sorting the parent' do
+        parent = own_list(%w[B A])
+        child = hidden_child(parent)
+        store = CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first
+        patch sort_path(parent), params: { direction: 'asc', state_hash: service.state_hash(parent) }
+        expect(response).to redirect_to(show_path(parent))
+        expect_unnamed(child)
+        follow_redirect!
+        expect_unnamed(child)
+        patch sort_path(parent), params: { direction: 'up' }
+        expect(response).to have_http_status(422)
+        expect_unnamed(child)
+        expect(CustomField.where(id: child.id).pluck(Arel.sql('format_store')).first).to eq(store)
+        expect(parent.reload.possible_values).to eq(%w[A B])
+        rows(parent).each do |row|
+          expect(row.affected_child_field_ids).to be_nil
+          expect([row.changes_summary, row.error_message, row.before_value, row.after_value].join(' '))
+            .not_to include('HIDDEN-CHILD')
+        end
+      end
+
+      def storage_limits
+        RedmineDependingCustomFields::StorageLimits
+      end
+
+      # The save raises for the child with a storage error on it, so
+      # BaseService finds a violation and asks nameable_field? (SD-16).
+      def raise_storage_error_for(child)
+        child.errors.add(:possible_values, storage_limits::ERROR,
+                         size: storage_limits.delimited(70_000), limit: storage_limits.delimited(65_535),
+                         bytes: 70_000, max_bytes: 65_535, column: 'possible_values')
+        expect(storage_limits.violation_in(child).custom_field_name).to eq(child.name)
+        allow_any_instance_of(CustomField).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(child))
+      end
+
+      # Redmine 5.1 en has no thousands delimiter, 6.0 and later a comma.
+      def storage_flash(child)
+        I18n.t(:error_dcf_values_too_large, field: child.name,
+                                            size: storage_limits.delimited(70_000),
+                                            limit: storage_limits.delimited(65_535))
+      end
+
+      it 'answers a storage error raised for a hidden child with the generic message' do
+        parent = own_list(%w[B A])
+        child = hidden_child(parent)
+        raise_storage_error_for(child)
+        patch sort_path(parent), params: { direction: 'asc' }
+        expect(response).to have_http_status(422)
+        expect(doc.at_css('#flash_error').text.strip).to eq(I18n.t(:error_save_failed))
+        expect(response.body).not_to include(ERB::Util.html_escape(storage_flash(child)))
+        expect_unnamed(child)
+        row = rows(parent).last
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_values_too_large])
+        expect(row.changes_summary).not_to include('HIDDEN-CHILD')
+        expect(parent.reload.possible_values).to eq(%w[B A])
+      end
+
+      it 'names a visible child in the storage error flash (counterpart of the hidden case)' do
+        parent = own_list(%w[B A])
+        child = dcf_list_field(format: 'depending_list', name: "SEEN-CHILD-#{SecureRandom.hex(3)}",
+                               values: %w[V], parent: parent, is_for_all: false, projects: [project])
+        raise_storage_error_for(child)
+        patch sort_path(parent), params: { direction: 'asc' }
+        expect(response).to have_http_status(422)
+        expect(doc.at_css('#flash_error').text.strip).to eq(storage_flash(child))
+        expect(parent.reload.possible_values).to eq(%w[B A])
       end
     end
   end

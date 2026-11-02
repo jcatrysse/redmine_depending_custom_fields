@@ -79,6 +79,28 @@ Reorder: T-ORD-1 works (list order); T-ORD-2 enumeration positions;
 T-ORD-3 missing value → 422; T-ORD-4 extra value → 422; T-ORD-5 duplicate → 422;
 T-ORD-6 a multi-position move (e.g. last → first) applies in **one** request
 (list); T-ORD-7 same for enumeration positions.
+From 0.1.0 (Amendment A6, WP-29), in `spec/services/dcf_value_services_spec.rb`:
+T-ORD-A the reorder row stores `before.order_sha256` (the old order,
+enumeration ids in `[position, id]` order, inactive included) and
+`after.order_sha256` next to `order` (first 20) and `truncated`; a reorder's
+`before` equals the previous sort's `after` when no other value operation ran
+in between.
+Sort (Amendment A6, WP-29), service level: T-SORT-10 stable list sort;
+T-SORT-11 case and accents ignored, ties keep their order also for `desc`;
+T-SORT-12 enumeration positions 1..N with inactive entries interleaved
+(UD-24); T-SORT-13 no `CustomValue`, default or dependency store rewritten;
+T-SORT-14 an already sorted field writes nothing and is audited with `moved`
+0; T-SORT-15 a direction other than `asc` or `desc` gives 422 and one
+`validation_failed` row; T-SORT-16 a stale `state_hash` gives 409, nothing
+applied; T-SORT-17 the chunked CASE update with `CHUNK` stubbed to 2 (one
+statement per slice of changed rows, the last partial slice included) and a
+user without the permission (one `authorization_failed` row); T-SORT-18
+`before` `{count, order_sha256}` and `after` `{direction, count, moved,
+order_sha256}`, golden digests. Plus: no confirmation for shared or global
+fields (UD-23), rollback of every chunk when the audit insert fails,
+`ValueTooLong` mapped without SQL, other database errors left unaudited, a
+hidden child left byte-identical, G6 statement counts and an opt-in `:perf`
+sort of 25,000 enumerations.
 Dependencies: T-DEP-1 valid mapping saves; T-DEP-2 unknown child → 422;
 T-DEP-3 wrong/unknown parent key → 422; T-DEP-4 orphan prevented;
 T-DEP-5 default dependency must be an allowed child; T-DEP-6 matrix uses existing
@@ -259,6 +281,20 @@ row) — these are the guard against a future prune being added to §E:
   project cases in `test/js/dcf_dependency_editor.test.js`; the opt-in browser
   spec `spec/system/dcf_project_dependency_editor_spec.rb` (`DCF_SYSTEM_SPECS=1`;
   Save gate, unload warning, failed-save re-render, conflict, import).
+- From 0.1.0 (Amendment A6, WP-29), in the request spec: T-SORT-1 list A-Z
+  (redirect, `notice_values_sorted`, audit row); T-SORT-2 enumeration Z-A with
+  an inactive entry, then a stale page gets 409; T-SORT-3 409 re-render with
+  the posted `q`; T-SORT-4 the permission matrix (anonymous, non-member,
+  member without the permission, manager of another project, closed project
+  for the manager and an administrator) with no write and no row; T-SORT-5
+  invalid directions (missing, blank, `ASC`, ` asc`, `direction[]`,
+  `direction[x]`) give 422 and are never echoed; T-SORT-6 archived project
+  403. Plus the route (PATCH only), the permission list, the service reached
+  without the permission, the refusal order, CSRF, the buttons (shown above one
+  value, A-Z first, `direction`, `state_hash` and a filtering `q` only, never
+  `page`, `data-confirm` counting every value, class `dcf-values-sort`, no ids),
+  the redirect (keeps `q`, drops the page), escaping, de and fr rendering, the
+  registry texts, G6 invariance and a role-invisible child never named.
 
 ## 9. I18n / routing / integration
 

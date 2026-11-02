@@ -152,6 +152,14 @@ The nested `value_dependencies` / `default_value_dependencies` remain
 accepted when `dependencies_json` is absent (deprecated in 0.1.0, removable
 no earlier than 0.2.0).
 
+From 0.1.0 (Amendment A6, WP-29) `sort` takes `direction` (a scalar String,
+exactly `asc` or `desc`, anything else an audited 422; an Array or Hash is
+dropped by strong params and refused the same way) and `state_hash`. `q`,
+`page` and `per_page` are never permitted into a service: the controller reads
+them from `params` for the page, re-renders and redirects only, through
+`ValuesPage.coerce_query`, `coerce_page` and `coerce_per_page` (WP-28). The
+posted direction is never echoed in the flash, the page or the audit row.
+
 ## 16. CSRF expectations
 
 - HTML forms with Rails authenticity token; standard `protect_from_forgery`.

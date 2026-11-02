@@ -197,6 +197,10 @@ fr:
   text_dcf_values_filtered: "Valeurs correspondant au filtre : %{count} sur %{total}."
   text_dcf_drag_reorder_large: "Le réordonnancement par glisser-déposer est disponible pour les champs d'au plus %{max} valeurs. Utilisez les boutons de tri pour ordonner ce champ."
   text_dcf_drag_reorder_filtered: "Effacez le filtre pour modifier l'ordre par glisser-déposer."
+  notice_values_sorted: "Valeurs triées."
+  label_dcf_sort_az: "Trier de A à Z"
+  label_dcf_sort_za: "Trier de Z à A"
+  text_dcf_sort_confirm: "Toutes les valeurs de ce champ (%{count}) seront triées par ordre alphabétique et l'ordre actuel sera remplacé. Continuer ?"
 
   # Erreurs de modèle, affichées après le nom du champ
   activerecord:

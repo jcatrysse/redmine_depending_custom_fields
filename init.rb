@@ -26,14 +26,14 @@ end
 # Project-level custom field configuration permission. Module-independent (not
 # inside a project_module block) so administrators always have access; admins
 # pass allowed_to? unconditionally. read: true keeps the tab/overview/audit
-# reachable on closed/archived projects — the read/write boundary is enforced
+# reachable on closed/archived projects; the read/write boundary is enforced
 # by the controller's require_active_project guard. require: :member prevents
 # granting it to the Non member / Anonymous roles. See Permissions Spec §4.
 Redmine::AccessControl.map do |map|
   map.permission :manage_project_custom_field_configuration,
                  { project_custom_field_configuration:
                      %i[index show add_value rename_value remove_value
-                        reorder_values update_enumerations set_default_value
+                        reorder_values sort_values update_enumerations set_default_value
                         edit_dependencies update_dependencies audit],
                    # Grant access to the project settings page itself so a
                    # permission holder can reach the tab (mirrors how core

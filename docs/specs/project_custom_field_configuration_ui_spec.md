@@ -94,6 +94,21 @@ Sections:
 
 Buttons: `<p class="buttons">` Save / Cancel (Cancel returns to overview).
 
+**Toolbar from 0.1.0 (Amendment A6, WP-28 and WP-29).** `div.dcf-values-toolbar`
+above the values box holds the search (core filter markup: `fieldset`,
+`legend` `label_filter_plural`, a labelled `q` box, Apply and a Clear link)
+above 25 values or while `q` is present, and the sort buttons whenever the
+field has more than one value: two `button_to` forms (class
+`button_to dcf-values-sort`) labelled `label_dcf_sort_az` and
+`label_dcf_sort_za`, posting `direction`, `state_hash` and `q` when it
+filters, never the page, with `data-confirm` `text_dcf_sort_confirm` counting
+every value (inactive enumerations included). They render on small, filtered,
+paginated, list and enumeration pages alike, outside every other form, and
+carry no ids. Empty states: `text_no_values` without values,
+`text_dcf_no_matches` with a Clear link when a search matches nothing. A
+successful sort flashes `notice_values_sorted` and returns to page 1 with the
+search kept.
+
 ### Enumeration variant
 Same layout, but rows are `CustomFieldEnumeration` records and the **submit model
 is core's own for this screen** (`custom_field_enumerations#index`): the whole
@@ -217,6 +232,12 @@ page adds `text_dcf_parent_missing` and `text_dcf_parent_not_available`
 `text_dcf_editor_noscript`, `error_invalid_dependency_payload`,
 `error_dcf_dependencies_too_large_to_send` and the `DependencyEditorConfig`
 map), all in en, de, fr and nl (`large_lists_i18n_registry.md`).
+
+From 0.1.0 (Amendment A6): the values page adds `text_dcf_values_filtered`,
+`text_dcf_drag_reorder_large`, `text_dcf_drag_reorder_filtered` and reuses
+`text_dcf_no_matches` (WP-28); sort adds `notice_values_sorted`,
+`label_dcf_sort_az`, `label_dcf_sort_za` and `text_dcf_sort_confirm`
+(`%{count}`) (WP-29), all in en, de, fr and nl.
 
 ## 9. Accessibility / no-JS behaviour
 

@@ -251,6 +251,550 @@ RSpec.describe 'DCF value operation services' do
       expect { reorder(field, ordered_values: %w[A A B C]) }
         .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_reorder_mismatch) }
     end
+
+    # WP-29: additive audit keys; the reorder contract is unchanged.
+    def order_digest(keys)
+      Digest::SHA256.hexdigest(JSON.generate(keys))
+    end
+
+    def last_row(field)
+      RedmineDependingCustomFields::ConfigAuditEvent.where(custom_field_id: field.id).order(:id).last
+    end
+
+    it 'stores the SHA-256 of the old and the new order of a list (T-ORD-A)' do
+      field = dcf_list_field(values: %w[A B C], is_for_all: false, projects: [project])
+      reorder(field, ordered_values: %w[C A B])
+      row = last_row(field)
+      expect([row.action, row.status, row.changes_summary]).to eq(%w[reorder_values success] + ['Reordered values'])
+      expect(JSON.parse(row.before_value)).to eq('order_sha256' => order_digest(%w[A B C]))
+      expect(JSON.parse(row.after_value))
+        .to eq('order' => %w[C A B], 'truncated' => false, 'order_sha256' => order_digest(%w[C A B]))
+    end
+
+    it 'stores the SHA-256 of the enumeration ids in [position, id] order, inactive included (T-ORD-A)' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      x, y, z = field.enumerations.order(:position).to_a
+      y.update!(active: false)
+      x.update_column(:position, 1)
+      y.update_column(:position, 1)
+      z.update_column(:position, 2)
+      old_keys = [x, y].sort_by(&:id).map { |e| e.id.to_s } + [z.id.to_s]
+      submitted = [z, y, x].map { |e| e.id.to_s }
+      reorder(field, ordered_values: submitted)
+      row = last_row(field)
+      expect(JSON.parse(row.before_value)).to eq('order_sha256' => order_digest(old_keys))
+      expect(JSON.parse(row.after_value))
+        .to eq('order' => submitted, 'truncated' => false, 'order_sha256' => order_digest(submitted))
+      expect(field.enumerations.order(:position).pluck(:name, :position, :active))
+        .to eq([['Z', 1, true], ['Y', 2, false], ['X', 3, true]])
+    end
+
+    it 'keeps the first 20 entries and truncated next to the digest of the full order (T-ORD-A)' do
+      values = (1..25).map { |i| format('V%02d', i) }
+      field = dcf_list_field(values: values, is_for_all: false, projects: [project])
+      reorder(field, ordered_values: values.reverse)
+      after = JSON.parse(last_row(field).after_value)
+      expect(after).to eq('order' => values.last(20).reverse, 'truncated' => true,
+                          'order_sha256' => order_digest(values.reverse))
+    end
+
+    it 'chains the digests: the reorder before equals the sort after' do
+      field = dcf_enum_field(names: %w[c a b])
+      RedmineDependingCustomFields::SortValuesService
+        .new(project: project, field: field, user: user, params: { direction: 'asc' }).call
+      sort_after = JSON.parse(last_row(field).after_value)['order_sha256']
+      ids = field.enumerations.order(:position).map { |e| e.id.to_s }
+      reorder(field, ordered_values: ids.reverse)
+      expect(JSON.parse(last_row(field).before_value)['order_sha256']).to eq(sort_after)
+    end
+
+    it 'refuses the ids of another field padded to the same length; nothing changes' do
+      field = dcf_enum_field(names: %w[X Y Z])
+      other = dcf_enum_field(names: %w[P Q R])
+      before = field.enumerations.order(:position).pluck(:id, :position)
+      foreign = other.enumerations.order(:position).map { |e| e.id.to_s }
+      expect { reorder(field, ordered_values: foreign) }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_reorder_mismatch) }
+      expect(field.enumerations.order(:position).pluck(:id, :position)).to eq(before)
+      expect([last_row(field).status, last_row(field).error_message]).to eq(%w[validation_failed error_reorder_mismatch])
+    end
+  end
+
+  # --- Sort A-Z / Z-A (T-SORT-10..18, WP-29) ------------------------------
+  # Project design 6, UD-23 (no server confirmation), UD-24 (inactive
+  # enumerations sorted together with the active ones).
+  describe 'SortValuesService (WP-29)' do
+    let(:klass) { RedmineDependingCustomFields::SortValuesService }
+    let(:events) { RedmineDependingCustomFields::ConfigAuditEvent }
+
+    # The project first, so its INSERT and nested-set UPDATE stay out of the
+    # captured statements and the stubs.
+    before { project }
+
+    def sort(field, params)
+      RedmineDependingCustomFields::SortValuesService
+        .new(project: project, field: field, user: user, params: params).call
+    end
+
+    def digest(keys)
+      Digest::SHA256.hexdigest(JSON.generate(keys))
+    end
+
+    def rows(field)
+      events.where(custom_field_id: field.id).order(:id)
+    end
+
+    def own_list(values)
+      dcf_list_field(values: values, is_for_all: false, projects: [project])
+    end
+
+    def enum_state(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:position, :id).pluck(:name, :position, :active)
+    end
+
+    def enum_ids(field)
+      CustomFieldEnumeration.where(custom_field_id: field.id).order(:position, :id).pluck(:id).map(&:to_s)
+    end
+
+    def raw_store(field)
+      CustomField.where(id: field.id).pluck(Arel.sql('format_store')).first
+    end
+
+    # The SQL statements of the block (schema, cache and transaction ones
+    # left out).
+    def statements(&block)
+      sqls = []
+      callback = lambda do |*, payload|
+        next if payload[:name].to_s.match?(/\A(?:SCHEMA|CACHE|TRANSACTION)\z/)
+        next if payload[:sql].to_s.match?(/\A\s*(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/i)
+
+        sqls << payload[:sql].to_s
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record', &block)
+      sqls
+    end
+
+    def updates_of(sqls, table)
+      sqls.grep(/\AUPDATE\s+[`"]?#{table}[`"]?\s/i)
+    end
+
+    def expect_refused(key)
+      raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(key) }
+    end
+
+    describe 'list family' do
+      it 'sorts a list stably, ignoring case and accents (T-SORT-10, T-SORT-11)' do
+        field = own_list(['b', 'A', 'a', "\u00E9", 'e', 'B'])
+        sort(field, direction: 'asc')
+        expect(field.reload.possible_values).to eq(['A', 'a', 'b', 'B', "\u00E9", 'e'])
+        sort(field, direction: 'desc')
+        expect(field.reload.possible_values).to eq(["\u00E9", 'e', 'b', 'B', 'A', 'a'])
+      end
+
+      it 'folds accents and compares the folded keys lexicographically' do
+        field = own_list(['Zebra', "\u00E9cole", 'Apple', 'eagle', '2', '10'])
+        sort(field, direction: 'asc')
+        expect(field.reload.possible_values).to eq(['10', '2', 'Apple', 'eagle', "\u00E9cole", 'Zebra'])
+      end
+
+      # Project#all_issue_custom_fields is memoized: every field first.
+      it 'keeps the stored order of ties for desc too, so desc is not asc reversed (T-SORT-11)' do
+        desc_field = own_list(%w[b a B])
+        asc_field = own_list(%w[b a B])
+        lodz = own_list(["\u0141\u00F3d\u017A", 'lodz'])
+        sort(desc_field, direction: 'desc')
+        expect(desc_field.reload.possible_values).to eq(%w[b B a])
+        sort(asc_field, direction: 'asc')
+        expect(asc_field.reload.possible_values).to eq(%w[a b B])
+        sort(lodz, direction: 'asc')
+        expect(lodz.reload.possible_values).to eq(["\u0141\u00F3d\u017A", 'lodz'])
+        sort(lodz, direction: 'desc')
+        expect(lodz.reload.possible_values).to eq(["\u0141\u00F3d\u017A", 'lodz'])
+      end
+
+      it 'keeps stored duplicates' do
+        field = own_list(%w[B A C])
+        field.update_column(:possible_values, %w[B A B])
+        sort(field, direction: 'asc')
+        expect(field.reload.possible_values).to eq(%w[A B B])
+      end
+
+      it 'saves the field once and rewrites no CustomValue, default or dependency store (T-SORT-13)' do
+        parent = dcf_list_field(values: %w[C B A], is_for_all: false, projects: [project], default_value: 'B')
+        child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: %w[c1 c2],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[c1], 'C' => %w[c2] },
+                                    default_value_dependencies: { 'A' => 'c1' })
+        dcf_issue_with_value(project, parent, 'B')
+        dcf_custom_value(parent, 'C')
+        values_before = CustomValue.where(custom_field_id: parent.id).order(:id).pluck(:id, :value)
+        child_before = raw_store(child)
+        sqls = statements { sort(parent, direction: 'asc') }
+        parent.reload
+        expect(parent.possible_values).to eq(%w[A B C])
+        expect(parent.default_value).to eq('B')
+        expect(CustomValue.where(custom_field_id: parent.id).order(:id).pluck(:id, :value)).to eq(values_before)
+        expect(raw_store(child)).to eq(child_before)
+        expect(updates_of(sqls, 'custom_values')).to be_empty
+        expect(updates_of(sqls, 'custom_fields').size).to eq(1)
+        expect(rows(parent).last.affected_child_field_ids).to be_nil
+      end
+
+      it 'keeps the own dependency store of a depending list' do
+        parent = dcf_list_field(values: %w[P1 P2], is_for_all: false, projects: [project])
+        child = dcf_list_field(format: 'depending_list', name: "Child-#{SecureRandom.hex(3)}", values: %w[z y x],
+                               parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'P1' => %w[z x], 'P2' => %w[y] },
+                                    default_value_dependencies: { 'P1' => 'x' })
+        sort(child, direction: 'asc')
+        child.reload
+        expect(child.possible_values).to eq(%w[x y z])
+        expect(child.value_dependencies).to eq('P1' => %w[z x], 'P2' => %w[y])
+        expect(child.default_value_dependencies).to eq('P1' => 'x')
+      end
+    end
+
+    describe 'enumeration family' do
+      it 'gives every enumeration a position 1..N, inactive ones interleaved (T-SORT-12, UD-24)' do
+        field = dcf_enum_field(names: %w[c B a])
+        field.enumerations.find_by(name: 'B').update!(active: false)
+        names_before = CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name)
+        sort(field, direction: 'asc')
+        expect(enum_state(field)).to eq([['a', 1, true], ['B', 2, false], ['c', 3, true]])
+        expect(CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name)).to eq(names_before)
+      end
+
+      it 'keeps the stored order of ties and sorts desc on the same keys' do
+        field = dcf_enum_field(names: ['C', 'b', 'A', "\u00E4"])
+        field.enumerations.where(name: ['b', "\u00E4"]).update_all(active: false)
+        sort(field, direction: 'asc')
+        expect(enum_state(field)).to eq([['A', 1, true], ["\u00E4", 2, false], ['b', 3, false], ['C', 4, true]])
+        sort(field, direction: 'desc')
+        expect(enum_state(field)).to eq([['C', 1, true], ['b', 2, false], ['A', 3, true], ["\u00E4", 4, false]])
+      end
+
+      it 'renumbers gapped positions and counts the rows written as moved' do
+        field = dcf_enum_field(names: %w[a b c])
+        field.enumerations.order(:position).each_with_index { |e, i| e.update_column(:position, [2, 5, 7][i]) }
+        sort(field, direction: 'asc')
+        expect(enum_state(field)).to eq([['a', 1, true], ['b', 2, true], ['c', 3, true]])
+        expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(3)
+      end
+
+      it 'reads tied positions in [position, id] order' do
+        field = dcf_enum_field(names: %w[b a c])
+        field.enumerations.update_all(position: 1)
+        old_keys = enum_ids(field)
+        expect(old_keys).to eq(CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id).map(&:to_s))
+        sort(field, direction: 'asc')
+        expect(enum_state(field).map(&:first)).to eq(%w[a b c])
+        expect(JSON.parse(rows(field).last.before_value)['order_sha256']).to eq(digest(old_keys))
+      end
+
+      it 'updates only the changed rows, one CASE statement per CHUNK, saving no field (T-SORT-17)' do
+        stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
+        field = dcf_enum_field(names: %w[E D C B A])
+        middle = field.enumerations.find_by(name: 'C').id
+        sqls = statements { sort(field, direction: 'asc') }
+        expect(enum_state(field)).to eq([['A', 1, true], ['B', 2, true], ['C', 3, true], ['D', 4, true], ['E', 5, true]])
+        updates = updates_of(sqls, 'custom_field_enumerations')
+        expect(updates.size).to eq((4 / 2.0).ceil)
+        updates.each do |sql|
+          expect(sql).to match(/SET\s+position\s*=\s*CASE\s+id(\s+WHEN\s+\d+\s+THEN\s+\d+)+\s+ELSE\s+position\s+END/i)
+          expect(sql).to include('custom_field_id')
+          expect(sql.scan(/WHEN\s+(\d+)\s+THEN/).flatten).not_to include(middle.to_s)
+        end
+        expect(updates_of(sqls, 'custom_fields')).to be_empty
+        expect(updates_of(sqls, 'custom_values')).to be_empty
+        expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(4)
+      end
+
+      it 'sends the last chunk too when the changed rows do not fill it' do
+        stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
+        field = dcf_enum_field(names: %w[B C D E A])
+        sqls = statements { sort(field, direction: 'asc') }
+        expect(enum_state(field).map(&:first)).to eq(%w[A B C D E])
+        expect(updates_of(sqls, 'custom_field_enumerations').size).to eq((5 / 2.0).ceil)
+      end
+
+      it 'builds the SQL from integers only, whatever the labels' do
+        field = dcf_enum_field(names: ["x' THEN 0 END; DROP TABLE users; --", '%{a} ?', 'a'])
+        sqls = statements { sort(field, direction: 'asc') }
+        updates = updates_of(sqls, 'custom_field_enumerations')
+        expect(updates).not_to be_empty
+        updates.each do |sql|
+          expect(sql).not_to include('DROP TABLE')
+          expect(sql).not_to include('%{a}')
+        end
+        expect(enum_state(field).map(&:first)).to eq(['%{a} ?', 'a', "x' THEN 0 END; DROP TABLE users; --"])
+        expect(User.where(id: 1)).to exist
+      end
+
+      it 'rewrites no CustomValue of an enumeration field (T-SORT-13)' do
+        field = dcf_enum_field(names: %w[c b a])
+        b = field.enumerations.find_by(name: 'b')
+        dcf_issue_with_value(project, field, b.id)
+        before = CustomValue.where(custom_field_id: field.id).pluck(:id, :value)
+        sqls = statements { sort(field, direction: 'asc') }
+        expect(CustomValue.where(custom_field_id: field.id).pluck(:id, :value)).to eq(before)
+        expect(before.first.last).to eq(b.id.to_s)
+        expect(updates_of(sqls, 'custom_values')).to be_empty
+      end
+
+      it 'relies on CustomFieldEnumeration having no update callback (update_all skips none)' do
+        callbacks = (CustomFieldEnumeration._save_callbacks.to_a + CustomFieldEnumeration._update_callbacks.to_a)
+                    .map { |callback| callback.filter.to_s }
+        expect(callbacks.reject { |name| name.start_with?('autosave_associated_records_for_') }).to eq([])
+      end
+    end
+
+    describe 'no-op' do
+      it 'writes nothing for an already sorted list and still audits it with moved 0 (T-SORT-14)' do
+        field = own_list(%w[A b C])
+        hash_before = RedmineDependingCustomFields::BaseService.state_hash(field)
+        sqls = statements { sort(field, direction: 'asc') }
+        expect(sqls.grep(/\AUPDATE/i)).to be_empty
+        expect(sqls.grep(/\AINSERT/i).size).to eq(1)
+        expect(sqls.grep(/\AINSERT/i).first).to include('dcf_config_audit_events')
+        expect(RedmineDependingCustomFields::BaseService.state_hash(field.reload)).to eq(hash_before)
+        row = rows(field).last
+        before = JSON.parse(row.before_value)
+        after = JSON.parse(row.after_value)
+        expect([row.action, row.status, row.changes_summary]).to eq(['sort_values', 'success', 'Sorted 3 value(s) A-Z (0 moved)'])
+        expect(after['moved']).to eq(0)
+        expect(after['order_sha256']).to eq(before['order_sha256'])
+      end
+
+      it 'writes nothing for a list stored in reverse when sorted desc' do
+        field = own_list(%w[c B a])
+        sqls = statements { sort(field, direction: 'desc') }
+        expect(sqls.grep(/\AUPDATE/i)).to be_empty
+        expect(rows(field).last.changes_summary).to eq('Sorted 3 value(s) Z-A (0 moved)')
+      end
+
+      it 'writes nothing for enumerations already at 1..N in sorted order' do
+        field = dcf_enum_field(names: %w[a B c])
+        field.enumerations.find_by(name: 'B').update!(active: false)
+        sqls = statements { sort(field, direction: 'asc') }
+        expect(sqls.grep(/\AUPDATE/i)).to be_empty
+        expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(0)
+      end
+
+      it 'audits a field with one value or none as a no-op' do
+        [own_list(%w[Only]), dcf_enum_field(names: [])].each do |field|
+          sqls = statements { sort(field, direction: 'desc') }
+          expect(sqls.grep(/\AUPDATE/i)).to be_empty
+          expect(rows(field).last.status).to eq('success')
+        end
+      end
+    end
+
+    describe 'audit row (T-SORT-18)' do
+      it 'stores counts, direction, moved and the SHA-256 of the old and the new list order' do
+        field = own_list(%w[D a c b])
+        sort(field, direction: 'desc')
+        row = rows(field).last
+        before = JSON.parse(row.before_value)
+        after = JSON.parse(row.after_value)
+        expect(before.keys.sort).to eq(%w[count order_sha256])
+        expect(after.keys.sort).to eq(%w[count direction moved order_sha256])
+        expect(before).to eq('count' => 4, 'order_sha256' => digest(%w[D a c b]))
+        expect(after).to eq('direction' => 'desc', 'count' => 4, 'moved' => 3, 'order_sha256' => digest(%w[D c b a]))
+        expect(row.changes_summary).to eq('Sorted 4 value(s) Z-A (3 moved)')
+        expect(row.affected_child_field_ids).to be_nil
+        expect([row.action, row.status, row.error_message]).to eq(['sort_values', 'success', nil])
+      end
+
+      it 'digests enumeration ids as Strings, inactive included, and counts every value' do
+        field = dcf_enum_field(names: %w[c a b])
+        field.enumerations.find_by(name: 'a').update!(active: false)
+        old_keys = enum_ids(field)
+        sort(field, direction: 'asc')
+        new_keys = enum_ids(field)
+        row = rows(field).last
+        expect(JSON.parse(row.before_value)).to eq('count' => 3, 'order_sha256' => digest(old_keys))
+        expect(JSON.parse(row.after_value))
+          .to eq('direction' => 'asc', 'count' => 3, 'moved' => 3, 'order_sha256' => digest(new_keys))
+        expect(row.changes_summary).to eq('Sorted 3 value(s) A-Z (3 moved)')
+      end
+
+      it 'keeps labels out of the row' do
+        field = own_list(%w[SECRET-B SECRET-A])
+        sort(field, direction: 'asc')
+        row = rows(field).last
+        [row.before_value, row.after_value, row.changes_summary].each { |text| expect(text).not_to include('SECRET') }
+      end
+
+      it 'computes the digest with ::JSON.generate over the keys (golden values)' do
+        expect(klass.order_sha256([])).to eq('4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945')
+        keys = ['10', '2', 'a"b', 'c\\d', 'x/y', '<b>', "\u00E9", "\u2028"]
+        expect(klass.order_sha256(keys)).to eq('05a34bb27c72e5d2a301baa232021c1df7daf1865b183d97f4f77fce6e4d81fb')
+      end
+
+      it 'never raises on a binary or invalid key' do
+        expect(klass.order_sha256(["\xC5\x81".b])).to eq(klass.order_sha256(["\u0141"]))
+        expect { klass.order_sha256(["\xFF\xFEx".b, (+"\xC3").force_encoding('UTF-8')]) }.not_to raise_error
+      end
+    end
+
+    describe 'refusals' do
+      it 'refuses any direction but asc or desc with 422 and one validation_failed row (T-SORT-15)' do
+        field = own_list(%w[b a])
+        [nil, '', 'ASC', ' asc', 'up', :asc, %w[asc], { 'x' => 'asc' }].each do |direction|
+          expect { sort(field, direction: direction) }.to expect_refused(:error_reorder_mismatch)
+          row = rows(field).last
+          expect([row.action, row.status, row.error_message, row.changes_summary])
+            .to eq(['validation_failed', 'validation_failed', 'error_reorder_mismatch', nil])
+        end
+        expect { sort(field, {}) }.to expect_refused(:error_reorder_mismatch)
+        expect(field.reload.possible_values).to eq(%w[b a])
+        expect(rows(field).where(status: 'success')).to be_empty
+      end
+
+      it 'refuses a stale state_hash with 409 and applies nothing; a blank one is not checked (T-SORT-16)' do
+        field = dcf_enum_field(names: %w[c b a])
+        before = enum_state(field)
+        expect { sort(field, direction: 'asc', state_hash: 'stale') }.to raise_error(
+          RedmineDependingCustomFields::OperationError
+        ) { |e| expect([e.key, e.http_status]).to eq([:error_stale_edit, :conflict]) }
+        expect(enum_state(field)).to eq(before)
+        expect([rows(field).last.status, rows(field).last.error_message]).to eq(%w[validation_failed error_stale_edit])
+        expect { sort(field, direction: 'up', state_hash: 'stale') }.to expect_refused(:error_stale_edit)
+        sort(field, direction: 'asc', state_hash: '')
+        expect(enum_state(field).map(&:first)).to eq(%w[a b c])
+        sort(field, direction: 'desc', state_hash: RedmineDependingCustomFields::BaseService.state_hash(field))
+        expect(enum_state(field).map(&:first)).to eq(%w[c b a])
+      end
+
+      it 'refuses a user without the permission with one authorization_failed row (T-SORT-17)' do
+        field = own_list(%w[b a])
+        stranger = dcf_plain_member(project)
+        expect do
+          klass.new(project: project, field: field, user: stranger, params: { direction: 'asc' }).call
+        end.to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.http_status).to eq(:forbidden) }
+        row = rows(field).last
+        expect([row.action, row.status, row.error_message]).to eq(%w[authorization_failed authorization_failed error_forbidden])
+        expect(rows(field).count).to eq(1)
+        expect(field.reload.possible_values).to eq(%w[b a])
+      end
+
+      # Core refuses every action on an archived project, the administrator
+      # included, so the preamble's permission check answers there.
+      it 'refuses a closed or an archived project with 403 and writes nothing' do
+        { closed: :error_project_archived, archived: :error_forbidden }.each do |status, key|
+          other = dcf_create_project(name: "P-#{status}", status: status)
+          field = dcf_enum_field(names: %w[c b a])
+          before = enum_state(field)
+          expect do
+            klass.new(project: other, field: field, user: dcf_admin, params: { direction: 'asc' }).call
+          end.to raise_error(RedmineDependingCustomFields::OperationError) { |e|
+            expect([e.key, e.http_status]).to eq([key, :forbidden])
+          }
+          expect(enum_state(field)).to eq(before)
+        end
+      end
+
+      it 'asks no confirmation for a global or a shared field and ignores confirm (UD-23)' do
+        global = dcf_list_field(values: %w[c b a], is_for_all: true)
+        shared = dcf_list_field(values: %w[c b a], is_for_all: false, projects: [project, dcf_create_project(name: 'O')])
+        [[global, nil], [shared, '0']].each do |field, confirm|
+          expect { sort(field, direction: 'asc', confirm: confirm) }.not_to raise_error
+          expect(field.reload.possible_values).to eq(%w[a b c])
+        end
+      end
+    end
+
+    describe 'transaction and storage errors' do
+      it 'rolls every chunk back when the audit insert fails' do
+        stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
+        field = dcf_enum_field(names: %w[E D C B A])
+        list = own_list(%w[c b a])
+        before = enum_state(field)
+        allow_any_instance_of(RedmineDependingCustomFields::AuditRecorder)
+          .to receive(:record_success!).and_raise(StandardError, 'boom')
+        expect { sort(field, direction: 'asc') }.to raise_error(StandardError, 'boom')
+        expect(enum_state(field)).to eq(before)
+        expect { sort(list, direction: 'asc') }.to raise_error(StandardError, 'boom')
+        expect(list.reload.possible_values).to eq(%w[c b a])
+      end
+
+      it 'maps ValueTooLong to a save_failed row without SQL or a value' do
+        field = dcf_enum_field(names: %w[c b a])
+        before = enum_state(field)
+        allow_any_instance_of(ActiveRecord::Relation).to receive(:update_all)
+          .and_raise(ActiveRecord::ValueTooLong, "PG::Error: SECRET-SQL 'Label X'")
+        expect { sort(field, direction: 'asc') }.to expect_refused(:error_dcf_value_too_long)
+        row = rows(field).last
+        expect([row.status, row.error_message]).to eq(%w[save_failed error_dcf_value_too_long])
+        expect(row.attributes.values.join(' ')).not_to include('SECRET-SQL')
+        expect(enum_state(field)).to eq(before)
+      end
+
+      it 'lets any other database error propagate unaudited, without its message in a row' do
+        field = dcf_enum_field(names: %w[c b a])
+        before = enum_state(field)
+        allow_any_instance_of(ActiveRecord::Relation).to receive(:update_all)
+          .and_raise(ActiveRecord::StatementInvalid, "PG::Error: SECRET-SQL 'Label X'")
+        expect { sort(field, direction: 'asc') }.to raise_error(ActiveRecord::StatementInvalid)
+        expect(enum_state(field)).to eq(before)
+        expect(events.all.map { |row| row.attributes.values.join(' ') }.join).not_to include('SECRET-SQL')
+      end
+    end
+
+    describe 'hidden children' do
+      it 'leaves a role-invisible child byte-identical and out of the row' do
+        other_role = dcf_create_role
+        parent = own_list(%w[B A])
+        child = dcf_list_field(format: 'depending_list', name: "HIDDEN-CHILD-#{SecureRandom.hex(3)}",
+                               values: %w[SECRET-V], parent: parent, is_for_all: false, projects: [project])
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[SECRET-V], 'B' => %w[SECRET-V] })
+        child.update!(visible: false, role_ids: [other_role.id])
+        before = raw_store(child)
+        sort(parent, direction: 'asc')
+        expect(raw_store(child)).to eq(before)
+        row = rows(parent).last
+        expect(row.affected_child_field_ids).to be_nil
+        expect(row.attributes.values.join(' ')).not_to include('HIDDEN-CHILD')
+        expect(row.attributes.values.join(' ')).not_to include('SECRET-V')
+      end
+    end
+
+    # G6: the invariance and exact-relation forms, never absolute counts.
+    describe 'query shape (G6)' do
+      def reversed_enums(count)
+        field = dcf_enum_field(names: [])
+        CustomFieldEnumeration.insert_all(
+          (1..count).map { |i| { custom_field_id: field.id, name: format('N%04d', count + 1 - i), position: i, active: true } }
+        )
+        CustomField.find(field.id)
+      end
+
+      it 'issues ceil(moved / CHUNK) UPDATE statements and the same other statements for 30 and 300 values' do
+        stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 10)
+        small = reversed_enums(30)
+        large = reversed_enums(300)
+        sort(own_list(%w[b a]), direction: 'asc')
+        small_sqls = statements { sort(small, direction: 'asc') }
+        large_sqls = statements { sort(large, direction: 'asc') }
+        expect(updates_of(small_sqls, 'custom_field_enumerations').size).to eq(30 / 10)
+        expect(updates_of(large_sqls, 'custom_field_enumerations').size).to eq(300 / 10)
+        expect(enum_state(large).map(&:first).first(2)).to eq(%w[N0001 N0002])
+        rest = ->(sqls) { sqls.grep_v(/\AUPDATE/i).size }
+        expect(rest.call(large_sqls)).to eq(rest.call(small_sqls))
+      end
+
+      it 'sorts 25,000 enumerations with 50 UPDATE statements; the sort itself under 1 s', :perf do
+        field = reversed_enums(25_000)
+        labels = CustomFieldEnumeration.where(custom_field_id: field.id).pluck(:name)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        RedmineDependingCustomFields::ValueCollation.sort(labels)
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        sqls = statements { sort(field, direction: 'asc') }
+        puts format('DCF PERF sort 25000 labels %.3f s', elapsed)
+        expect(updates_of(sqls, 'custom_field_enumerations').size).to eq(25_000 / 500)
+        expect(elapsed).to be < 1.0
+      end
+    end
   end
 
   # --- Set default value (T-DEF-3) ---------------------------------------

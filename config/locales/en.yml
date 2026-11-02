@@ -197,6 +197,10 @@ en:
   text_dcf_values_filtered: "Values matching the filter: %{count} of %{total}."
   text_dcf_drag_reorder_large: "Drag-and-drop ordering is available for fields with at most %{max} values. Use the sort buttons to order this field."
   text_dcf_drag_reorder_filtered: "Clear the filter to change the order by drag-and-drop."
+  notice_values_sorted: "Values sorted."
+  label_dcf_sort_az: "Sort A-Z"
+  label_dcf_sort_za: "Sort Z-A"
+  text_dcf_sort_confirm: "All values of this field (%{count}) will be sorted alphabetically and the current order will be replaced. Continue?"
 
   # Model errors, shown after the field name
   activerecord:

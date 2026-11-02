@@ -197,6 +197,10 @@ nl:
   text_dcf_values_filtered: "Waarden die aan de filter voldoen: %{count} van %{total}."
   text_dcf_drag_reorder_large: "Ordenen met slepen en neerzetten is beschikbaar voor velden met maximaal %{max} waarden. Gebruik de sorteerknoppen om dit veld te ordenen."
   text_dcf_drag_reorder_filtered: "Wis de filter om de volgorde met slepen en neerzetten te wijzigen."
+  notice_values_sorted: "Waarden gesorteerd."
+  label_dcf_sort_az: "Sorteren A-Z"
+  label_dcf_sort_za: "Sorteren Z-A"
+  text_dcf_sort_confirm: "Alle waarden van dit veld (%{count}) worden alfabetisch gesorteerd en de huidige volgorde wordt vervangen. Doorgaan?"
 
   # Modelfouten, getoond na de veldnaam
   activerecord:

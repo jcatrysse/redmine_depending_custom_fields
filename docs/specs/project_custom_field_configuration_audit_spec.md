@@ -96,6 +96,7 @@ before 0.1.0 keep the full mapping; no view reads `before_value` or
 | `rename_value` | value / enumeration renamed |
 | `remove_value` | value / enumeration removed |
 | `reorder_values` | order/position changed |
+| `sort_values` | values sorted A-Z or Z-A (from 0.1.0, Amendment A6, WP-29) |
 | `update_enumerations` | batched enumeration save: names / positions / active flags |
 | `set_default_value` | the field's plain `default_value` set or cleared |
 | `update_dependencies` | value dependency mapping changed |
@@ -130,6 +131,20 @@ before 0.1.0 keep the full mapping; no view reads `before_value` or
   [A]` with `error_message` `error_invalid_dependency`; a request that reaches
   the service without the permission `authorization_failed` with
   `error_message` `error_forbidden` and no summary.
+- `sort_values` examples (0.1.0, Amendment A6, WP-29): `before`
+  `{"count":4,"order_sha256":"<sha>"}`, `after`
+  `{"direction":"desc","count":4,"moved":3,"order_sha256":"<sha>"}`, summary
+  `Sorted 4 value(s) Z-A (3 moved)`; an already sorted field gives `moved` 0
+  and equal digests; a refused direction gives `validation_failed` with
+  `error_message` `error_reorder_mismatch` and no summary (the posted value is
+  never stored). No labels and no `affected_child_field_ids`.
+- `reorder_values` from 0.1.0 (Amendment A6, WP-29): `before`
+  `{"order_sha256":"<sha>"}` and `after`
+  `{"order":[first 20],"truncated":false,"order_sha256":"<sha>"}`. The digest
+  is the SHA-256 of `::JSON.generate` over the ordered keys (Operations §J), so
+  a reorder's `before` equals the `after` of the previous sort or reorder when
+  no other value operation (add, rename, remove, update_enumerations) ran on
+  the field in between.
 
 ## 6. Transactional guarantee
 

@@ -76,6 +76,12 @@ block), mapping the new project-scoped controller's actions:
 > `require: :member` ensures the permission cannot be assigned to the built-in
 > Non-member or Anonymous roles, closing the public-project hole by construction.
 
+From 0.1.0 (Amendment A6, WP-29) the permission also lists `sort_values`
+(sort A-Z / Z-A). No new permission: every role that already holds
+`manage_project_custom_field_configuration` gets the action automatically
+(CHANGELOG upgrade note). Non-members, members without the permission and
+managers of another project get 403; anonymous users are sent to the login.
+
 ## 5. Routes requiring the permission
 
 All routes under `/projects/:project_id/custom_field_configuration/...`
@@ -118,7 +124,9 @@ Failure → raise a typed error mapped to 403/404/422 (and audited).
 - **All write actions** (`add_value`, `rename_value`, `remove_value`,
   `reorder_values`, `update_dependencies`) run a `require_active_project`
   `before_action` that returns **403 `error_project_archived`** when
-  `!@project.active?`.
+  `!@project.active?`. From 0.1.0 (Amendment A6, WP-29) `sort_values` too, for
+  the manager and for an administrator; an archived project is refused earlier
+  by core `authorize` (403).
 - This controller guard — not the `read:` flag — is the read/write boundary for
   archived projects.
 

@@ -197,6 +197,14 @@ Params: `ordered_values` (array of existing value identifiers).
    `CustomValue` rewrite — reorder changes display order only, not value
    identity, so no key/string references change.
 
+From 0.1.0 (Amendment A6, WP-28 and WP-29): the drag that posts this
+operation is offered only for unfiltered lists of at most 500 values; larger or
+filtered lists use sort (§J). The contract is unchanged; the enumeration rows
+are looked up by id through a Hash (`index_by`). The row stores `before`
+`{"order_sha256": ...}` (the order before the change) and `after`
+`{"order": [first 20], "truncated": ..., "order_sha256": ...}` (the submitted
+order); the digest is that of §J.
+
 ## E. Update enumerations (batch — ENUM_FAMILY only)
 
 Params: `enumerations` => `{ "<id>" => { name:, position:, active: } }`.
@@ -344,6 +352,36 @@ F and G are one operation, `DependencyMappingService`, audited as
    (parsed once, after authorization), with the shared conflict panel (use my
    version, keep the current version, export my version; UD-17).
 
+## J. Sort values (from 0.1.0, Amendment A6, WP-29)
+
+Params: `direction` (`asc` or `desc`), `state_hash` (optional, as everywhere).
+1. Preamble (permission, relevance, format, active project, `state_hash`).
+2. `direction` must be exactly the String `asc` or `desc` (no strip, no case
+   folding), else `error_reorder_mismatch` (422, audited `validation_failed`).
+3. Sort every value with the stable `ValueCollation.sort`: the key ignores case
+   and accents, ties keep their stored order in both directions, so `desc` is
+   not `asc` reversed.
+   **List:** the raw `possible_values` (duplicates kept); when any index
+   changes, assign the sorted list and `field.save!` once.
+   **Enumeration:** every entry, inactive ones included and sorted among the
+   active ones (UD-24), read once in `[position, id]` order; target positions
+   are 1..N; only rows whose stored position changes are written, in slices of
+   `SortValuesService::CHUNK` (500), each one
+   `UPDATE ... SET position = CASE id WHEN ? THEN ? ... ELSE position END
+   WHERE custom_field_id = ? AND id IN (...)` with integers only. The custom
+   field itself is not saved (no update callbacks exist on
+   `CustomFieldEnumeration` in 5.1 to 7.0).
+4. No `CustomValue` rewrite and no cascade; defaults and dependency stores stay
+   as they are. An already sorted field writes nothing and is still audited.
+5. Audit `sort_values`: `before` `{"count": N, "order_sha256": ...}`, `after`
+   `{"direction": ..., "count": N, "moved": M, "order_sha256": ...}`, summary
+   `Sorted N value(s) A-Z (M moved)` (or `Z-A`). N counts every value, M the
+   list indices or enumeration rows that changed. `order_sha256` is the SHA-256
+   of `::JSON.generate` over the ordered keys (list values, or enumeration ids
+   as Strings, inactive included), scrubbed to valid UTF-8 first.
+6. No server confirmation, shared and global fields included (UD-23): the
+   buttons ask through `data-confirm` only.
+
 ## Normalization & comparison rules
 
 - `normalize` = `value.to_s.strip`. Do not alter case (Redmine list values are
@@ -364,6 +402,7 @@ F and G are one operation, `DependencyMappingService`, audited as
 | Blank value | 422 | error_value_blank |
 | Duplicate value | 422 | error_value_duplicate |
 | Reorder mismatch | 422 | error_reorder_mismatch |
+| Sort direction other than `asc` or `desc` (Amendment A6, WP-29) | 422 | error_reorder_mismatch |
 | Batch save: name taken by another active value | 422 | error_value_duplicate |
 | Batch save: submitted ids do not cover the value set | 422 | error_reorder_mismatch |
 | Invalid dependency | 422 | error_invalid_dependency |

@@ -437,3 +437,57 @@ section 7; decisions UD-16, UD-17, UD-23.
   version, export my version); nothing is applied automatically (UD-17).
   Every re-render reloads the field first, so correcting a failed save and
   saving again no longer gives a 409 (R9).
+
+## Amendment A6: Search, pagination and sort on the values page (0.1.0, WP-28 and WP-29)
+
+Written by WP-29 (`large_lists_work_packages.md`) for the parts built by WP-28
+and WP-29; WP-30 and WP-31 add theirs and WP-32 finalizes it. Design:
+`large_lists_project_design.md` sections 5 and 6; decisions UD-21, UD-23,
+UD-24.
+
+- **Search (WP-28).** Above 25 values, or whenever `q` is present, the values
+  page shows a search box in core filter markup. `q` is folded with
+  `ValueCollation` (the tables of the editor fold), split into tokens, and a
+  value matches when its folded label contains every token; a `q` whose folded
+  key is empty filters nothing. A filtered page with no match shows
+  `text_dcf_no_matches` and a Clear link.
+- **Pagination (WP-28).** Above 500 values the page is paginated with core
+  `pagination_links_full` (per page capped at 500, page clamped). Drag-and-drop
+  ordering is offered only for unfiltered lists of at most 500 values (UD-21);
+  `text_dcf_drag_reorder_large` and `text_dcf_drag_reorder_filtered` explain
+  why it is missing. Value forms and redirects keep `q` and `page`; add_value
+  jumps to the page of the new value. 'Show usage' counts are exact
+  (`UsageCalculator.page_usage`). Project rules live in `dcf_config.css`.
+- **Sort (WP-29).** `PATCH .../fields/:field_id/values/sort` (`sort_values`),
+  listed under `manage_project_custom_field_configuration` next to
+  `reorder_values`, so every role that holds the permission gets it without a
+  migration (upgrade note); `find_field` and `require_active_project` run
+  first, so a closed project answers 403 before any write. `direction` must be
+  exactly `asc` or `desc`, else an audited 422 `error_reorder_mismatch`.
+  `SortValuesService` sorts every value with the stable `ValueCollation.sort`
+  (case and accents ignored, ties keep their stored order in both directions).
+  Lists save the sorted `possible_values` with one `save!`; enumerations,
+  inactive ones included and sorted among the active ones (UD-24), get
+  positions 1..N through one `CASE id WHEN ... ELSE position END` update per
+  500 changed rows, scoped to the field. No `CustomValue` rewrite and no
+  cascade. An already sorted field writes nothing and is still audited
+  (`moved` 0). The row stores `count` and `order_sha256` before, and
+  `direction`, `count`, `moved` and `order_sha256` after; the summary reads
+  `Sorted N value(s) A-Z (M moved)` (or `Z-A`). The toolbar shows Sort A-Z and
+  Sort Z-A whenever the field has more than one value; they post `direction`,
+  `state_hash` and a filtering `q`, never the page, and ask through a
+  rails-ujs `data-confirm` that counts every value. There is no server
+  confirmation panel, shared and global fields included (UD-23); the server
+  checks (403, 409, 422) are the guard. The redirect keeps a filtering `q` and
+  drops the page.
+- **Reorder (WP-29).** The `ordered_values[]` contract is unchanged; the
+  enumeration lookup is a Hash (`index_by`) and the audit row gains
+  `before.order_sha256` and `after.order_sha256` (additive).
+- **Order digest.** `order_sha256` is the SHA-256 of `::JSON.generate` over the
+  ordered keys (list values, or enumeration ids as Strings in
+  `[position, id]` order, inactive included); keys are scrubbed to valid UTF-8
+  first, so it never raises (`SortValuesService.order_sha256`).
+- **Still to come.** WP-30: the page-scoped enumeration save (`batch_scope`)
+  and its leave warning. WP-31: the project storage ceiling, the 255-character
+  value cap and `save_field!` in every project service (sort and reorder
+  included). The parameter budget of project design 8 is finalized with them.

@@ -1,7 +1,8 @@
 module RedmineDependingCustomFields
-  # Operation D — reorder possible values / enumeration positions. The submitted
+  # Operation D: reorder possible values / enumeration positions. The submitted
   # set must be an exact permutation of the current set. No CustomValue rewrite
-  # or cascade (identity is unchanged). See Operations Spec §D.
+  # or cascade (identity is unchanged). See Operations Spec §D. The audit row
+  # carries the SHA-256 of the old and the new order (WP-29, additive).
   class ReorderValuesService < BaseService
     def audit_action
       'reorder_values'
@@ -13,18 +14,23 @@ module RedmineDependingCustomFields
       submitted = Array(@params[:ordered_values]).map(&:to_s)
 
       if list_family?
-        validate_permutation!(submitted, possible_values.map(&:to_s))
+        current = possible_values.map(&:to_s)
+        validate_permutation!(submitted, current)
         field.possible_values = submitted
         field.save!
       else
         enums = field.enumerations.to_a
-        validate_permutation!(submitted, enums.map { |e| e.id.to_s })
+        current = enums.sort_by { |e| [e.position.to_i, e.id] }.map { |e| e.id.to_s }
+        validate_permutation!(submitted, current)
+        by_id = enums.index_by { |e| e.id.to_s }
         submitted.each_with_index do |id, idx|
-          enums.find { |e| e.id.to_s == id }.update!(position: idx + 1)
+          by_id.fetch(id).update!(position: idx + 1)
         end
       end
 
-      Outcome.new(after: { order: submitted.first(20), truncated: submitted.length > 20 },
+      Outcome.new(before: { order_sha256: SortValuesService.order_sha256(current) },
+                  after: { order: submitted.first(20), truncated: submitted.length > 20,
+                           order_sha256: SortValuesService.order_sha256(submitted) },
                   summary: 'Reordered values')
     end
 

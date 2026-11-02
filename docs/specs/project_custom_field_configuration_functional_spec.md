@@ -160,6 +160,17 @@ See Operations Spec §B for the exact algorithm and the journal/cache note.
 3. **List:** reorder `possible_values`. **Enumeration:** update `position`.
 4. Save; audit; flash `notice_values_reordered`.
 
+From 0.1.0 (Amendment A6, WP-28 and WP-29) drag is offered only for unfiltered
+lists of at most 500 values. **Sort A-Z / Z-A** orders every value of the field
+in one step, also on filtered or paginated pages: the buttons appear whenever
+the field has more than one value and ask for confirmation in the browser
+(`text_dcf_sort_confirm`, with the count of every value; no server panel,
+UD-23). Case and accents are ignored, ties keep their order, inactive
+Key/Value entries are sorted among the active ones (UD-24). Nothing else
+changes: no stored issue value, default or dependency is rewritten. The flash
+is `notice_values_sorted`; the page returns to page 1 with the search kept.
+An already sorted field is left as it is and still audited.
+
 ## 13. Enumeration value management flow
 
 - Add: create `CustomFieldEnumeration(name, position, active: true)`.

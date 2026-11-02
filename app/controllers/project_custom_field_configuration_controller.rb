@@ -12,11 +12,11 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   before_action :authorize
   before_action :ensure_audit_table
   before_action :find_field, only: %i[show add_value rename_value remove_value
-                                       reorder_values update_enumerations set_default_value
+                                       reorder_values sort_values update_enumerations set_default_value
                                        edit_dependencies update_dependencies]
   before_action :require_dependency_capable, only: %i[edit_dependencies update_dependencies]
   before_action :require_active_project, only: %i[add_value rename_value remove_value
-                                                  reorder_values update_enumerations
+                                                  reorder_values sort_values update_enumerations
                                                   set_default_value update_dependencies]
 
   # Overview lives inline in the Project → Settings tab; the canonical URL just
@@ -47,6 +47,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   def reorder_values
     perform_value_operation(RedmineDependingCustomFields::ReorderValuesService,
                             action: :reorder_values, notice: :notice_values_reordered)
+  end
+
+  # Sort A-Z / Z-A (WP-29): no confirmation panel (UD-23); the buttons ask
+  # through data-confirm only.
+  def sort_values
+    perform_value_operation(RedmineDependingCustomFields::SortValuesService,
+                            action: :sort_values, notice: :notice_values_sorted)
   end
 
   # Batch save of the enumeration table: names + positions + active flags in one
@@ -133,7 +140,7 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     render_error(message: translate_error(:error_project_archived), status: :forbidden)
   end
 
-  # Fail closed when the audit table is missing (migration not run) — never
+  # Fail closed when the audit table is missing (migration not run): never
   # apply an un-auditable change (Audit Spec §10, Product §16).
   def ensure_audit_table
     return if RedmineDependingCustomFields::ConfigAuditEvent.table_exists?
@@ -181,9 +188,11 @@ class ProjectCustomFieldConfigurationController < ApplicationController
 
   # Where a successful value operation returns (project design 5): the posted
   # q when it filters and page when above 1; add_value drops q and jumps to
-  # the page of the new value. An empty Hash gives the bare field path.
+  # the page of the new value; sort_values keeps q and drops the page. An
+  # empty Hash gives the bare field path.
   def redirect_state(action)
     return add_value_state if action == :add_value
+    return RedmineDependingCustomFields::ValuesPage.state_for(params[:q], nil) if action == :sort_values
 
     RedmineDependingCustomFields::ValuesPage.state_for(params[:q], params[:page])
   end
@@ -237,9 +246,10 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   def value_params
     # `enumerations` arrives as a hash of hashes keyed by enumeration id; permit
     # only the three editable attributes per row (same shape core permits in
-    # CustomFieldEnumerationsController#update_each_params).
+    # CustomFieldEnumerationsController#update_each_params). direction is a
+    # scalar (sort_values); q and page are read from params, never permitted.
     params.permit(:value, :position, :old_value, :new_value, :enumeration_id,
-                  :default_value, :confirm, :state_hash,
+                  :default_value, :confirm, :state_hash, :direction,
                   ordered_values: [],
                   enumerations: %i[name position active]).to_h.symbolize_keys
   end

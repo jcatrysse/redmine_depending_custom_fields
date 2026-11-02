@@ -197,6 +197,10 @@ de:
   text_dcf_values_filtered: "Werte, die dem Filter entsprechen: %{count} von %{total}."
   text_dcf_drag_reorder_large: "Die Sortierung per Drag-and-drop ist für Felder mit höchstens %{max} Werten verfügbar. Verwenden Sie die Sortierschaltflächen, um dieses Feld zu ordnen."
   text_dcf_drag_reorder_filtered: "Setzen Sie den Filter zurück, um die Reihenfolge per Drag-and-drop zu ändern."
+  notice_values_sorted: "Werte sortiert."
+  label_dcf_sort_az: "A-Z sortieren"
+  label_dcf_sort_za: "Z-A sortieren"
+  text_dcf_sort_confirm: "Alle Werte dieses Feldes (%{count}) werden alphabetisch sortiert und die aktuelle Reihenfolge wird ersetzt. Fortfahren?"
 
   # Modellfehler, nach dem Feldnamen angezeigt
   activerecord:

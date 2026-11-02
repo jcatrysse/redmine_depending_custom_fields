@@ -24,6 +24,13 @@ Add, after existing registrations (no removal of existing lines):
    guard on the write actions — **not** via the `read:` flag (which is not
    per-action). See Permissions Spec §4/§9.
 
+   From 0.1.0 (Amendment A6, WP-29) the action list also holds `sort_values`,
+   next to `reorder_values` (the list as built also has `update_enumerations`
+   and `set_default_value` and grants `projects/settings`). Every role that
+   already holds the permission gets the new action without a migration,
+   because Redmine resolves actions at runtime (upgrade note); `require:` and
+   `read:` are unchanged.
+
 2. **New `require_relative`s** for the new patch + (optionally) eager files,
    following the existing `require_relative` style at the top of `init.rb`.
 
@@ -99,6 +106,15 @@ end
 > every project action is scoped under `/projects/:project_id/...`, all actions
 > are HTML (not `format: 'json'`), and the global audit route is admin-only.
 > Validate with `bundle exec rake routes`.
+
+From 0.1.0 (Amendment A6, WP-29), next to the reorder route of the flat block:
+```
+patch 'custom_field_configuration/fields/:field_id/values/sort',
+      to: 'project_custom_field_configuration#sort_values',
+      as: 'custom_field_configuration_sort_values'
+```
+PATCH only, HTML only (no format default); the literal `values/sort` does not
+clash with `values/rename` or `values/reorder`.
 
 > **Global audit (independent-review fix #6):** the global, cross-project audit
 > view promised by the Audit Spec needs its **own admin-only route + controller**
@@ -179,6 +195,11 @@ Notes / compatibility:
 - `before_action :find_field` for field-scoped actions (relevance + supported-
   format check here; standard formats additionally gated by the
   `manage_standard_custom_fields` setting rule).
+- From 0.1.0 (Amendment A6, WP-29) `sort_values` is in the `find_field` and the
+  `require_active_project` lists: a foreign field answers 404, an unsupported
+  format 422 and a closed project 403 `error_project_archived`, all before the
+  service runs, so nothing is written and no audit row is added. Its success
+  redirect keeps a filtering `q` and drops the page.
 - HTML responses; **no `accept_api_auth`** in v1.
 - Mutating actions redirect back to
   `project_settings_path(@project, tab: 'custom_field_configuration')` (overview
