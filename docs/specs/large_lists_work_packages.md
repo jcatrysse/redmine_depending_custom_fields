@@ -1,6 +1,6 @@
 # Large lists: work packages
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-32. Decisions: UD-01 to UD-39.
+> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-36. Decisions: UD-01 to UD-39.
 
 ## Purpose
 
@@ -50,6 +50,10 @@ This document cuts the plan into 32 small, reversible work packages (one pull re
 | WP-30 | 0.1.0 (M3) | M | 9 | WP-28 | Page-scoped batch save for Key/Value list values (point 9) |
 | WP-31 | 0.1.0 (M3) | M | 9 | WP-11, WP-12, WP-27, WP-29, WP-30 | Large-list safety on project pages: storage ceiling setting and value length cap |
 | WP-32 | 0.1.0 (M3) | S | 7, 8, 9 | WP-21, WP-22, WP-23, WP-24, WP-25, WP-26, WP-27, WP-28, WP-29, WP-30, WP-31 | Release 0.1.0 (M3) |
+| WP-33 | 0.1.0 (M3) | M | 8, 9 | WP-26, WP-28, WP-32 | Exact value matching on MySQL/MariaDB (SD-17), CSV import on an empty list, Security line, Extended API integration |
+| WP-34 | 0.1.0 (M3) | M | 2, 9 | WP-33 | Core behaviour for required children in bulk edit (UD-10) and server-side confirmation for shared and global fields (UD-23) |
+| WP-35 | 0.1.0 (M3) | S | 8 | WP-34 | '#<id>' cells in the enumeration CSV import (UD-19) |
+| WP-36 | 0.1.0 (M2) | M | 4 | WP-35 | Load the context-menu wizard on demand (UD-13) |
 
 **Release structure (UD-01, resolved by the owner): two releases.** 0.0.16 is a patch release with WP-01, WP-02, WP-03 and WP-07 (tooling, test hygiene, the two hotfixes). Everything else ships together in one release, 0.1.0, built in three milestones: M1 (WP-04 to WP-06 and WP-08 to WP-14: characterization, rules and format modules, server rules, storage safety), M2 (WP-15 to WP-20: issue-form runtime) and M3 (WP-21 to WP-32: editor, import/export, project pages). WP-14 and WP-20 are milestone checkpoints: full evidence run on one SHA, no version bump, no tag. Every work package stays one small pull request. Wherever a document says '0.1.0 (M1)', '0.1.0 (M2)' or '0.1.0 (M3)', the change ships in release 0.1.0 and lands on the main branch during that milestone.
 
@@ -2552,6 +2556,134 @@ Do not tag; revert the version bump.
 - Open inputs of this section: WP-20 (1) done, PC-72, UN-65; (2) done, id removed; (3) done, README Installation; (4) done, all PC quotes; (5) done, PC-44 and UN-58 retagged; (6) done, PC-71, UN-64; (7) done, PC-70 wording; (8) done, PC-24 wording; (9) history, checked. WP-25 (1) done, `LOG_FILTER`; (2) done, README sizes and proxy. WP-26 README paragraph done; separator note history (registry row unchanged); PC-56 done. WP-27 (1) done, README project page; (2) done, A5; (3) done, PC-45 to PC-65 and PC-67 checked by the G9 script; (4) done, the same filter. WP-28 (1) done, README values page; (2) done, the U convention; (3) done, integration §11; (4) done, the admin audit select and page; (5) history (done by WP-28). WP-29 (1) done, README sort; (2) done, PC-60 wording; (3) done, A6; (4) history. WP-30 (1) done, README page-scoped save; (2) done, A6; (3) history, the restart sentence covers `dcf_values_page.js`; (4) done, the full-mode refusal. WP-31 (1) done, README project sections; (2) done, A6; (3) checked, both lines in the 0.1.0 section; (4) history; (5) done, the MariaDB analysis. No later work package exists, so there is no 'Open input from WP-32'.
 - Review round 1 (fixer, light review): contracts-r1-1, checklist step (2) now requires the release date in the renamed heading; contracts-r1-2, README Safety separates a rename (shared or global field, a value used in other projects or referenced by dependencies: `RenameValueService#rename_list!`) from a removal (also a value used in this project: `RemoveValueService#guard_removal!`), and the README summary above follows it; contracts-r1-3, the PC note names PC-01, PC-02, PC-03 and PC-05, and the UN table gives the 0.0.16 lines, checked against `CHANGELOG.md` (the review's numbers were one line early: PC-44 131-139, PC-01 152-154, PC-02 155-156, PC-03 157-158, PC-05 166-167); contracts-r1-6, defects Contents 'SD-01 to SD-17', `large_lists_README.md` row 12 'SD-01 to SD-17' with the five security defects fixed, BC-14 'UN-01..UN-65'; quality-r1-4, the filter example is renamed 'filters a refused payload too (edit re-rendered with 200)' (core re-renders edit without a status) and the Specs line above follows it. No production, JS or characterization change and no new example, so there is no red run; the renamed example fails under mutation (b) and passes otherwise. Evidence on the final tree (all summaries `plugin_worktree_sha=d0adf87c9e4fb2f8b4755412aed6b848150a4673 dirty=29`; the tree sha256 without this file was the same before the matrix and after the mutations): subset 7.0 with `spec/characterization` and `spec/quality` `814 examples, 0 failures`; `.codex/test_matrix.sh --suite rspec --suite js --suite lint` `version=5.1 exit=0 suite=rspec exit=0 2679 examples, 0 failures  suite=js exit=0 # pass 538 # fail 0` and the same on 6.0, 6.1 and 7.0 (seeds 5996, 33187, 32649, 55791), `lint exit=0 SYNTAX PASS COMPAT PASS RATCHET PASS files=156 base_offenses=117 head_offenses=83 fixed=26`, RuboCop on the new spec file `no offenses detected`; system 5.1 and 7.0 `22 examples, 0 failures`; seeds 1, 4242 and 31337 for the seven spec files on 5.1 and 7.0 `596 examples, 0 failures` each; MariaDB 7.0 `2690 examples, 0 failures, 6 pending` (seed 51314) and 5.1 the same (seed 18803), every pending reason 'UD-38:', the server stopped afterwards. Mutations (each restored from a backup copy, sha256 and `git status` checked): (b) the `filter_request_log` call removed: 5 of the 6 filter examples fail; (c) `params[:page]` passed raw: 'answers an Array, a Hash or a junk page with page 1 instead of a 500'; (d) no product defect was fixed for MariaDB, so the fixture change stands in: on MariaDB 7.0 the ties fixture back to `where(name:)` fails the ties example (`["A", 3, false]`); (a) in a mirror copy, one section 3 line removed from `CHANGELOG.md`: the G9 equality and order checks fail, PC-49 quotes a missing line and the UN table check reports 17 line mismatches; (e) an en dash in README and an em dash in CHANGELOG: the G9 dash scan reports README 1157 and CHANGELOG 171, `spec/quality` on 5.1 `91 examples, 2 failures` (`no_dash_spec.rb`). G9 and the UN table check (82 claims, 0 mismatches) pass on the final state. `git diff HEAD -- spec/characterization init.rb .github` is empty, `git tag -l` prints nothing, and the `test.log` files of the six checkouts were truncated after the last run.
 - Release checklist for the owner (not done here): (1) bump `init.rb` line 18 to `version '0.1.0'`; (2) rename `## Unreleased (0.1.0)` (CHANGELOG.md line 169) to the 0.1.0 heading with the release date (owner rule; the earlier headings such as `## 0.0.16` carry none, so choose the format once, for example `## 0.1.0 (YYYY-MM-DD)`); (3) commit, then run the full matrix on that SHA with `dirty=0` (`test_matrix.sh` on 5.1, 6.0, 6.1 and 7.0, `--suite system` on 5.1 and 7.0, the MariaDB recipe on 5.1 and 7.0), the 'one SHA green' acceptance this run could not give; (4) optionally dispatch the manual workflows on that SHA (UD-32, quality section 10); (5) tag 0.1.0 (local main is at 0.0.15, fa0adaf, and the 0.0.16 release commit 27bc41b has no local tag: decide whether to tag 0.0.16 first); (6) merge to main. Decide before tagging: SD-17 (fix or ship as a known issue), whether SD-16 gets a Security line (section 3, CHANGELOG, a PC and a UN row together), and the decisions marked 'to be confirmed by the owner' in this block and in the decisions document (UD-09 to UD-24, UD-37, UD-39 and the WP-15 and WP-18 sub-decisions).
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### Owner follow-up of 2026-11-02 (WP-33 to WP-36)
+
+After WP-32 the owner reviewed the mandate decisions (decisions register, 'Confirmed by the owner on 2026-11-02') and asked for four changes, the SD-17 fix, the CSV import on an empty list, a Security line for SD-16 and an integration test with redmine_extended_api. They ship in 0.1.0 with the rest: every new or changed CHANGELOG line goes into the section 3 M3 list and into 'Unreleased (0.1.0)' word for word, with its PC row in `large_lists_compatibility.md` and, when it changes behaviour for existing users, its UN row in `large_lists_quality_protocol.md` section 9. No version bump, no tag, nothing to main (owner rule). Every WP ends with the per-WP report and its Delivered block.
+
+### WP-33: Exact value matching on MySQL/MariaDB (SD-17), CSV import on an empty list, Security line, Extended API integration
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M3) | M | 8, 9 | WP-26, WP-28, WP-32 |
+
+**Scope**
+
+- SD-17: on MySQL and MariaDB every lookup or write of stored custom values by value in the project services compares exactly (bytes), never through the column collation: `RenameValueService` (the `CustomValue ... update_all(value: nv)` rewrite and its usage counts), `UsageCalculator.usage_here` / `usage_other` and `page_usage`, and any other `where(value: ...)` on `custom_values` in `app/` or `lib/`. One shared helper (for example next to `UsageCalculator.grouped_value_counts`, which already groups by the bytes of the value) used by every site; PostgreSQL and SQLite stay as they are (already exact). Renaming 'A' rewrites only stored 'A', never 'a', 'Á' or 'A ' (trailing space: decide and pin how MySQL PAD SPACE collations are handled); usage counts and the confirmation panel count exactly the rows that the rename rewrites. Mark SD-17 fixed in `large_lists_defects.md` and remove the README known-issue note.
+- CSV import on an empty list (owner): on the admin form of a List (depending) field whose child list is still empty, the import panel is shown when the parent has values (the export panel stays hidden), with 'Add missing child values' preselected, so a new field can be filled from a file; project pages and Key/Value children are unchanged (no add-missing there).
+- K6 (owner): a Security line in the 0.1.0 CHANGELOG for SD-16 (the project confirmation panel named dependent fields the user cannot see), in section 3 and the CHANGELOG, without internal ids; Fixed and Changed lines for SD-17 and the empty-list import.
+- Extended API (owner): install `jcatrysse/redmine_extended_api` (public, clone it; never push to it) next to this plugin in copies of the 5.1 and 7.0 checkouts (never alter the shared PostgreSQL checkouts), run its own spec suite and this plugin's suite with both installed, and exercise its custom field endpoints for both depending formats end to end over HTTP (create, update, read; value_dependencies, default_value_dependencies, parent_custom_field_id, hide_when_disabled, enumerations; a cycle and a MySQL oversize give 422 through its API; the safe attributes of UD-15 still work). Record the result for UD-14 (the removed MappingBuilder, ParentMenuBuilder and after_custom_field_save dispatch must not be referenced by it) and any incompatibility as a defect with a proposed fix; fix it here only when the cause is in this plugin.
+
+**Files**
+
+- `app/services/redmine_depending_custom_fields/rename_value_service.rb`
+- `app/services/redmine_depending_custom_fields/usage_calculator.rb`
+- `assets/javascripts/dcf_dependency_editor.js`
+- `config/locales/en.yml`, `de.yml`, `fr.yml`, `nl.yml` (only if a text is needed)
+- `spec/services/dcf_value_services_spec.rb`, `spec/services/dcf_usage_calculator_spec.rb`, `spec/requests/dcf_project_custom_field_configuration_spec.rb`, `test/js/dcf_dependency_editor.test.js`
+- `CHANGELOG.md`, `README.md`, docs/specs/*.md (defects, compatibility, quality protocol, this file)
+
+**Tests**
+
+- MariaDB (red first on the unchanged code): a List field with stored 'A', 'a', 'Á' and 'B'; renaming 'A' to 'C' rewrites only the 'A' rows; usage counts before the rename count 'A' alone; the same on PostgreSQL stays green; a `:mysql`-tagged request spec through the project page
+- jsdom: admin List child with an empty list shows the import panel with add-missing checked, imports two pairs and fills the values textarea; export hidden; project mode and enumeration children unchanged
+- Extended API: its spec suite green with this plugin installed (5.1 and 7.0), this plugin's suite green with it installed, HTTP probes recorded
+
+**Acceptance**
+
+- Standard gate green on 5.1, 6.0, 6.1 and 7.0; npm test; system specs on 5.1 and 7.0; full MariaDB suite on 5.1 and 7.0 (only UD-38 pending)
+
+**Related decisions and defects**: SD-16, SD-17, UD-14, UD-15
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### WP-34: Core behaviour for required children in bulk edit (UD-10 changed) and server-side confirmation for shared and global fields (UD-23 changed)
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M3) | M | 2, 9 | WP-33 |
+
+**Scope**
+
+- UD-10 (owner, core behaviour): bulk edit of issues and time entries and the context-menu wizard no longer add the marked '(none)' option (`data-dcf-required-none`) for required managed children; the runtime no longer enables or selects it; a bulk change to a parent value that allows no values leaves required children as core does (the save of each issue whose required child is blank is refused by core's required check). Remove the option from the server markup, the runtime, the fixtures and the README; keep the WP-19 radio blank sentinel (`data-dcf-blank`), which is a separate feature. Check and document whether the server still accepts a blank required child while its parent value allows no values (pre-WP-19 behaviour) and keep that server rule unchanged unless it was added by WP-19 only for the option. Section 3, the CHANGELOG, PC and UN rows follow (the WP-19 Added/Changed line about the marked '(none)' option is removed or rewritten).
+- UD-23 (owner, server-side confirmation): on a shared or global field (the scope banner case), a dependency save from the project dependency page (editor save and replace import alike) and a sort A-Z / Z-A need the server-side confirmation, as rename and remove do: the service raises `ConfirmationRequired` unless `confirm=1` is posted, before any write, and audits as rename and remove do. Dependency page: a required confirmation checkbox inside the form next to Save, shown only for shared and global fields (no re-post of the large payload through a panel); a missing confirmation re-renders the page with the posted mapping dirty (as the 422 path) and the confirmation text. Sort: the existing confirmation panel flow of the values page with the pending direction, state_hash and q; the browser confirm stays only for project-only fields, so no field asks twice. Never name a hidden field (SD-16 rule).
+
+**Files**
+
+- `lib/redmine_depending_custom_fields/depending_format_methods.rb`, `assets/javascripts/depending_custom_fields.js`, `test/js/fixtures/**` (required-none removal)
+- `app/services/redmine_depending_custom_fields/dependency_mapping_service.rb`, `sort_values_service.rb`, `app/controllers/project_custom_field_configuration_controller.rb`, `app/views/project_custom_field_configuration/edit_dependencies.html.erb`, `_values_toolbar.html.erb`, `_confirm_panel.html.erb`, `assets/javascripts/dcf_dependency_editor.js` (if the editor must carry `confirm`)
+- `config/locales/*.yml`, specs (requests, services, system, jsdom), `CHANGELOG.md`, `README.md`, docs/specs/*.md
+
+**Tests**
+
+- Bulk edit and wizard of a required child: no '(none)' option in any state; parent set to a value without links: core refusal per issue (characterized); `data-dcf-blank` radio sentinel unchanged
+- Shared and global field: dependency save and replace import without `confirm` give the confirmation, write nothing and keep the posted mapping dirty; with `confirm=1` they save; project-only fields save without it; sort without `confirm` shows the panel, with it sorts; no double prompt; hidden child never named
+- System specs on 5.1 and 7.0 for bulk edit, wizard, shared-field dependency save and sort
+
+**Acceptance**
+
+- Standard gate green on 5.1, 6.0, 6.1 and 7.0; npm test; system specs on 5.1 and 7.0
+
+**Related decisions and defects**: UD-10, UD-23, SD-16
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### WP-35: '#<id>' cells in the enumeration CSV import (UD-19 changed)
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M3) | S | 8 | WP-34 |
+
+**Scope**
+
+UD-19 (owner): for Key/Value list (depending) fields and Key/Value list parents, an import cell of the form '#<digits>' names a value of that field by id (active or inactive). Matching order per cell: an exact '#<id>' of a value of that field first; when no value of the field has that id, the usual name matching (so a value literally named '#12' still matches by name). Ids of other fields, unknown ids that also match no name, and malformed forms ('# 12', '#12a', '#-1', '#0') follow the name rules and are reported as unknown. The export writes '#<id>' instead of the name only for values whose name is ambiguous within the field (UD-19 duplicates), so export then import round-trips; formula protection treats '#' as no trigger. List fields are unchanged ('#12' is a plain value there). Preview, errors and the ambiguity message mention the '#<id>' way out. Pure client side: the payload still carries keys.
+
+**Files**
+
+- `assets/javascripts/dcf_dependency_editor_model.js`, `assets/javascripts/dcf_dependency_editor.js`
+- `lib/redmine_depending_custom_fields/dependency_editor_config.rb` (only if a text is added), `config/locales/*.yml`
+- `test/js/dcf_dependency_editor_model.test.js`, `test/js/dcf_dependency_editor.test.js`, `test/js/fixtures/payload/*` (new import golden), `spec/requests/dependency_payload_contract_spec.rb`
+- `CHANGELOG.md`, `README.md`, docs/specs/*.md
+
+**Tests**
+
+- '#<id>' on parent and child cells, inactive id, foreign id, unknown id, a value named '#12', malformed forms, ambiguity resolved by id, export of duplicates writes '#<id>' and re-imports to the same pairs, round-trip golden through the server contract spec
+
+**Acceptance**
+
+- Standard gate green on 5.1, 6.0, 6.1 and 7.0; npm test
+
+**Related decisions and defects**: UD-18, UD-19
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### WP-36: Load the context-menu wizard on demand (UD-13 changed)
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M2) | M | 4 | WP-35 |
+
+**Scope**
+
+UD-13 (owner): the context menu no longer carries the wizard template and field data inline. It renders only the wizard entry (same position and wording as now) with the data needed to ask for the body; opening the wizard fetches the body from a new GET action of `ContextMenuWizardController` (same origin, `X-Requested-With`, HTML partial, never `.json`/`.xml` API formats), which applies exactly the authorization and selection rules of the context menu today (login, every issue visible, `SelectionGraph`, `ParentDetector`, `issue.editable_custom_fields(user)` for every selected issue, fail closed, hidden fields never in the response, UD-37). The save route is unchanged. Loading state, an error message on failure (no hidden field named), a second open reuses or refetches safely, Escape and Cancel as now, CSRF token present in the fetched form. The S1 budget moves from the menu to the fetched body; the menu stays small for any list size.
+
+**Files**
+
+- `app/controllers/context_menu_wizard_controller.rb`, `config/routes.rb`, `lib/redmine_depending_custom_fields/hooks/context_menu_hook.rb`, `app/helpers/context_menu_wizard_helper.rb`, `app/views/depending_custom_fields/_context_menu_wizard.html.erb`
+- `assets/javascripts/context_menu_wizard.js`, `assets/stylesheets/depending_custom_fields.css`
+- specs (requests, context menu, system, jsdom), `CHANGELOG.md`, `README.md`, docs/specs/*.md
+
+**Tests**
+
+- Permission matrix on the new action (anonymous, non-member, member without edit rights, issue not visible, mixed selection); hidden fields absent; the menu body size independent of the list size; the fetched body equals today's wizard for the same selection; system specs on 5.1 and 7.0 for open, choose, save, cancel and a failed fetch
+
+**Acceptance**
+
+- Standard gate green on 5.1, 6.0, 6.1 and 7.0; npm test; system specs on 5.1 and 7.0
+
+**Related decisions and defects**: UD-11, UD-13, UD-37, SD-01
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 

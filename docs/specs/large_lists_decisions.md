@@ -26,20 +26,20 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-07 | Resolved | 0.1.0 (M1) | WP-09, WP-09b, WP-09c | Never reject an unchanged dependent field that the current user cannot edit when its parent changes? |
 | UD-08 | Resolved | 0.1.0 (M1) | WP-10, WP-16 | Fields in or below a stored cycle: treat them as unconstrained on server and client until fixed, and run the cycle check only when a persisted field's parent id changes (D9 refinement)? |
 | UD-09 | Resolved | 0.1.0 (M2) | WP-17, WP-20 | Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links? |
-| UD-10 | Resolved | 0.1.0 (M2) | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
+| UD-10 | Changed (owner) | 0.1.0 (M2) | WP-17, WP-19 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
 | UD-11 | Resolved | 0.1.0 (M2) | WP-18, WP-20 | Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')? |
 | UD-12 | Resolved | 0.1.0 (M2) | WP-17 | Apply per-parent defaults at page load only to new records (always on parent changes)? |
-| UD-13 | Resolved | 0.1.0 (M2) | WP-18 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
+| UD-13 | Changed (owner) | 0.1.0 (M2) | WP-18 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
 | UD-14 | Resolved | 0.1.0 (M2) | WP-15, WP-18 | Delete MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch outright (D5) instead of uncached deprecated shims? |
 | UD-15 | Resolved | 0.1.0 (M3) | WP-22 | Keep the admin safe attributes value_dependencies and default_value_dependencies permanently (deviation from D5's one-minor-version window)? |
 | UD-16 | Resolved | 0.1.0 (M3) | WP-25, WP-27 | Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active? |
 | UD-17 | Resolved | 0.1.0 (M3) | WP-22, WP-25, WP-27 | Keep the admin lost-update guard with the conflict panel (use mine, keep current, export mine) and defer a three-way merge? |
 | UD-18 | Resolved | 0.1.0 (M3) | WP-26 | Spreadsheet formula protection on CSV export? |
-| UD-19 | Resolved | 0.1.0 (M3) | WP-26 | Enumeration import matches by name only (D7) in this release? |
+| UD-19 | Changed (owner) | 0.1.0 (M3) | WP-26 | Enumeration import matches by name only (D7) in this release? |
 | UD-20 | Resolved | 0.1.0 (M3) | WP-25 | Editor page sizes: 100 parent sections and 200 child rows per 'Show more'? |
 | UD-21 | Resolved | 0.1.0 (M3) | WP-28 | Values page: paginate only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values? |
 | UD-22 | Resolved | 0.1.0 (M3) | WP-31 | Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings? |
-| UD-23 | Resolved | 0.1.0 (M3) | WP-27, WP-29 | Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort? |
+| UD-23 | Changed (owner) | 0.1.0 (M3) | WP-27, WP-29 | Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort? |
 | UD-24 | Resolved | 0.1.0 (M3) | WP-29 | Sort inactive enumerations together with active ones (not pushed to the end)? |
 | UD-25 | Resolved | 0.1.0 (M1) | WP-11 | Apply the MySQL size validation also to core List and Key/Value list fields? |
 | UD-26 | Resolved | 0.1.0 (M1) | WP-13 | Default type for widen_core_columns? |
@@ -183,7 +183,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-09
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Revised D2: bulk edit and the wizard keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Revised D2: bulk edit and the wizard keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links.
 
 **Question.** Bulk edit and wizard (deviation from D2): keep '(No change)' visible and selectable on descendants when a concrete parent is chosen, preselect the per-parent default with a hint, and force '(none)' only for parent '(none)' or a parent value without links?
 
@@ -197,7 +197,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-10
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** A marked '(none)' option is offered for required managed children in bulk edit and the wizard, enabled only while the parent selection allows no value; the server still rejects a blank per issue when options exist.
+**Changed by the owner on 2026-11-02: core behaviour.** Bulk edit and the wizard no longer add the marked '(none)' option for required managed children; a bulk change to a parent value that allows no values fails for each issue whose required child has no value, as in core. Implemented by WP-34. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. A marked '(none)' option is offered for required managed children in bulk edit and the wizard, enabled only while the parent selection allows no value; the server still rejects a blank per issue when options exist.
 
 **Question.** Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value?
 
@@ -211,7 +211,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-11
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Every wizard field, the root included, opens on '(No change)'.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Every wizard field, the root included, opens on '(No change)'.
 
 **Question.** Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')?
 
@@ -225,7 +225,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-12
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Per-parent defaults are applied at page load only to new records, and always on parent changes.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Per-parent defaults are applied at page load only to new records, and always on parent changes.
 
 **Question.** Apply per-parent defaults at page load only to new records (always on parent changes)?
 
@@ -239,7 +239,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-13
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The wizard template stays inline in the context menu (D4 unchanged), with the 512 KB S1 budget asserted by spec.
+**Changed by the owner on 2026-11-02: load the wizard on demand.** The context menu no longer carries the wizard template inline; the wizard body is fetched by a separate authorized request when the wizard is opened. Implemented by WP-36. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. The wizard template stays inline in the context menu (D4 unchanged), with the 512 KB S1 budget asserted by spec.
 
 **Question.** Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily?
 
@@ -253,7 +253,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-14
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch are deleted outright, with CHANGELOG notes.
+**Status: Confirmed by the owner on 2026-11-02, on condition of the Extended API check: redmine_extended_api uses only the format constants and the safe attributes value_dependencies, default_value_dependencies and hide_when_disabled, none of the removed classes (static check 2026-11-02; the integration run is recorded in the WP-33 Delivered block).** MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch are deleted outright, with CHANGELOG notes.
 
 **WP-15.** ParentMenuBuilder is deleted without a shim ("Removed: ParentMenuBuilder." in the CHANGELOG, completed to the canonical Removed line by WP-18). MappingBuilder and the dispatch stay until WP-18. The wizard sub-decision taken in WP-15 on the same mandate (nothing offered below a field the user cannot edit) is recorded under SD-01.
 
@@ -269,7 +269,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-15
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The admin safe attributes value_dependencies and default_value_dependencies stay permanently; only the nested HTML form params stop being rendered.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** The admin safe attributes value_dependencies and default_value_dependencies stay permanently; only the nested HTML form params stop being rendered.
 
 **Question.** Keep the admin safe attributes value_dependencies and default_value_dependencies permanently (deviation from D5's one-minor-version window)?
 
@@ -283,7 +283,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-16
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The editors require JavaScript (admin: mapping unchanged on a save without JS; project: Save disabled), and the admin form switches to multipart/form-data while the editor is active.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** The editors require JavaScript (admin: mapping unchanged on a save without JS; project: Save disabled), and the admin form switches to multipart/form-data while the editor is active.
 
 **Question.** Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active?
 
@@ -297,7 +297,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-17
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The admin lost-update guard with the conflict panel (use mine, keep current, export mine) stays; a three-way merge is a follow-up.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** The admin lost-update guard with the conflict panel (use mine, keep current, export mine) stays; a three-way merge is a follow-up.
 
 **Question.** Keep the admin lost-update guard with the conflict panel (use mine, keep current, export mine) and defer a three-way merge?
 
@@ -311,7 +311,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-18
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** CSV export gets an opt-in formula-protection checkbox, default off, with the symmetric import option.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** CSV export gets an opt-in formula-protection checkbox, default off, with the symmetric import option.
 
 **Question.** Spreadsheet formula protection on CSV export?
 
@@ -325,7 +325,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-19
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Enumeration import matches by name only (D7) in this release; ambiguous names are reported; no '#<id>' cell syntax yet.
+**Changed by the owner on 2026-11-02: '#<id>' accepted now.** The enumeration import also accepts a cell '#<id>' naming a value of that field by id; the export writes '#<id>' for a value whose name is ambiguous, so the file round-trips. Implemented by WP-35. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. Enumeration import matches by name only (D7) in this release; ambiguous names are reported; no '#<id>' cell syntax yet.
 
 **Question.** Enumeration import matches by name only (D7) in this release?
 
@@ -339,7 +339,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-20
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Editor page sizes are 100 parent sections and 200 child rows per 'Show more'.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Editor page sizes are 100 parent sections and 200 child rows per 'Show more'.
 
 **Question.** Editor page sizes: 100 parent sections and 200 child rows per 'Show more'?
 
@@ -353,7 +353,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-21
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The values page paginates only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** The values page paginates only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values.
 
 **Question.** Values page: paginate only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values?
 
@@ -367,7 +367,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-22
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Project storage ceiling as a plugin setting project_storage_ceiling_kib (default 2,048, minimum 64), applied to all project-page writes and never blocking writes that do not grow a field, plus a 255-character cap for list values added or renamed in project settings.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Project storage ceiling as a plugin setting project_storage_ceiling_kib (default 2,048, minimum 64), applied to all project-page writes and never blocking writes that do not grow a field, plus a 255-character cap for list values added or renamed in project settings.
 
 **Question.** Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings?
 
@@ -381,7 +381,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-23
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Shared and global fields get no server-side confirmation panel for dependency saves (replace imports included) and sort; only the scope banner and a JS confirm for sort.
+**Changed by the owner on 2026-11-02: server-side confirmation.** Shared and global fields need the server-side confirmation checkbox for dependency saves (replace imports included) and for sort, as for rename and remove. Implemented by WP-34. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. Shared and global fields get no server-side confirmation panel for dependency saves (replace imports included) and sort; only the scope banner and a JS confirm for sort.
 
 **Question.** Shared/global fields: no server-side confirmation panel for dependency saves (including replace imports) and sort; only the scope banner and a JS confirm for sort?
 
@@ -395,7 +395,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-24
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Inactive enumerations are sorted together with active ones.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Inactive enumerations are sorted together with active ones.
 
 **Question.** Sort inactive enumerations together with active ones (not pushed to the end)?
 
@@ -577,7 +577,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-37
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** The server message is the only feedback for a role-invisible child: the page never contains its id, name, value or mapping, and no per-parent-value flag. A visible read-only child may get a carrier (parent id, stored parent baseline and, per non-tolerated stored value, the parent keys that allow it).
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** The server message is the only feedback for a role-invisible child: the page never contains its id, name, value or mapping, and no per-parent-value flag. A visible read-only child may get a carrier (parent id, stored parent baseline and, per non-tolerated stored value, the parent keys that allow it).
 
 **Question.** A dependent field the user cannot edit (read-only by workflow, or role-invisible) has no form control, so the issue-form runtime cannot predict the WP-09b refusal of a parent change (UD-07). May a minimal carrier for a role-invisible child reveal, per parent value, whether the hidden value is allowed, or is the server message the only feedback?
 
@@ -607,7 +607,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-39
 
-**Status: Resolved by Claude on the owner's mandate of 2026-10-19 (recommendation taken; to be confirmed by the owner).** Raised by the WP-16 review. On My account and the registration form a depending user field's parent counts as visible for the client data when core renders it as a control on that form; the admin user form keeps the base rule. WP-18 implements it.
+**Status: Confirmed by the owner on 2026-11-02 (proposed by Claude on the owner's mandate of 2026-10-19).** Raised by the WP-16 review. On My account and the registration form a depending user field's parent counts as visible for the client data when core renders it as a control on that form; the admin user form keeps the base rule. WP-18 implements it.
 
 **Question.** Core shows a user custom field on My account when it is editable and on the registration form when it is editable or required, whatever its visibility. For user forms `ClientData` decides parent visibility by the base rule (`visible?` or admin, QA-23; the roles of a user field play no part), so a depending user field whose parent is hidden from non-admins (visible false) but shown on that form gets only the every-field attributes, while its parent is a control on the same page. Today the legacy global mapping still filters that child; after WP-18 removes the global it stays unfiltered next to its own parent (the server still validates it). Count such a parent as visible on those two forms?
 
