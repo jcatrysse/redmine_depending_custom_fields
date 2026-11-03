@@ -889,12 +889,20 @@ RSpec.describe 'DCF value operation services' do
     end
 
     # WP-34: BaseService#confirmed? is the one confirm rule of rename,
-    # remove, sort and the dependency save: a String that
-    # ActiveModel::Type::Boolean casts to true. An Array, a Hash, Parameters,
-    # an Integer or true never confirm (strong params drop them for rename,
-    # remove and sort; the dependency save passes confirm raw).
+    # remove, sort and the dependency save: the String 1 or true (case and
+    # surrounding white space ignored). Every other String, refusal words
+    # included, an Array, a Hash, Parameters, an Integer or true never
+    # confirm (strong params drop the containers for rename, remove and sort;
+    # the dependency save passes confirm raw).
+    # Changed by WP-34 review round 1 (security-r1-1): the refusal words and
+    # yes, on and a blank were added; they confirmed through
+    # ActiveModel::Type::Boolean before.
     describe 'the confirm rule (WP-34)' do
-      let(:refused) { [nil, '', '0', 'false', 'off', ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true] }
+      let(:refused) do
+        [nil, '', ' ', '0', 'false', 'off', 'no', 'n', 'none', 'null', 'nil', 'yes', 'on', 'False off ', "1\xFF",
+         ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true]
+      end
+      let(:accepted) { ['1', 'true', ' TRUE '] }
 
       def global_list(values = %w[b a])
         dcf_list_field(values: values, is_for_all: true)
@@ -903,7 +911,7 @@ RSpec.describe 'DCF value operation services' do
       it 'confirms a rename and a removal on a global field with 1 or true only' do
         # All fields first: Project#all_issue_custom_fields is memoized on project.
         fields = Array.new(refused.size) { global_list }
-        confirmed = Array.new(2) { global_list }
+        confirmed = Array.new(accepted.size) { global_list }
         refused.zip(fields).each do |confirm, field|
           expect { rename(field, old_value: 'a', new_value: 'z', confirm: confirm) }
             .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
@@ -911,7 +919,7 @@ RSpec.describe 'DCF value operation services' do
             .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
           expect(field.reload.possible_values).to eq(%w[b a])
         end
-        %w[1 true].zip(confirmed).each do |confirm, field|
+        accepted.zip(confirmed).each do |confirm, field|
           rename(field, old_value: 'a', new_value: 'z', confirm: confirm)
           remove(field, value: 'b', confirm: confirm)
           expect(field.reload.possible_values).to eq(%w[z])
@@ -920,13 +928,13 @@ RSpec.describe 'DCF value operation services' do
 
       it 'confirms a sort on a global field with 1 or true only' do
         fields = Array.new(refused.size) { global_list }
-        confirmed = Array.new(2) { global_list }
+        confirmed = Array.new(accepted.size) { global_list }
         refused.zip(fields).each do |confirm, field|
           expect { sort(field, direction: 'asc', confirm: confirm) }
             .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
           expect(field.reload.possible_values).to eq(%w[b a])
         end
-        %w[1 true].zip(confirmed).each do |confirm, field|
+        accepted.zip(confirmed).each do |confirm, field|
           sort(field, direction: 'asc', confirm: confirm)
           expect(field.reload.possible_values).to eq(%w[a b])
         end

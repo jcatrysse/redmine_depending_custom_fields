@@ -134,11 +134,14 @@ Per operation, only:
 - `add`: `value` (string), `position` (int, optional).
 - `rename`: `old_value`/`enumeration_id`, `new_value`, `confirm` (bool).
 - `remove`: `value`/`enumeration_id`, `confirm` (bool).
-- WP-34: `confirm` counts only as a scalar String that casts to true (`1`
-  from the forms); an Array, a Hash, an Integer or true never confirms
-  (`BaseService#confirmed?`, the one rule of rename, remove, sort and the
-  dependency save). `sort` and `dependencies` take `confirm` too; the
-  dependency save passes it as posted.
+- WP-34: `confirm` counts only as the String `1` (as the forms post it)
+  or `true`, case and surrounding white space ignored, compared as bytes
+  (fail-closed: every other String, `no`, `none`, `yes`, `on` and a blank
+  included, an Array, a Hash, an Integer or true never confirms;
+  `BaseService#confirmed?`, the one rule of rename, remove, sort and the
+  dependency save; review round 1 replaced the ActiveModel::Type::Boolean
+  cast, which confirmed refusal words). `sort` and `dependencies` take
+  `confirm` too; the dependency save passes it as posted.
 - `reorder`: `ordered_values` (array of existing identifiers).
 - `dependencies`: `value_dependencies` (hash, sanitized), `default_value_dependencies` (hash, sanitized).
 No other keys are permitted; nested `custom_field` blobs are rejected.

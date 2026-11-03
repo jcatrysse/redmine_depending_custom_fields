@@ -13,6 +13,8 @@ module RedmineDependingCustomFields
     PERMISSION = :manage_project_custom_field_configuration
     # Keep audit rows small on fields with many values (Audit Spec §3).
     DELTA_CAP = 20
+    # The confirm values of confirmed? (WP-34), compared stripped and downcased.
+    CONFIRM_WORDS = %w[1 true].freeze
 
     Outcome = Struct.new(
       :before, :after, :summary,
@@ -258,13 +260,15 @@ module RedmineDependingCustomFields
       field.projects.size
     end
 
-    # The one confirm rule (WP-34): a String that ActiveModel::Type::Boolean
-    # casts to true ('1' as the forms post it). An Array, a Hash,
-    # ActionController::Parameters, an Integer or true never confirm; the
-    # dependency save passes confirm as posted.
+    # The one confirm rule (WP-34): the String '1' (as the forms post it) or
+    # 'true', case and surrounding white space ignored. Fail-closed: every
+    # other String ('no', 'none', 'yes', 'on' and a blank included), an
+    # Array, a Hash, ActionController::Parameters, an Integer or true never
+    # confirm; the dependency save passes confirm as posted. Compared as
+    # bytes, so an invalid UTF-8 String is refused, never an ArgumentError.
     def confirmed?
       raw = @params[:confirm]
-      raw.is_a?(String) && ActiveModel::Type::Boolean.new.cast(raw) == true
+      raw.is_a?(String) && CONFIRM_WORDS.include?(raw.b.strip.downcase)
     end
 
     # UD-23 (WP-34): a dependency save or a sort of a field shared with other

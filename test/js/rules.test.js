@@ -387,6 +387,12 @@ test('optionEnabled: two arguments, no marked (none); a required child without _
   assert.deepEqual(links.values, ['']);
   const unfiltered = R.decide(bulk({ kind: 'unfiltered', key: R.NOCHANGE_KEY, allowed: null, current: ['__none__'] }));
   assert.deepEqual(unfiltered.values, ['__none__'], 'an optional child keeps a plain (none) under (no change)');
+  // WP-34 review round 1 (tests-r1-11): a third argument changes nothing
+  // also where the removed WP-19 rule answered false (a parent value with
+  // links: requiredNoneEnabled was false while noneEnabled is true).
+  assert.equal(R.optionEnabled(links.filter, '__none__'), true);
+  assert.equal(R.optionEnabled(links.filter, '__none__', true), R.optionEnabled(links.filter, '__none__'));
+  assert.equal(R.optionEnabled(unfiltered.filter, '__none__', true), true);
   // In form context '' is always enabled and __none__ is an ordinary value
   // (WP-17 resume: it was never enabled before), enabled only when allowed.
   const form = R.decide(base({})).filter;

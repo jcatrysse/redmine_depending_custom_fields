@@ -70,7 +70,8 @@ RSpec.describe 'Context menu wizard', type: :system do
       middle_select = "select[name='issue[custom_field_values][#{middle.id}]']"
       leaf_select = "select[name='issue[custom_field_values][#{leaf.id}]']"
       expect(page).to have_css("#{middle_select}[data-dcf-state='unfiltered']", visible: :all)
-      expect(all("#{middle_select} option[value='__none__']", visible: :all).size).to eq(0)
+      # WP-34 review round 1 (tests-r1-10): have_no_css, no wait for a match.
+      expect(page).to have_no_css("#{middle_select} option[value='__none__']", visible: :all)
       expect(all("#{leaf_select} option[value='__none__']", visible: :all).size).to eq(1)
       find("select[name='issue[custom_field_values][#{root.id}]'] option[value='__none__']").select_option
       expect(page).to have_css("#{middle_select}[data-dcf-state='none']", visible: :all)

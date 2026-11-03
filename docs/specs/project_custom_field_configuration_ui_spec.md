@@ -88,9 +88,11 @@ Sections:
    - Usage columns lazy-loaded or shown behind a "Show usage" toggle to avoid
      heavy queries on render.
 3. **Add value** form: text input + optional position + Add button.
-4. For Remove/Rename when impact > 0: a confirmation panel with a required
-   checkbox ("I understand this affects other projects / existing data") before
-   the destructive submit is enabled.
+4. For Remove/Rename when impact > 0, and, on a shared or global field, for
+   Sort A-Z / Z-A (the sort variant: no usage lines, names no field, posts
+   direction, state_hash and a filtering q; WP-34): a confirmation panel with
+   a required checkbox ("I understand this affects other projects / existing
+   data") before the destructive submit is enabled.
 
 Buttons: `<p class="buttons">` Save / Cancel (Cancel returns to overview).
 
@@ -102,7 +104,10 @@ field has more than one value: two `button_to` forms (class
 `button_to dcf-values-sort`) labelled `label_dcf_sort_az` and
 `label_dcf_sort_za`, posting `direction`, `state_hash` and `q` when it
 filters, never the page, with `data-confirm` `text_dcf_sort_confirm` counting
-every value (inactive enumerations included). They render on small, filtered,
+every value (inactive enumerations included) (only for a field used in this
+project alone; a field shared with other projects or global gets no
+`data-confirm` and the server sort confirmation panel instead, WP-34, UD-23).
+They render on small, filtered,
 paginated, list and enumeration pages alike, outside every other form, and
 carry no ids. Empty states: `text_no_values` without values,
 `text_dcf_no_matches` with a Clear link when a search matches nothing. A

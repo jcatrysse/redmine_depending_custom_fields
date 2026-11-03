@@ -374,11 +374,13 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
     end
 
     # Flipped by WP-34 (UD-23 changed by the owner on 2026-11-02): a global
-    # field asks for the confirmation, the source names ConfirmationRequired;
-    # the confirmed save keeps every old assertion. Was 'never runs the admin
+    # field asks for the confirmation, the source calls the confirmation
+    # right after validate_mapping! and before DependencyDelta.new; the
+    # confirmed save keeps every old assertion. Was 'never runs the admin
     # transport or prune_mapping and asks no confirmation on a global field
     # (UD-23, BC-02)', saved without confirm, and a source regex that forbade
-    # ConfirmationRequired.
+    # ConfirmationRequired. Review round 1 (tests-r1-4): the regex pins the
+    # call and its place (was /confirm/, which the class comment matched).
     it 'never runs the admin transport or prune_mapping and asks the confirmation on a global field (UD-23, BC-02)' do
       parent = dcf_list_field(name: 'Global parent', values: %w[A B], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Global child', values: %w[c1 c2], parent: parent,
@@ -401,7 +403,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
       source = File.read(File.expand_path('../../app/services/redmine_depending_custom_fields/' \
                                           'dependency_mapping_service.rb', __dir__))
       expect(source).not_to match(/dependencies_json\s*=[^=]|prune_mapping/)
-      expect(source).to match(/confirm/)
+      expect(source).to match(/^ *validate_mapping!\(vd, dd, parent_labels, child_labels\)\n *confirm_posted_mapping!\(input, vd, dd\)\n\n *delta = DependencyDelta\.new/)
+      expect(source).to match(/^ *def confirm_posted_mapping!\(input, vd, dd\)\n *confirm_shared_change!\n *rescue ConfirmationRequired\n/)
       expect(stored(child)).to eq([{ 'A' => %w[c1] }, {}])
       row = rows(child).last
       expect(rows(child).count).to eq(1)
@@ -516,21 +519,25 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
         expect(Rails.logger).to have_received(:warn).with(described_class::LEGACY_WARNING).once
       end
 
-      # BaseService#confirmed?, the one rule: a String that
-      # ActiveModel::Type::Boolean casts to true.
-      it 'confirms with the String 1 (or true) only, never with an Array, a Hash, Parameters, an Integer or true' do
+      # BaseService#confirmed?, the one rule: the String 1 or true (case and
+      # surrounding white space ignored).
+      # Changed by WP-34 review round 1 (security-r1-1): refusal words, yes,
+      # on and a blank are refused; they confirmed through
+      # ActiveModel::Type::Boolean before.
+      it 'confirms with the String 1 (or true) only, never with another word, an Array, a Hash, Parameters, an Integer or true' do
         child = pair_with(:global)
-        refused = [nil, '', '0', 'false', 'off', ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true]
+        refused = [nil, '', ' ', '0', 'false', 'off', 'no', 'n', 'none', 'null', 'nil', 'yes', 'on', 'False off ', "1\xFF",
+                   ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true]
         refused.each do |confirm|
           _service, error = run(child, dependencies_json: json({ 'B' => %w[c2] }), confirm: confirm)
           expect(error).to be_a(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
         end
         expect(stored(child)).to eq([{ 'A' => %w[c1] }, { 'A' => 'c1' }])
-        %w[1 true].each_with_index do |confirm, index|
-          _service, error = run(child, dependencies_json: json({ 'B' => [%w[c1 c2][index]] }), confirm: confirm)
+        ['1', 'true', ' TRUE '].each_with_index do |confirm, index|
+          _service, error = run(child, dependencies_json: json({ 'B' => [%w[c1 c2 c1][index]] }), confirm: confirm)
           expect(error).to be_nil, confirm
         end
-        expect(stored(child)).to eq([{ 'B' => %w[c2] }, {}])
+        expect(stored(child)).to eq([{ 'B' => %w[c1] }, {}])
       end
     end
 

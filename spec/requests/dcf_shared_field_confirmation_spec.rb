@@ -137,21 +137,41 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
         expect(sort_forms.map { |form| form.at_css('[data-confirm]').nil? }.uniq).to eq([asks]), scope.to_s
         patch sort_path(list), params: { direction: 'asc', state_hash: service.state_hash(list) }
         expect(response).to have_http_status(asks ? 422 : 302), scope.to_s
-        expect(doc.css('.dcf-confirm-panel').size).to eq(asks ? 1 : 0), scope.to_s if asks
+        # Changed by WP-34 review round 1 (tests-r1-8): the project row
+        # follows the redirect and checks that no panel is shown.
+        follow_redirect! unless asks
+        expect(doc.css('.dcf-confirm-panel').size).to eq(asks ? 1 : 0), scope.to_s
         expect(list.reload.possible_values).to eq(asks ? %w[c b a] : %w[a b c]), scope.to_s
       end
     end
 
-    it 'is defined once and read by the helper and the services' do
-      root = File.expand_path('../..', __dir__)
-      files = Dir[File.join(root, '{app,lib}/**/*.rb')]
-      definitions = files.select { |path| File.read(path).include?('field.projects.reject { |p| p.id == project.id }') }
-      expect(definitions.map { |path| path.delete_prefix("#{root}/") })
-        .to eq(['app/services/redmine_depending_custom_fields/field_relevance.rb'])
-      helper = File.read(File.join(root, 'app/helpers/project_custom_field_configuration_helper.rb'))
-      base = File.read(File.join(root, 'app/services/redmine_depending_custom_fields/base_service.rb'))
-      expect(helper).to include('FieldRelevance.scope(field, project)')
-      expect(base).to include('FieldRelevance.scope(field, project)')
+    # Changed by WP-34 review round 1 (tests-r1-9): behavioural, was a
+    # search of the source text. FieldRelevance.scope is stubbed against the
+    # real scope of the fields; a second rule anywhere would ignore the stub.
+    it 'is FieldRelevance.scope for the banner, the checkbox, the sort buttons and the services' do
+      relevance = RedmineDependingCustomFields::FieldRelevance
+      stubbed = nil
+      allow(relevance).to receive(:scope) { stubbed }
+      { global: :project, project: :global }.each do |real, value|
+        stubbed = value
+        asks = value != :project
+        child = child_in(real)
+        list = list_in(real)
+
+        get page_path(child)
+        expect([banner?, confirm_boxes.size]).to eq([asks, asks ? 1 : 0]), real.to_s
+        save(child, json({ 'B' => %w[c2] }))
+        expect(response).to have_http_status(asks ? 422 : 302), real.to_s
+        expect(stored(child).first).to eq(asks ? { 'A' => %w[c1] } : { 'B' => %w[c2] }), real.to_s
+
+        get show_path(list)
+        expect(banner?).to eq(asks), real.to_s
+        expect(sort_forms.map { |form| form.at_css('[data-confirm]').nil? }).to eq([asks, asks]), real.to_s
+        patch sort_path(list), params: { direction: 'asc', state_hash: service.state_hash(list) }
+        expect(response).to have_http_status(asks ? 422 : 302), real.to_s
+        expect(list.reload.possible_values).to eq(asks ? %w[c b a] : %w[a b c]), real.to_s
+      end
+      expect(relevance).to have_received(:scope).at_least(8).times
     end
 
     # Decided at POST time: a field that became shared after the GET asks.
@@ -230,6 +250,11 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
       expect(confirm_boxes.size).to eq(1)
       expect(confirm_boxes.first['checked']).to be_nil
       expect(stored(child)).to eq(before)
+      # WP-34 review round 1 (tests-r1-2): flash.now, so the next page shows
+      # no confirmation text (the scope banner has no id).
+      get page_path(child)
+      expect(doc.at_css('#flash_warning')).to be_nil
+      expect(banner?).to be(true)
 
       patch custom_field_configuration_update_dependencies_path(project, child),
             params: { dependencies_json: JSON.generate(posted), state_hash: doc.at_css('input[name="state_hash"]')['value'],
@@ -259,7 +284,10 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
       expect(after.values_at('v', 'source', 'import')).to eq([2, 'import', import])
     end
 
-    it 'asks on the deprecated nested params and re-renders the stored mapping, not dirty' do
+    # Changed by WP-34 review round 1 (semantics-r1-1): the posted mapping,
+    # dirty, as on the JSON path; was the stored mapping, not dirty. A
+    # validation 422 of the nested path keeps the stored mapping.
+    it 'asks on the deprecated nested params and re-renders the posted mapping, dirty' do
       child = child_in(:global)
       allow(Rails.logger).to receive(:warn).and_call_original
       expect do
@@ -268,9 +296,12 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
       end.not_to change(events, :count)
       expect(response).to have_http_status(422)
       expect(doc.at_css('#flash_warning').text.strip).to eq(warning)
-      expect(editor['data-dcf-editor-dirty']).to be_nil
+      expect(editor['data-dcf-editor-dirty']).to eq('1')
       expect(JSON.parse(editor['data-dcf-editor-mapping']))
-        .to eq('value_dependencies' => { 'A' => %w[c1] }, 'default_value_dependencies' => { 'A' => 'c1' })
+        .to eq('value_dependencies' => { 'B' => %w[c2] }, 'default_value_dependencies' => {})
+      expect(doc.css('input[name="dependencies_json"]').map { |input| input['value'] }).to eq([''])
+      expect(doc.at_css('input[name="state_hash"]')['value']).to eq(service.state_hash(child))
+      expect(stored(child)).to eq([{ 'A' => %w[c1] }, { 'A' => 'c1' }])
       expect(Rails.logger).to have_received(:warn)
         .with(RedmineDependingCustomFields::DependencyMappingService::LEGACY_WARNING).once
 
@@ -368,6 +399,28 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
       expect(flash[:notice]).to eq(I18n.t(:notice_values_sorted))
       expect(field.reload.possible_values).to eq(labels(60).sort.reverse)
       expect([rows(field).last.action, rows(field).last.status]).to eq(%w[sort_values success])
+    end
+
+    # WP-34 review round 1 (tests-r1-1): a paginated list (above
+    # ValuesPage::UNPAGINATED_MAX) on page 2 of a filter; the panel carries
+    # q, never page, and the confirmed sort redirects to the first page.
+    it 'gives the panel of a paginated page q but never page' do
+      count = RedmineDependingCustomFields::ValuesPage::UNPAGINATED_MAX + 100
+      field = list_in(:global, labels(count).reverse)
+      state = service.state_hash(field)
+      get show_path(field, q: 'value', page: '2')
+      expect(doc.css('span.pagination a')).not_to be_empty
+      expect(sort_forms.size).to eq(2)
+
+      patch sort_path(field), params: { direction: 'asc', state_hash: state, q: 'value', page: '2' }
+      expect(response).to have_http_status(422)
+      expect(doc.css('span.pagination a')).not_to be_empty
+      expect(hidden_fields(panel_form)).to eq('_method' => 'patch', 'direction' => 'asc', 'state_hash' => state, 'q' => 'value')
+      expect(doc.at_css('.dcf-confirm-panel').text).to include(I18n.t(:text_dcf_sort_confirm, count: count))
+
+      patch sort_path(field), params: hidden_fields(panel_form).except('_method').merge('confirm' => '1')
+      expect(response).to redirect_to(show_path(field, q: 'value'))
+      expect(field.reload.possible_values.first(2)).to eq(labels(2))
     end
 
     it 'gives the panel no q without a filter and refuses with 409 when the field changed before Apply' do
@@ -524,7 +577,10 @@ RSpec.describe 'Confirmation on shared and global fields (UD-23, WP-34)', type: 
       expect(response).to redirect_to(page_path(child))
       expect_unnamed
       expect_clean_rows(child)
-      expect(rows(child).last.affected_child_field_ids.to_s).not_to include(grandchild.id.to_s)
+      # Changed by WP-34 review round 1 (tests-r1-7): a dependency save
+      # records no child ids; was a check that could not fail.
+      expect(rows(child).last.affected_child_field_ids).to be_nil
+      expect(grandchild.reload.value_dependencies).to eq('c1' => %w[SECRET-V])
     end
   end
 end

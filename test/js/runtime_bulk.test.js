@@ -176,7 +176,13 @@ test('B3 parent (none): child __none__, (no change) disabled, the cascade contin
 // regenerated fixture as rendered (core: no (none) for a required child); was
 // a tweak removing the marked (none) the WP-19 server rendered. Quality
 // protocol C7, the rejected outcome: '' stays selected with the empty hint,
-// every value hidden and disabled, nothing applied, '' posted.
+// every value hidden and disabled, nothing applied, '' posted. A failed bulk
+// update after a scripted '__none__' re-renders this select with nothing
+// selected (pinned in spec/lib/depending_format_methods_spec.rb and
+// spec/requests/bulk_update_dependencies_spec.rb), the same markup, so this
+// test covers that page too. Removed by WP-34 review round 1 (tests-r1-6):
+// 'B3r a re-rendered required child after a posted __none__ stays on (no
+// change)', whose tweak changed nothing in this fixture.
 test('B3r required child as rendered (no (none)): parent (none) or a value without links keeps "" with the empty hint', async () => {
   const pg = await load('bulk_required');
   const c = child(pg);
@@ -239,19 +245,6 @@ test('B3r a re-rendered required multi child keeps a pick under (no change) and 
   assert.deepEqual([D.selected(c), childEntries(pg)], [[], []]);
   fire.choose(pg.window, parentOf(pg), '');
   assert.deepEqual([D.selected(c), childEntries(pg)], [['Bee'], [`${CHILD}[]=Bee`]]);
-  invariants(pg);
-});
-
-// Changed by WP-34 (UD-10): was 'B3r a re-rendered bulk form with the marked
-// (none) selected under (no change) falls back to (no change)'. A failed bulk
-// update after a scripted '__none__' re-renders the required select with
-// nothing selected (core has no such option): the runtime keeps (no change).
-test('B3r a re-rendered required child after a posted __none__ stays on (no change)', async () => {
-  const pg = await load(F.tweak('bulk_required', (doc) => F.selectValues(F.named(doc, CHILD), [])));
-  const c = child(pg);
-  assert.deepEqual([D.state(c), D.selected(c), childEntries(pg)], ['unfiltered', [''], [`${CHILD}=`]]);
-  fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([D.selected(c), D.state(c), childEntries(pg)], [[''], 'none', [`${CHILD}=`]]);
   invariants(pg);
 });
 

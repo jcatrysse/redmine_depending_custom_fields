@@ -235,7 +235,8 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   end
 
   # The service's ok parse result (SP-17: no second parse); nil after a
-  # parser error and on the legacy path.
+  # parser error and on the legacy path (there the posted mapping when only
+  # the confirmation is missing, WP-34).
   def posted_payload(service)
     result = service&.parsed_payload
     result&.ok? ? result : nil

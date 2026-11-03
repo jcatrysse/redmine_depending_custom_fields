@@ -17,8 +17,10 @@ module RedmineDependingCustomFields
     ELLIPSIS = '...'.freeze
 
     # The ok DependencyPayload::Result of this request's parse!, for the 422
-    # re-render (SP-17: no second parse); nil on the legacy path and after a
-    # parser error.
+    # re-render (SP-17: no second parse); nil after a parser error. On the
+    # legacy path nil, except when only the confirmation is missing: then a
+    # Result of the sanitized posted mapping, so that page comes back with
+    # it dirty as on the JSON path (WP-34).
     attr_reader :parsed_payload
 
     def audit_action
@@ -43,7 +45,7 @@ module RedmineDependingCustomFields
       dd = Sanitizer.sanitize_default_dependencies(input[:default_value_dependencies])
       dd = shape_defaults!(dd) if input[:json]
       validate_mapping!(vd, dd, parent_labels, child_labels)
-      confirm_shared_change!
+      confirm_posted_mapping!(input, vd, dd)
 
       delta = DependencyDelta.new(old_vd: field.value_dependencies, old_dd: field.default_value_dependencies,
                                   new_vd: vd, new_dd: dd, parent_labels: parent_labels, child_labels: child_labels,
@@ -79,6 +81,19 @@ module RedmineDependingCustomFields
                                     interpolations: { size: StorageLimits.delimited(error.bytes),
                                                       limit: StorageLimits.delimited(DependencyPayload::MAX_BYTES) }),
             cause: nil
+    end
+
+    # UD-23 (WP-34): asks before any write. The legacy path keeps its
+    # sanitized posted mapping for the re-render (no parse, nothing logged);
+    # its other 422s keep the stored mapping.
+    def confirm_posted_mapping!(input, vd, dd)
+      confirm_shared_change!
+    rescue ConfirmationRequired
+      unless input[:json]
+        @parsed_payload = DependencyPayload::Result.new(value_dependencies: vd, default_value_dependencies: dd,
+                                                        source: input[:source], import: nil, bytes: 0)
+      end
+      raise
     end
 
     # Deprecated in 0.1.0, accepted throughout 0.1.x: nothing posted clears,

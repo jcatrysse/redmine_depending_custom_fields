@@ -376,7 +376,7 @@ Revision 2 grouped the work into WP0 to WP8; the rows below use the final WP-01 
 | WP-11, WP-12, WP-13 | 0.1.0 (M1) | MySQL 64 KB safety, service error mapping, flash escaping, audit cap, rake tasks | G1 G5 G7 G8 G9 G12 | G4 (except the usage line, UD-28) |
 | WP-14 | 0.1.0 (M1) | Release 0.1.0 (M1) | G9 G10 G11 + rerun all | |
 | WP-15, WP-16 | 0.1.0 (M2) | Point 1 server side: context menu without cache, wizard route, per-field data contract, generated markup fixtures | G1 G3 G5 G6 G7 G10 | G12 |
-| WP-17, WP-18, WP-19 | 0.1.0 (M2) | Points 1 to 5 client runtime, switch-over (meta tag, cache removal, globals removed), radio sentinel and required '(none)' | G1 G2 (system) G3 G4 G5 G6 G7 G8 | G12 |
+| WP-17, WP-18, WP-19 | 0.1.0 (M2) | Points 1 to 5 client runtime, switch-over (meta tag, cache removal, globals removed), radio sentinel and required '(none)' (the required '(none)' was removed by WP-34, UD-10 changed by the owner) | G1 G2 (system) G3 G4 G5 G6 G7 G8 | G12 |
 | WP-20 | 0.1.0 (M2) | Release 0.1.0 (M2) (not before SD-01 is merged) | G9 G10 G11 + rerun all | |
 | WP-21 to WP-26 | 0.1.0 (M3) | Points 7 and 8: payload parser, admin JSON transport, editor model, values endpoint and presenter, admin editor UI, CSV import and export | all | |
 | WP-27 to WP-31 | 0.1.0 (M3) | Point 9 project pages and the project storage ceiling | all | |

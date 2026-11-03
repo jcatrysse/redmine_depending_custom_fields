@@ -81,17 +81,17 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      required. Required dependent fields offer no "(none)", as in Redmine:
      when the parent selection allows no value (the parent is "(none)" or its
      value has no linked values), a required dependent field stays on
-     "(No change)" with the hint "No values are available for the selected
-     Hardware." and is not cleared
+     "(No change)" (a multi-value field: nothing selected) with the hint "No
+     values are available for the selected Hardware." and is not cleared
    - Setting a parent field to "(none)", or to a value that allows no values,
      sets its dependent fields that are not required, and the fields below
      them, to "(none)", with the hint "Cleared because the current choice for
      Hardware allows no values for this field." This is the only case in which
      a dependent field is cleared automatically. The clearing stops at a
      required dependent field: it stays on "(No change)", so the fields below
-     it are left as they are. The browser does the clearing: without
-     JavaScript a dependent field left on "(No change)" that holds a value is
-     refused for that issue
+     it go back to their choice under "(No change)" and are not cleared. The
+     browser does the clearing: without JavaScript a dependent field left on
+     "(No change)" that holds a value is refused for that issue
    - The server rejects a new value the parent value does not allow, also via
      API or email; a value already stored is accepted while its parent value
      is unchanged (see [Validation](#validation))
@@ -248,7 +248,8 @@ rules (see `Bulk edit` under [Features](#features)): a parent value filters
 the fields below it, a per-parent default is preselected with a hint, and
 "(none)" or a value that allows no values clears the fields below it that
 are not required (a required field stays on "(No change)", and the fields
-below it are left as they are). The
+below it go back to their choice under "(No change)" and are not cleared).
+The
 hints appear under the field inside the wizard. The server also ignores a
 posted value for a field you may not edit on an issue, as Redmine's bulk edit
 does.
@@ -1186,8 +1187,9 @@ on the administration form.
   (replace imports included) and the sort need it too, as a checkbox next to
   **Save** on the dependency page and as the confirmation panel for the sort;
   on a field used only in this project they need none, and the sort
-  asks the browser confirmation only. Drag-and-drop ordering, adding a value
-  and the default value need no confirmation.
+  asks the browser confirmation only. Drag-and-drop ordering, the Save of a
+  Key/Value list table (renames, order and the Active flags included), adding
+  a value and the default value need no confirmation.
 * Every change, and every rejected attempt, is recorded in an append-only
   audit log, written in the same transaction as the change; a change that
   still waits for its confirmation is not recorded. Project managers see

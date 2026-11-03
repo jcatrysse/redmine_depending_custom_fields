@@ -49,7 +49,7 @@ The owner chose one release for the renewal (UD-01). 0.0.16 stays a small patch 
 |---------|----------|---------------|
 | 0.0.16 (patch) | SD-01 security fix (own pull request), the MemCacheStore save crash fix, the bulk-edit data-loss fix, the missing "Default value" label, development tooling (`.codex` scripts, RuboCop ratchet, JS tests, manual 6.1 and JS workflows), test hygiene | WP-01, WP-02, WP-03, WP-07 |
 | 0.1.0, milestone M1 | Characterization specs, `DependencyRules` + `FieldIndex`, shared `DependingFormatMethods`, Key/Value list options fix, per-value leniency for stored combinations (D1), cycle validation, MySQL size validation, service error mapping and audit cap, opt-in rake tasks | WP-04 to WP-06, WP-08 to WP-14 |
-| 0.1.0, milestone M2 | Issue-form runtime without inline script (points 1 to 5): context menu without cache, per-field data contract, new runtime, switch-over, required "(none)" and radio sentinel | WP-15 to WP-20, and WP-36 (owner follow-up of 2026-11-02) |
+| 0.1.0, milestone M2 | Issue-form runtime without inline script (points 1 to 5): context menu without cache, per-field data contract, new runtime, switch-over, required "(none)" and radio sentinel (the required "(none)" was removed by WP-34, UD-10 changed by the owner) | WP-15 to WP-20, and WP-36 (owner follow-up of 2026-11-02) |
 | 0.1.0, milestone M3 | Dependency editor, CSV import and export, project pages (points 7 to 9); version bump and tag 0.1.0 | WP-21 to WP-32, and WP-33 to WP-35 (owner follow-up of 2026-11-02) |
 
 In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships in release 0.1.0, implemented during that milestone. [`large_lists_work_packages.md`](large_lists_work_packages.md) has the full CHANGELOG lines. [`large_lists_compatibility.md`](large_lists_compatibility.md) has every change a user can notice.
@@ -69,7 +69,7 @@ In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships 
 | 9 | [`large_lists_i18n_registry.md`](large_lists_i18n_registry.md) | Every new locale key with its owner WP and en/de/fr/nl text |
 | 10 | [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) | Repo-specific quality protocol: roles, gates G1 to G12, commands, `.codex` scripts, test strategy, definition of done |
 | 11 | [`large_lists_work_packages.md`](large_lists_work_packages.md) | WP-01 to WP-36: scope, files, tests, acceptance, rollback, dependency graph |
-| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research and integration: SD-01 to SD-21 tracked separately (SD-01 and SD-13 to SD-16 are security issues, all five fixed; SD-17 fixed by WP-33; SD-18 to SD-21 are in redmine_extended_api), plus the defects fixed inside the plan |
+| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research and integration: SD-01 to SD-22 tracked separately (SD-01 and SD-13 to SD-16 are security issues, all five fixed; SD-17 fixed by WP-33; SD-18 to SD-21 are in redmine_extended_api; SD-22, time entries skipping the validation of hidden custom fields on the current 6.1-stable and 7.0-stable core, is open for an owner decision), plus the defects fixed inside the plan |
 | 13 | [`large_lists_review_log.md`](large_lists_review_log.md) | Review lenses, issues and resolutions, critic gaps, remaining risks |
 
 ## Hard rules carried over

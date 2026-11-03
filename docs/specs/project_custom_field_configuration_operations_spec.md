@@ -386,15 +386,17 @@ F and G are one operation, `DependencyMappingService`, audited as
    Spec §3). Changed by WP-34 (UD-23 changed by the owner on 2026-11-02):
    before the delta and the first write, after the parse and the
    validation (their 422s come first), a field shared with other projects
-   or global needs `confirm` (a String that casts to true, `1` from the
-   page) on the editor save, a replace import and the deprecated nested
+   or global needs `confirm` (the String `1` from the page, or `true`;
+   case and surrounding white space ignored) on the editor save, a replace import and the deprecated nested
    params alike, else needs-confirmation (no row, nothing written); was no
    confirmation step on shared or global fields.
 6. **Re-render.** A 422 after an ok parse shows the posted mapping in the
    editor, dirty; a parser error or the legacy path shows the stored
-   mapping. The needs-confirmation 422 (WP-34) follows the same rule, with
-   the warning flash `text_confirm_cross_project_change` and the unchecked
-   required confirmation checkbox. Every re-render reloads the field first, so the rendered
+   mapping. The needs-confirmation 422 (WP-34) shows the posted mapping,
+   dirty, on both paths (on the legacy path the sanitized nested params,
+   WP-34 review round 1), with the warning flash
+   `text_confirm_cross_project_change` and the unchecked required
+   confirmation checkbox. Every re-render reloads the field first, so the rendered
    `state_hash` is the stored one (R9). A 409 (stale `state_hash`) shows the
    stored mapping and the posted version as `data-dcf-editor-conflict-mapping`
    (parsed once, after authorization), with the shared conflict panel (use my

@@ -552,7 +552,7 @@ end
 | Payload over 4 MiB (crafted; the editor pre-checks) | 422 `error_dcf_dependencies_too_large_to_send` (editor key, WP-25) with `size` and `limit` | DB state, clean | blank | `validation_failed`, `too_large` |
 | Storage over the column limit or the ceiling | 422 `error_dcf_mapping_too_large` (field, size, limit) | posted state in `data-dcf-editor-mapping`, `data-dcf-editor-dirty="1"`, with a fresh `state_hash` (R9) | blank (gap 1) | `validation_failed`, machine message |
 | Stale `state_hash` | 409 `error_stale_edit` | DB state, clean, plus the shared conflict panel from `data-dcf-editor-conflict-mapping` (UD-17) | blank | `validation_failed` (existing) |
-| Shared or global field saved without `confirm=1` (editor save, replace import, nested params; WP-34, UD-23) | 422, `#flash_warning` `text_confirm_cross_project_change`, the confirmation checkbox unchecked; checked after the preamble (403, 404, 409), the parse and the validation (their 422s come first), before any write | posted state in `data-dcf-editor-mapping`, `data-dcf-editor-dirty="1"`, fresh `state_hash` (R9); the stored mapping, clean, on the nested path | blank (gap 1) | none (as rename and remove: `ConfirmationRequired` is re-raised without a row) |
+| Shared or global field saved without `confirm=1` (editor save, replace import, nested params; WP-34, UD-23) | 422, `#flash_warning` `text_confirm_cross_project_change`, the confirmation checkbox unchecked; checked after the preamble (403, 404, 409), the parse and the validation (their 422s come first), before any write | posted state in `data-dcf-editor-mapping`, `data-dcf-editor-dirty="1"`, fresh `state_hash` (R9); on the nested path its sanitized posted mapping, dirty, too (WP-34 review round 1) | blank (gap 1) | none (as rename and remove: `ConfirmationRequired` is re-raised without a row) |
 | Unauthorized PATCH (any payload, including malformed or 1,000,000 digits) | 403 (`deny_access`) | n/a | n/a | `authorization_failed` from the service preamble when the request reaches the service; `DependencyPayload.parse` never called (SP-20b, gap 12) |
 | Closed project | 403 | n/a | n/a | none (`require_active_project`, as today) |
 | Parent missing or not relevant (`DependencyRules.parent_of`, gap 2) | 200 notice, no form; a direct PATCH gives 422 `error_invalid_dependency` or 404 (unchanged) | n/a | n/a | failure row for the PATCH |
@@ -642,7 +642,7 @@ end
 
 **State preservation.**
 - `_list_state_fields.html.erb` emits hidden `q` (only when filtered) and `page` (only when greater than 1), with `id: nil`.
-- They go into: the rename forms, the delete `button_to` params, the enumeration form, the `delete_link` query, the sort buttons (`q` only) and the confirm panel.
+- They go into: the rename forms, the delete `button_to` params, the enumeration form, the `delete_link` query, the sort buttons (`q` only), the rename and remove confirm panel (`q` and `page`) and the sort confirm panel (`q` only, WP-34).
 - Small unfiltered lists keep their exact current markup.
 - Redirects go to `custom_field_configuration_field_path(@project, @field, redirect_state(action))`:
   - `sort_values` drops `page`;

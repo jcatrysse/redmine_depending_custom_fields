@@ -219,6 +219,13 @@ Orphans (links whose parent key or child value is no current value) are
 reported by the editor on load and removed by the next save, which counts
 them as `orphans_removed` in the audit row.
 
+From WP-34 (UD-23 changed by the owner on 2026-11-02): on a field shared with
+other projects or global, after step 4 and before any write, the save needs
+`confirm` (the required checkbox next to Save; scripts post `confirm=1`, a
+String only: `1` or `true`); without it the page comes back with 422, the
+warning flash and the posted mapping dirty (the deprecated nested params
+alike), nothing written and no audit row (Operations Spec F.5).
+
 ## 15. Default value dependency flow
 
 - Per parent value, optionally choose a default child (must be among allowed
