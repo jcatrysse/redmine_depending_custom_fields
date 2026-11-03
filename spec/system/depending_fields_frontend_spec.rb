@@ -12,9 +12,11 @@ require 'timeout'
 # notes-only save and restored on A to B to A, bulk edit (UD-09),
 # updateIssueFrom re-init, the wizard save (UD-11), the WP-09b case and the
 # UD-37 warning. Screenshots go to tmp/capybara/dcf/wp-18/. WP-19 adds a
-# required radio child cleared through the blank sentinel and the marked
-# (none) of a required child in bulk edit (UD-10); their screenshots go to
-# tmp/capybara/dcf/wp-19/.
+# required radio child cleared through the blank sentinel (screenshots in
+# tmp/capybara/dcf/wp-19/). Changed by WP-34 (UD-10 changed by the owner on
+# 2026-11-02): a required child in bulk edit gets no (none) option, as core
+# renders it, and the per-issue result of the save (screenshots in
+# tmp/capybara/dcf/wp-34/); was the marked (none) of WP-19.
 RSpec.describe 'Depending fields in the browser (WP-18, WP-19)', type: :system do
   fixtures :users
 
@@ -325,31 +327,46 @@ RSpec.describe 'Depending fields in the browser (WP-18, WP-19)', type: :system d
     expect(issue.custom_field_value(child)).to be_blank
   end
 
-  it 'offers the marked (none) of a required child in bulk edit only while the parent allows nothing (WP-19)' do
+  # Flipped by WP-34 (UD-10): no (none) option on a required child in any
+  # parent state; parent (none) or a value without links leaves (No change)
+  # with the empty hint, and the save refuses the issue whose child keeps a
+  # value ('is invalid', stored values kept) and saves the blank one. Was
+  # 'offers the marked (none) of a required child in bulk edit only while the
+  # parent allows nothing (WP-19)', both issues cleared.
+  it 'gives a required child no (none) in bulk edit; the save refuses a kept value and saves a blank one (WP-34)' do
     parent, child = pair
     child.update!(is_required: true)
-    issues = [dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant'),
-              dcf_real_issue(project.reload, parent => 'Beta', child => 'Bee')]
+    kept = dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant')
+    blank = dcf_real_issue(project.reload, parent => 'Gamma')
     child_id = "issue_custom_field_values_#{child.id}"
     parent_id = "issue_custom_field_values_#{parent.id}"
-    none = "##{child_id} option[value='__none__'][data-dcf-required-none='1']"
+    empty_hint = 'No values are available for the selected Fe parent.'
 
     dcf_login
-    visit "/issues/bulk_edit?#{issues.map { |issue| "ids[]=#{issue.id}" }.join('&')}"
+    visit "/issues/bulk_edit?#{[kept, blank].map { |issue| "ids[]=#{issue.id}" }.join('&')}"
     expect(page).to have_css("##{child_id}[data-dcf-state='unfiltered']", visible: :all)
-    expect(js("[document.querySelector(#{none.to_json}).disabled, document.querySelector(#{none.to_json}).hidden]"))
-      .to eq([true, true])
+    expect(js("document.querySelectorAll('##{child_id} option[value=\"__none__\"], [data-dcf-required-none]').length")).to eq(0)
+    expect(dcf_selectable_options(child_id)).to eq(['', 'Ant', 'Ape', 'Bee'])
     select_value(parent_id, 'Alpha')
     expect(dcf_selectable_options(child_id)).to eq(['', 'Ant', 'Ape'])
+    select_value(parent_id, 'Gamma')
+    expect([value_of(child_id), attribute_of(child_id, 'data-dcf-state')]).to eq(['', 'empty'])
+    expect(dcf_selectable_options(child_id)).to eq([''])
+    expect(hint_of(child_id)).to eq(empty_hint)
     select_value(parent_id, '__none__')
-    expect(value_of(child_id)).to eq('__none__')
-    expect(dcf_selectable_options(child_id)).to eq(['__none__'])
-    expect(hint_of(child_id)).to eq('Cleared because the current choice for Fe parent allows no values for this field.')
-    shot('bulk-edit-required-none', wp: 'wp-19')
+    expect([value_of(child_id), attribute_of(child_id, 'data-dcf-state')]).to eq(['', 'none'])
+    expect(dcf_selectable_options(child_id)).to eq([''])
+    expect(hint_of(child_id)).to eq(empty_hint)
+    expect(js("document.getElementById(#{child_id.to_json}).classList.contains('dcf-auto-applied')")).to be(false)
+    shot('bulk-edit-required-no-none', wp: 'wp-34')
 
     find('#bulk_edit_form input[type=submit]').click
-    expect(page).to have_css('#flash_notice')
-    expect(issues.map { |issue| [issue.reload.custom_field_value(parent), issue.custom_field_value(child)] })
-      .to eq([['', ''], ['', '']])
+    expect(page).to have_css('#errorExplanation')
+    expect(find('#errorExplanation')).to have_text("Fe child #{I18n.t('activerecord.errors.messages.invalid')}: ##{kept.id}")
+    expect(find('#errorExplanation')).to have_no_text("##{blank.id}")
+    expect(js("document.querySelectorAll('##{child_id} option[value=\"__none__\"]').length")).to eq(0)
+    shot('bulk-edit-required-refused', wp: 'wp-34')
+    expect([kept.reload.custom_field_value(parent), kept.custom_field_value(child)]).to eq(%w[Alpha Ant])
+    expect([blank.reload.custom_field_value(parent), blank.custom_field_value(child).to_s]).to eq(['', ''])
   end
 end

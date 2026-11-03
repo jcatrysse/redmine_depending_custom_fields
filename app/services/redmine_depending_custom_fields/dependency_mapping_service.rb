@@ -5,7 +5,9 @@ module RedmineDependingCustomFields
   # preamble authorized the user, so every bad input is an audited 422; without
   # that key the deprecated nested params are read. Strict validation with all
   # offenders in the audit summary; the row holds the compact delta v2
-  # (DependencyDelta). Only this field is written. See Operations Spec §F/§G.
+  # (DependencyDelta). Only this field is written. A field shared with other
+  # projects or global needs confirm after the validation, before any write
+  # (UD-23, WP-34). See Operations Spec §F/§G.
   class DependencyMappingService < BaseService
     LEGACY_WARNING = '[DCF] update_dependencies received legacy nested params; send dependencies_json ' \
                      '(deprecated in 0.1.0, removable no earlier than 0.2.0)'.freeze
@@ -41,6 +43,7 @@ module RedmineDependingCustomFields
       dd = Sanitizer.sanitize_default_dependencies(input[:default_value_dependencies])
       dd = shape_defaults!(dd) if input[:json]
       validate_mapping!(vd, dd, parent_labels, child_labels)
+      confirm_shared_change!
 
       delta = DependencyDelta.new(old_vd: field.value_dependencies, old_dd: field.default_value_dependencies,
                                   new_vd: vd, new_dd: dd, parent_labels: parent_labels, child_labels: child_labels,

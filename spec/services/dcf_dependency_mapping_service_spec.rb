@@ -77,12 +77,14 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
     let(:rules) { RedmineDependingCustomFields::DependencyRules }
     let(:max_bytes) { payload::MAX_BYTES }
 
+    # Changed by WP-34: also returns a ConfirmationRequired (UD-23) as the
+    # error; was OperationError only.
     def run(field, params, as_user = user)
       service = described_class.new(project: project, field: field, user: as_user, params: params)
       error = nil
       begin
         service.call
-      rescue RedmineDependingCustomFields::OperationError => e
+      rescue RedmineDependingCustomFields::OperationError, RedmineDependingCustomFields::ConfirmationRequired => e
         error = e
       end
       [service, error]
@@ -291,6 +293,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
       expect(error.summary).to eq('several defaults on a single-value field: 2 [Twin, Twin]')
     end
 
+    # Changed by WP-34: confirm '1' (a global field, UD-23); was no confirm.
     it 'accepts and keeps links of inactive enumerations (T-DEP-11)' do
       parent = dcf_enum_field(names: %w[North South], is_for_all: true)
       child = dcf_enum_field(format: 'depending_enumeration', names: %w[Alpha Retired], parent: parent)
@@ -299,7 +302,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
       CustomFieldEnumeration.where(id: [south, retired]).update_all(active: false)
 
       _service, error = run(CustomField.find(child.id),
-                            dependencies_json: json({ south => [retired], north => [alpha, retired] }, { south => retired }))
+                            dependencies_json: json({ south => [retired], north => [alpha, retired] }, { south => retired }),
+                            confirm: '1')
 
       expect(error).to be_nil
       expect(stored(child)).to eq([{ south => [retired], north => [alpha, retired] }, { south => retired }])
@@ -369,7 +373,13 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
       expect(Rails.logger).not_to have_received(:warn).with(/deprecated/)
     end
 
-    it 'never runs the admin transport or prune_mapping and asks no confirmation on a global field (UD-23, BC-02)' do
+    # Flipped by WP-34 (UD-23 changed by the owner on 2026-11-02): a global
+    # field asks for the confirmation, the source names ConfirmationRequired;
+    # the confirmed save keeps every old assertion. Was 'never runs the admin
+    # transport or prune_mapping and asks no confirmation on a global field
+    # (UD-23, BC-02)', saved without confirm, and a source regex that forbade
+    # ConfirmationRequired.
+    it 'never runs the admin transport or prune_mapping and asks the confirmation on a global field (UD-23, BC-02)' do
       parent = dcf_list_field(name: 'Global parent', values: %w[A B], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Global child', values: %w[c1 c2], parent: parent,
                              is_for_all: true)
@@ -377,18 +387,151 @@ RSpec.describe RedmineDependingCustomFields::DependencyMappingService do
       allow(payload).to receive(:parse).and_call_original
       raw = json({ 'A' => %w[c1] }, {}, 'source' => 'import', 'import' => { 'mode' => 'replace', 'rows' => 1 })
 
-      _service, error = run(child, dependencies_json: raw)
+      service, error = run(child, dependencies_json: raw)
+      expect(error).to be_a(RedmineDependingCustomFields::ConfirmationRequired)
+      expect(service.parsed_payload).to be_ok
+      expect(stored(child)).to eq([{}, {}])
+      expect(rows(child)).to be_empty
+
+      _service, error = run(child, dependencies_json: raw, confirm: '1')
 
       expect(error).to be_nil
       # The admin transport would parse a second time in validation.
-      expect(payload).to have_received(:parse).once
+      expect(payload).to have_received(:parse).twice
       source = File.read(File.expand_path('../../app/services/redmine_depending_custom_fields/' \
                                           'dependency_mapping_service.rb', __dir__))
-      expect(source).not_to match(/dependencies_json\s*=[^=]|prune_mapping|ConfirmationRequired/)
+      expect(source).not_to match(/dependencies_json\s*=[^=]|prune_mapping/)
+      expect(source).to match(/confirm/)
       expect(stored(child)).to eq([{ 'A' => %w[c1] }, {}])
       row = rows(child).last
+      expect(rows(child).count).to eq(1)
       expect(JSON.parse(row.after_value).values_at('source', 'import')).to eq(['import', { 'mode' => 'replace', 'rows' => 1 }])
       expect(row.affected_projects_count).to eq(Project.active.count)
+    end
+
+    # WP-34 (UD-23 changed by the owner on 2026-11-02): a field shared with
+    # other projects or global needs confirm; the confirmation comes after the
+    # preamble, the parse and the validation, before any write, and is not
+    # audited (as rename and remove). A project-only field never asks.
+    describe 'the confirmation of a shared or global field (UD-23, WP-34)' do
+      let(:other) { dcf_create_project(name: "Other-#{SecureRandom.hex(3)}") }
+
+      def pair_with(scope)
+        parent = dcf_list_field(name: "P-#{SecureRandom.hex(3)}", values: %w[A B], is_for_all: false, projects: [project])
+        child_scope = case scope
+                      when :global then { is_for_all: true }
+                      when :shared then { is_for_all: false, projects: [project, other] }
+                      when :archived_other then { is_for_all: false, projects: [project, dcf_create_project(status: :archived)] }
+                      else { is_for_all: false, projects: [project] }
+                      end
+        child = dcf_list_field(format: 'depending_list', name: "C-#{SecureRandom.hex(3)}", values: %w[c1 c2], parent: parent,
+                               **child_scope)
+        dcf_set_dependencies(child, value_dependencies: { 'A' => %w[c1] }, default_value_dependencies: { 'A' => 'c1' })
+      end
+
+      def expect_confirmation(child, error)
+        expect(error).to be_a(RedmineDependingCustomFields::ConfirmationRequired)
+        expect(stored(child)).to eq([{ 'A' => %w[c1] }, { 'A' => 'c1' }])
+        expect(rows(child)).to be_empty
+      end
+
+      [:global, :shared, :archived_other].each do |scope|
+        it "asks a #{scope} field for the confirmation on an editor save, a replace import and the nested params" do
+          child = pair_with(scope)
+          raw_before = raw_store(child)
+          editor = json({ 'B' => %w[c2] })
+          import = json({ 'B' => %w[c2] }, {}, 'source' => 'import', 'import' => { 'mode' => 'replace', 'rows' => 1 })
+
+          [{ dependencies_json: editor }, { dependencies_json: import },
+           { value_dependencies: { 'B' => %w[c2] }, default_value_dependencies: {} },
+           { dependencies_json: json({ 'A' => %w[c1] }, { 'A' => 'c1' }) }].each do |params|
+            _service, error = run(child, params)
+            expect_confirmation(child, error)
+            expect(raw_store(child)).to eq(raw_before)
+          end
+
+          _service, error = run(child, dependencies_json: import, confirm: '1')
+          expect(error).to be_nil
+          expect(stored(child)).to eq([{ 'B' => %w[c2] }, {}])
+          expect(rows(child).count).to eq(1)
+          row = rows(child).last
+          expect([row.action, row.status]).to eq(%w[update_dependencies success])
+          expect(JSON.parse(row.after_value).values_at('v', 'source', 'import'))
+            .to eq([2, 'import', { 'mode' => 'replace', 'rows' => 1 }])
+        end
+      end
+
+      it 'saves a project-only field without confirm and ignores confirm' do
+        child = pair_with(:project)
+        [nil, '0', ['1']].each_with_index do |confirm, index|
+          params = { dependencies_json: json({ 'B' => [%w[c1 c2][index % 2]] }) }
+          params[:confirm] = confirm unless confirm.nil?
+          _service, error = run(child, params)
+          expect(error).to be_nil
+        end
+        expect(rows(child).where(status: 'success').count).to eq(3)
+      end
+
+      it 'keeps the audited 422 of a malformed payload, an unknown key and an oversize payload without confirm' do
+        child = pair_with(:global)
+        _service, error = run(child, dependencies_json: '{')
+        expect([error.class, error.key]).to eq([RedmineDependingCustomFields::OperationError, :error_invalid_dependency_payload])
+        _service, error = run(child, dependencies_json: json({ 'ZZ' => %w[c1] }))
+        expect([error.class, error.key]).to eq([RedmineDependingCustomFields::OperationError, :error_invalid_dependency])
+        _service, error = run(child, dependencies_json: "[#{'9' * max_bytes}]")
+        expect([error.class, error.key])
+          .to eq([RedmineDependingCustomFields::OperationError, :error_dcf_dependencies_too_large_to_send])
+        _service, error = run(child, value_dependencies: { 'A' => %w[zz] })
+        expect([error.class, error.key]).to eq([RedmineDependingCustomFields::OperationError, :error_invalid_dependency])
+        expect(rows(child).pluck(:status)).to eq(%w[validation_failed validation_failed validation_failed validation_failed])
+        expect(stored(child)).to eq([{ 'A' => %w[c1] }, { 'A' => 'c1' }])
+      end
+
+      it 'answers 403 and 409 before the confirmation, and the storage ceiling only on a confirmed save' do
+        child = pair_with(:global)
+        stranger = dcf_create_user("stranger-#{SecureRandom.hex(3)}")
+        _service, error = run(child, { dependencies_json: json({ 'B' => %w[c2] }) }, stranger)
+        expect([error.class, error.http_status]).to eq([RedmineDependingCustomFields::OperationError, :forbidden])
+        _service, error = run(child, dependencies_json: json({ 'B' => %w[c2] }), state_hash: 'stale')
+        expect([error.class, error.http_status]).to eq([RedmineDependingCustomFields::OperationError, :conflict])
+
+        bytes = raw_store(child).bytesize
+        allow(limits).to receive(:column_limit).and_return(nil)
+        allow(limits).to receive(:column_limit).with('format_store').and_return(bytes)
+        grown = json({ 'A' => %w[c1 c2], 'B' => %w[c1 c2] })
+        _service, error = run(child, dependencies_json: grown)
+        expect(error).to be_a(RedmineDependingCustomFields::ConfirmationRequired)
+        _service, error = run(child, dependencies_json: grown, confirm: '1')
+        expect(error.key).to eq(:error_dcf_mapping_too_large)
+        expect(rows(child).pluck(:status)).to eq(%w[authorization_failed validation_failed validation_failed])
+      end
+
+      it 'asks also for a save that changes nothing, and logs the one deprecation warning first on the nested path' do
+        child = pair_with(:shared)
+        allow(Rails.logger).to receive(:warn).and_call_original
+        _service, error = run(child, dependencies_json: json({ 'A' => %w[c1] }, { 'A' => 'c1' }))
+        expect_confirmation(child, error)
+        _service, error = run(child, value_dependencies: { 'A' => %w[c1] }, default_value_dependencies: { 'A' => 'c1' })
+        expect_confirmation(child, error)
+        expect(Rails.logger).to have_received(:warn).with(described_class::LEGACY_WARNING).once
+      end
+
+      # BaseService#confirmed?, the one rule: a String that
+      # ActiveModel::Type::Boolean casts to true.
+      it 'confirms with the String 1 (or true) only, never with an Array, a Hash, Parameters, an Integer or true' do
+        child = pair_with(:global)
+        refused = [nil, '', '0', 'false', 'off', ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true]
+        refused.each do |confirm|
+          _service, error = run(child, dependencies_json: json({ 'B' => %w[c2] }), confirm: confirm)
+          expect(error).to be_a(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
+        end
+        expect(stored(child)).to eq([{ 'A' => %w[c1] }, { 'A' => 'c1' }])
+        %w[1 true].each_with_index do |confirm, index|
+          _service, error = run(child, dependencies_json: json({ 'B' => [%w[c1 c2][index]] }), confirm: confirm)
+          expect(error).to be_nil, confirm
+        end
+        expect(stored(child)).to eq([{ 'B' => %w[c2] }, {}])
+      end
     end
 
     it 'refuses a missing parent and a parent outside the project before any parse (gap 2)' do

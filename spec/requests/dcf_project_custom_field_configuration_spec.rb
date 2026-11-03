@@ -487,18 +487,20 @@ RSpec.describe 'Project custom field configuration', type: :request do
     end
 
     # Renamed by WP-27 (was: 'saves a dependency mapping and redirects').
+    # Changed by WP-34 (UD-23): confirm '1' on the global child; was no confirm.
     it 'saves a dependency mapping and redirects (legacy nested params, deprecated)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1],
                              parent: parent, is_for_all: true)
       as(dcf_manager(project))
       patch custom_field_configuration_update_dependencies_path(project, child),
-            params: { value_dependencies: { 'A' => ['c1'] } }
+            params: { value_dependencies: { 'A' => ['c1'] }, confirm: '1' }
       expect(response).to have_http_status(:redirect)
       expect(child.reload.value_dependencies).to eq('A' => ['c1'])
     end
 
     # Renamed by WP-27 (was: '... submitted as an array (T-UI-7)').
+    # Changed by WP-34 (UD-23): confirm '1' on the global child; was no confirm.
     it 'saves multiple per-parent defaults submitted as an array (T-UI-7, legacy nested params, deprecated)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: 'Child', values: %w[c1 c2],
@@ -506,7 +508,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
       as(dcf_manager(project))
       patch custom_field_configuration_update_dependencies_path(project, child),
             params: { value_dependencies: { 'A' => %w[c1 c2] },
-                      default_value_dependencies: { 'A' => %w[c1 c2] } }
+                      default_value_dependencies: { 'A' => %w[c1 c2] }, confirm: '1' }
       expect(response).to have_http_status(:redirect)
       expect(child.reload.default_value_dependencies).to eq('A' => %w[c1 c2])
     end
@@ -729,6 +731,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
       expect(table.text).to match(/possible_values: \d+ bytes exceeds \d+ \(custom field #\d+\)/)
     end
 
+    # Changed by WP-34 (UD-23): confirm '1' (global child; the storage error
+    # comes only on a confirmed save); was no confirm.
     it 'escapes the field name once in the dependency page flash (T-SIZE-2)' do
       parent = dcf_list_field(name: 'Parent', values: %w[A], is_for_all: true)
       child = dcf_list_field(format: 'depending_list', name: markup, values: %w[c1], parent: parent, is_for_all: true)
@@ -736,7 +740,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
       as(dcf_manager(project))
 
       patch custom_field_configuration_update_dependencies_path(project, child),
-            params: { value_dependencies: { 'A' => ['c1'] } }
+            params: { value_dependencies: { 'A' => ['c1'] }, confirm: '1' }
 
       expect_escaped_flash(markup)
       expect(child.reload.value_dependencies).to eq({})
@@ -1035,6 +1039,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
     end
 
     describe 'GET' do
+      # Changed by WP-34 (UD-23): the child is global, so the form also holds
+      # the unchecked required confirm box (6 names at most); was at most 5
+      # names without confirm.
       it 'renders the editor in a multipart PATCH form with a blank input, the stored mapping and Save disabled ' \
          '(T-DEPJ-10, T-DEPJ-19, UD-16)' do
         get page_path(child)
@@ -1051,8 +1058,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(attr_json('mapping')).to eq(stored_mapping(child))
         expect(hidden_values).to eq([['dcf_dependencies_json', '']])
         names = form.css('[name]').map { |n| n['name'] }.uniq
-        expect(names - %w[_method authenticity_token utf8 state_hash dependencies_json]).to eq([])
-        expect(names.size).to be <= 5
+        expect(names - %w[_method authenticity_token utf8 state_hash dependencies_json confirm]).to eq([])
+        expect(names.size).to be <= 6
+        expect(form.css('input[type=checkbox][name=confirm][required]').map { |box| box['checked'] }).to eq([nil])
         saves = form.css('input[type=submit]')
         expect(saves.size).to eq(1)
         expect([saves.first['disabled'], saves.first['data-dcf-editor-submit'], saves.first['name']])
@@ -1196,11 +1204,12 @@ RSpec.describe 'Project custom field configuration', type: :request do
     end
 
     describe 'PATCH with dependencies_json' do
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'saves, redirects with the notice and writes one success row with the v2 delta (T-DEPJ-1)' do
         child
         allow(payload).to receive(:parse).and_call_original
 
-        expect { save(child, json({ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' })) }
+        expect { save(child, json({ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }), extra: { confirm: '1' }) }
           .to change { rows(child).count }.by(1)
 
         expect(response).to redirect_to(page_path(child))
@@ -1220,12 +1229,13 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(row.changes_summary).to start_with('Updated dependency mapping (editor): +1/-3 links')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'saves for an administrator on an active project with one success row (G5 admin row)' do
         child
         admin = dcf_admin
         as(admin)
 
-        expect { save(child, json({ 'Germany' => %w[Lyon] })) }.to change { rows(child).count }.by(1)
+        expect { save(child, json({ 'Germany' => %w[Lyon] }), extra: { confirm: '1' }) }.to change { rows(child).count }.by(1)
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
@@ -1234,10 +1244,11 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(JSON.parse(row.after_value)['source']).to eq('editor')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'chains mapping_sha256 over consecutive saves and audits a no-op save' do
         child
-        save(child, json({ 'Germany' => %w[Lyon] }))
-        save(child, json({ 'Germany' => %w[Lyon] }))
+        save(child, json({ 'Germany' => %w[Lyon] }), extra: { confirm: '1' })
+        save(child, json({ 'Germany' => %w[Lyon] }), extra: { confirm: '1' })
 
         first, second = rows(child).last(2).map { |row| [JSON.parse(row.before_value), JSON.parse(row.after_value)] }
         expect(second[0]['mapping_sha256']).to eq(first[1]['mapping_sha256'])
@@ -1245,20 +1256,22 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(rows(child).last.status).to eq('success')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'round-trips parent and child values with brackets (T-DEPJ-2)' do
         brackets = dcf_list_field(name: "Br-#{SecureRandom.hex(3)}", values: ['Foo [x]', '[b', 'a]'])
         field = dcf_list_field(format: 'depending_list', name: "Brc-#{SecureRandom.hex(3)}", values: ['[x]', 'y]'],
                                parent: brackets)
         mapping = { 'Foo [x]' => ['[x]'], '[b' => ['y]'], 'a]' => ['[x]', 'y]'] }
 
-        save(field, json(mapping, { 'a]' => 'y]' }))
+        save(field, json(mapping, { 'a]' => 'y]' }), extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(field))
         expect(stored(field)).to eq([mapping, { 'a]' => 'y]' }])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'clears both stores with {} (T-DEPJ-3)' do
-        save(child, '{}')
+        save(child, '{}', extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{}, {}])
@@ -1266,13 +1279,14 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(after.values_at('links', 'defaults', 'removed', 'defaults_changed')).to eq([0, 0, 3, 1])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'saves 4,200 links in one parameter (T-DEPJ-4, UN-28)' do
         big_parent = dcf_list_field(name: "BigP-#{SecureRandom.hex(3)}", values: (1..42).map { |i| "P#{i}" })
         big = dcf_list_field(format: 'depending_list', name: "BigC-#{SecureRandom.hex(3)}",
                              values: (1..100).map { |i| "C#{i}" }, parent: big_parent)
         mapping = big_parent.possible_values.to_h { |key| [key, big.possible_values] }
 
-        save(big, json(mapping))
+        save(big, json(mapping), extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(big))
         expect(request.request_parameters.keys.size).to be <= 5
@@ -1283,9 +1297,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(rows(big).last.after_value.bytesize).to be <= 12_100
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'records an import payload with source import, mode and rows (T-DEPJ-13)' do
         meta = { 'mode' => 'replace', 'rows' => 2 }
-        save(child, json({ 'Germany' => %w[Lyon], 'France' => %w[Lyon] }, {}, 'source' => 'import', 'import' => meta))
+        save(child, json({ 'Germany' => %w[Lyon], 'France' => %w[Lyon] }, {}, 'source' => 'import', 'import' => meta), extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(child))
         row = rows(child).last
@@ -1430,17 +1445,19 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response.body).not_to include('<img src=x')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'prefers dependencies_json over nested params of the same request, without a deprecation line (T-DEPJ-7)' do
         child
         allow(Rails.logger).to receive(:warn).and_call_original
 
-        save(child, json({ 'Germany' => %w[Lyon] }), extra: { value_dependencies: { 'Belgium' => %w[Paris] } })
+        save(child, json({ 'Germany' => %w[Lyon] }), extra: { confirm: '1', value_dependencies: { 'Belgium' => %w[Paris] } })
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
         expect(Rails.logger).not_to have_received(:warn).with(/deprecated/)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'reloads the field after a storage 422; the corrected resubmit with the rendered state hash saves ' \
          '(T-DEPJ-14, R9, PC-58)' do
         child
@@ -1448,7 +1465,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         allow(payload).to receive(:parse).and_call_original
         grown = { 'Belgium' => %w[Antwerp Brussels Paris Lyon], 'France' => %w[Paris Lyon], 'Germany' => %w[Lyon] }
 
-        save(child, json(grown))
+        save(child, json(grown), extra: { confirm: '1' })
 
         expect(response).to have_http_status(422)
         expect(payload).to have_received(:parse).once
@@ -1461,19 +1478,20 @@ RSpec.describe 'Project custom field configuration', type: :request do
         fresh = rendered_state_hash
         expect(fresh).to eq(state_hash(child))
 
-        save(child, json({ 'Germany' => %w[Lyon] }), state: fresh)
+        save(child, json({ 'Germany' => %w[Lyon] }), state: fresh, extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
         expect(rows(child).last.status).to eq('success')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'escapes the field name once in the storage 422 flash on the JSON path (T-DEPJ-22, SP-06)' do
         markup = '<img src=x onerror=alert(1)>'
         field = dcf_list_field(format: 'depending_list', name: markup, values: %w[c1 c2], parent: parent)
         stub_limit_at_stored(field)
 
-        save(field, json({ 'Belgium' => %w[c1 c2], 'France' => %w[c1 c2] }))
+        save(field, json({ 'Belgium' => %w[c1 c2], 'France' => %w[c1 c2] }), extra: { confirm: '1' })
 
         expect(response).to have_http_status(422)
         box = doc.at_css('#flash_error')
@@ -1484,6 +1502,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response.body).not_to include('&amp;lt;')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'answers a stale save with 409, the stored mapping and the posted version as conflict mapping; the fresh ' \
          'state hash saves it (T-DEPJ-8, T-DEPJ-16, UD-17)' do
         raw_before = raw_store(child)
@@ -1491,7 +1510,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         meta = { 'mode' => 'merge', 'rows' => 1 }
         mine = json({ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }, 'source' => 'import', 'import' => meta)
 
-        save(child, mine, state: 'stale')
+        save(child, mine, state: 'stale', extra: { confirm: '1' })
 
         expect(response).to have_http_status(409)
         expect(payload).to have_received(:parse).once
@@ -1508,7 +1527,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         fresh = rendered_state_hash
         expect(fresh).to eq(state_hash(child))
 
-        save(child, mine, state: fresh)
+        save(child, mine, state: fresh, extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, { 'Germany' => 'Lyon' }])
@@ -1531,11 +1550,12 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(attr_json('conflict-mapping')).to include('source' => 'editor', 'import' => nil)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'removes stored orphans on save and counts them; an identical save is still audited (edge case 9)' do
         field = store_raw(child, { 'Gone' => %w[Antwerp], 'Belgium' => %w[zz Antwerp] })
 
-        save(field, json({ 'Belgium' => %w[Antwerp] }))
-        save(field, json({ 'Belgium' => %w[Antwerp] }))
+        save(field, json({ 'Belgium' => %w[Antwerp] }), extra: { confirm: '1' })
+        save(field, json({ 'Belgium' => %w[Antwerp] }), extra: { confirm: '1' })
 
         first, second = rows(field).last(2)
         expect(JSON.parse(first.after_value)['orphans_removed']).to eq(2)
@@ -1544,6 +1564,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect([first.status, second.status]).to eq(%w[success success])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'never names a hidden child of the edited field on the page, a 422 or a 409' do
         grandchild = dcf_list_field(format: 'depending_list', name: 'Secret grandchild', values: %w[SECRET-G1],
                                     parent: child)
@@ -1553,11 +1574,11 @@ RSpec.describe 'Project custom field configuration', type: :request do
 
         get page_path(child)
         bodies = [response.body]
-        save(child, json({ 'ZZ' => %w[Antwerp] }))
+        save(child, json({ 'ZZ' => %w[Antwerp] }), extra: { confirm: '1' })
         bodies << response.body
-        save(child, json({ 'Germany' => %w[Lyon] }), state: 'stale')
+        save(child, json({ 'Germany' => %w[Lyon] }), state: 'stale', extra: { confirm: '1' })
         bodies << response.body
-        save(child, json({ 'Germany' => %w[Lyon] }))
+        save(child, json({ 'Germany' => %w[Lyon] }), extra: { confirm: '1' })
 
         bodies.each do |body|
           expect(body).not_to include('Secret grandchild')
@@ -1568,6 +1589,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(rows(child).last.affected_child_field_ids.to_s).not_to include(grandchild.id.to_s)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on every save of this global field; was no confirm.
       it 'shows a foreign enumeration id raw in offenders and samples, never its hidden label (gap 3)' do
         hidden = dcf_enum_field(name: "SecretEnum-#{SecureRandom.hex(3)}", names: ['SECRET-LABEL'])
         hidden.update!(visible: false, role_ids: [dcf_create_role.id])
@@ -1578,7 +1600,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         north = enum_parent.enumerations.first.id.to_s
         alpha = enum_child.enumerations.first.id.to_s
 
-        save(enum_child, json(north => [secret]))
+        save(enum_child, json(north => [secret]), extra: { confirm: '1' })
 
         expect(response).to have_http_status(422)
         expect(rows(enum_child).last.changes_summary).to eq("unknown child values: 1 [#{secret}]")
@@ -1586,7 +1608,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response.body).not_to include(hidden.name)
 
         store_raw(enum_child, { north => [alpha, secret] })
-        save(enum_child, json(north => [alpha]))
+        save(enum_child, json(north => [alpha]), extra: { confirm: '1' })
 
         expect(response).to redirect_to(page_path(enum_child))
         row = rows(enum_child).last
@@ -1596,11 +1618,20 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(row.after_value).not_to include('SECRET-LABEL')
       end
 
-      it 'saves a replace import on a global field without any confirmation step (UD-23)' do
+      # Flipped by WP-34 (UD-23 changed by the owner on 2026-11-02): a replace
+      # import on a global field needs the confirmation checkbox; without
+      # confirm it is refused (422, nothing written, no row), with confirm
+      # '1' it saves as before. Was 'saves a replace import on a global field
+      # without any confirmation step (UD-23)', with no confirm input on the
+      # page.
+      it 'saves a replace import on a global field only with the confirmation (UD-23, WP-34)' do
         expect(child.is_for_all).to be(true)
-        save(child, json({ 'Germany' => %w[Lyon] }, {}, 'source' => 'import',
-                                                       'import' => { 'mode' => 'replace', 'rows' => 1 }))
+        raw = json({ 'Germany' => %w[Lyon] }, {}, 'source' => 'import', 'import' => { 'mode' => 'replace', 'rows' => 1 })
+        expect { save(child, raw) }.not_to change(events, :count)
+        expect(response).to have_http_status(422)
+        expect(stored(child)).to eq(original)
 
+        save(child, raw, extra: { confirm: '1' })
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{ 'Germany' => %w[Lyon] }, {}])
         row = rows(child).last
@@ -1608,18 +1639,21 @@ RSpec.describe 'Project custom field configuration', type: :request do
           .to eq(['import', { 'mode' => 'replace', 'rows' => 1 }])
         expect(row.affected_projects_count).to eq(Project.active.count)
         follow_redirect!
-        expect(doc.css('input[name=confirm]')).to be_empty
-        expect(response.body).not_to include(I18n.t(:text_dcf_confirm_understand))
+        expect(doc.css('input[type=checkbox][name=confirm][required]').size).to eq(1)
+        expect(doc.at_css('input[name=confirm]')['checked']).to be_nil
+        expect(response.body).to include(I18n.t(:text_dcf_confirm_understand))
       end
     end
 
     describe 'PATCH with the deprecated nested params' do
+      # Changed by WP-34 (UD-23): confirm '1' (global child), still no mapping
+      # params; was no params at all.
       it 'clears without mapping params, audits source form and logs one constant deprecation line (T-DEPJ-9)' do
         child
         allow(Rails.logger).to receive(:warn).and_call_original
         allow(payload).to receive(:parse).and_call_original
 
-        patch custom_field_configuration_update_dependencies_path(project, child)
+        patch custom_field_configuration_update_dependencies_path(project, child), params: { confirm: '1' }
 
         expect(response).to redirect_to(page_path(child))
         expect(stored(child)).to eq([{}, {}])
@@ -1771,6 +1805,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         json(parent_field.possible_values.to_h { |key| [key, field.possible_values] })
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the saves of both global fields (the same for both counts); was no confirm.
       it 'are the same for a save of 10 and of 4,200 links' do
         small_parent = dcf_list_field(name: "SP-#{SecureRandom.hex(3)}", values: %w[P1 P2])
         small = dcf_list_field(format: 'depending_list', name: "SC-#{SecureRandom.hex(3)}",
@@ -1778,14 +1813,14 @@ RSpec.describe 'Project custom field configuration', type: :request do
         big_parent = dcf_list_field(name: "BP-#{SecureRandom.hex(3)}", values: (1..42).map { |i| "P#{i}" })
         big = dcf_list_field(format: 'depending_list', name: "BC-#{SecureRandom.hex(3)}",
                              values: (1..100).map { |i| "C#{i}" }, parent: big_parent)
-        save(small, '{}')
+        save(small, '{}', extra: { confirm: '1' })
         small_raw = full(small, small_parent)
         big_raw = full(big, big_parent)
         small_state = state_hash(small)
         big_state = state_hash(big)
 
-        small_queries = dcf_count_queries { save(small, small_raw, state: small_state) }
-        big_queries = dcf_count_queries { save(big, big_raw, state: big_state) }
+        small_queries = dcf_count_queries { save(small, small_raw, state: small_state, extra: { confirm: '1' }) }
+        big_queries = dcf_count_queries { save(big, big_raw, state: big_state, extra: { confirm: '1' }) }
 
         expect(response).to redirect_to(page_path(big))
         expect(big_queries).to eq(small_queries)
@@ -2644,11 +2679,13 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(row_values).to eq(['A', 'a', 'b', "\u00E9"])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global enumeration; was
+      # no confirm.
       it 'sorts enumerations Z-A with the inactive ones among them; a stale page then gets 409 (T-SORT-2, UD-24)' do
         field = dcf_enum_field(names: %w[b D a c])
         field.enumerations.find_by(name: 'a').update!(active: false)
         old_hash = service.state_hash(field)
-        patch sort_path(field), params: { direction: 'desc', state_hash: old_hash }
+        patch sort_path(field), params: { direction: 'desc', state_hash: old_hash, confirm: '1' }
         expect(response).to redirect_to(show_path(field))
         expect(enum_state(field)).to eq([['D', 1, true], ['c', 2, true], ['b', 3, true], ['a', 4, false]])
         follow_redirect!
@@ -2658,12 +2695,21 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response).to have_http_status(409)
       end
 
-      it 'sorts a global and a shared field without a confirmation panel, confirm ignored (UD-23)' do
+      # Flipped by WP-34 (UD-23 changed by the owner on 2026-11-02): a global
+      # and a shared field get the confirmation panel without confirm (or
+      # with confirm '0') and sort with confirm '1'; was 'sorts a global and
+      # a shared field without a confirmation panel, confirm ignored (UD-23)'.
+      it 'sorts a global and a shared field only after the confirmation panel (UD-23, WP-34)' do
         global = dcf_list_field(values: %w[c b a], is_for_all: true)
         shared = dcf_list_field(values: %w[c b a], is_for_all: false,
                                 projects: [project, dcf_create_project(name: "Other-#{SecureRandom.hex(3)}")])
         [[global, {}], [shared, { confirm: '0' }]].each do |field, extra|
           patch sort_path(field), params: { direction: 'asc' }.merge(extra)
+          expect(response).to have_http_status(422)
+          expect(doc.css('.dcf-confirm-panel').size).to eq(1)
+          expect(field.reload.possible_values).to eq(%w[c b a])
+          expect(rows(field)).to be_empty
+          patch sort_path(field), params: { direction: 'asc', confirm: '1' }
           expect(response).to redirect_to(show_path(field))
           expect(field.reload.possible_values).to eq(%w[a b c])
           follow_redirect!
@@ -2909,13 +2955,24 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(doc.css('form.dcf-values-sort').size).to eq(2)
       end
 
+      # Changed by WP-34 (UD-23): the global enum_with fields carry no
+      # data-confirm (the server panel asks), so the count is pinned on a
+      # project-only copy and in the panel; was data-confirm on the global
+      # field.
       it 'counts every value in the confirm text, inactive enumerations included, also when filtered' do
         enum = enum_with(30, inactive: [3, 7])
+        enum.update!(is_for_all: false)
+        enum.projects = [project]
         get show_path(enum)
         expect(sort_forms.map { |form| confirm_of(form) }.uniq).to eq([I18n.t(:text_dcf_sort_confirm, count: 30)])
         get show_path(enum, q: 'n001')
         expect(sort_forms.map { |form| confirm_of(form) }.uniq).to eq([I18n.t(:text_dcf_sort_confirm, count: 30)])
         expect(sort_forms.map { |form| hidden_fields(form)['q'] }.uniq).to eq(['n001'])
+        global = enum_with(30, inactive: [3, 7])
+        get show_path(global, q: 'n001')
+        expect(sort_forms.map { |form| form.at_css('[data-confirm]') }.uniq).to eq([nil])
+        patch sort_path(global), params: { direction: 'asc', q: 'n001' }
+        expect(doc.at_css('.dcf-confirm-panel').text).to include(I18n.t(:text_dcf_sort_confirm, count: 30))
         get show_path(enum_with(520), page: 2)
         expect(sort_forms.size).to eq(2)
         sort_forms.each { |form| expect(form.ancestors('form, table')).to be_empty }
@@ -3296,6 +3353,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(doc.css('#content img, #content script')).to be_empty
       end
 
+      # Changed by WP-34 (UD-23): enum_with is global, so its sort buttons
+      # carry no data-confirm (the server panel asks); a project-only copy
+      # keeps data-confirm. Was data-confirm on the global field.
       it 'exposes the four hooks dcf_values_page.js selects on a filtered paginated page (contract pin)' do
         field = enum_with(1_200)
         get show_path(field, q: 'n0', page: 2)
@@ -3303,6 +3363,12 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(doc.css('form.dcf-values-filter').size).to eq(1)
         expect(doc.css('span.pagination a').size).to be > 1
         expect(doc.css('form.dcf-values-sort').size).to eq(2)
+        doc.css('form.dcf-values-sort').each do |form|
+          expect(form.at_css('[type="submit"]')['data-confirm']).to be_nil
+        end
+        field.update!(is_for_all: false)
+        field.projects = [project]
+        get show_path(field, q: 'n0', page: 2)
         doc.css('form.dcf-values-sort').each do |form|
           expect(form.at_css('[type="submit"]')['data-confirm']).to eq(I18n.t(:text_dcf_sort_confirm, count: 1_200))
         end
@@ -3419,11 +3485,13 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response).to redirect_to(show_path(field, q: 'n0', page: 2))
       end
 
+      # Changed by WP-34 (UD-23): the sort of the global enum_with posts
+      # confirm '1'; was no confirm.
       it 'answers 409 to a page form opened before a sort (T-SORT-2 with page mode)' do
         field = enum_with(520)
         get show_path(field, page: 2)
         form = page_form.first
-        patch custom_field_configuration_sort_values_path(project, field), params: { direction: 'desc' }
+        patch custom_field_configuration_sort_values_path(project, field), params: { direction: 'desc', confirm: '1' }
         before = enum_state(field)
         post_form(form)
         expect(response).to have_http_status(409)
@@ -3786,9 +3854,12 @@ RSpec.describe 'Project custom field configuration', type: :request do
       RedmineDependingCustomFields::BaseService.state_hash(CustomField.find(field.id))
     end
 
-    def save_mapping(field, mapping)
-      patch custom_field_configuration_update_dependencies_path(project, field),
-            params: { dependencies_json: JSON.generate(mapping), state_hash: state_hash(field) }, headers: multipart
+    # Changed by WP-34 (UD-23): an explicit confirm, passed by each caller;
+    # was no confirm.
+    def save_mapping(field, mapping, confirm: nil)
+      params = { dependencies_json: JSON.generate(mapping), state_hash: state_hash(field) }
+      params[:confirm] = confirm if confirm
+      patch custom_field_configuration_update_dependencies_path(project, field), params: params, headers: multipart
     end
 
     describe 'storage ceiling on project pages (T-SIZE-R2)' do
@@ -3854,6 +3925,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(field.reload.possible_values).to eq(%w[A B])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on both saves of the global
+      # child (the ceiling is checked only on a confirmed save); was no confirm.
       it 'refuses the JSON dependency save over the ceiling, re-renders it dirty and saves the corrected resubmit ' \
          '(T-DEPJ-14 with the ceiling)' do
         parent = dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France])
@@ -3864,7 +3937,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         stub_ceiling(stored)
         grown = { 'Belgium' => %w[Antwerp Paris], 'France' => %w[Antwerp Paris] }
 
-        save_mapping(child, 'value_dependencies' => grown, 'default_value_dependencies' => {})
+        save_mapping(child, { 'value_dependencies' => grown, 'default_value_dependencies' => {} }, confirm: '1')
 
         expect(response).to have_http_status(422)
         expect(flash_box.text.strip).to include(child.name)
@@ -3880,7 +3953,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         patch custom_field_configuration_update_dependencies_path(project, child),
               params: { dependencies_json: JSON.generate('value_dependencies' => { 'France' => %w[Paris] },
                                                          'default_value_dependencies' => {}),
-                        state_hash: rendered }, headers: multipart
+                        state_hash: rendered, confirm: '1' }, headers: multipart
 
         expect(response).to have_http_status(302)
         expect(CustomField.find(child.id).value_dependencies).to eq('France' => %w[Paris])
@@ -3889,6 +3962,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
       # Review round 2 (contracts-r2-1): the editor always posts the
       # per-parent defaults; an empty set over a mapping stored without them
       # changes nothing.
+      # Changed by WP-34 (UD-23): confirm '1' (global child); was no confirm.
       it 'saves the unchanged mapping of a child stored above the ceiling without its per-parent defaults (302)' do
         parent = dcf_list_field(name: "Country-#{SecureRandom.hex(3)}", values: %w[Belgium France])
         child = dcf_list_field(format: 'depending_list', name: "City-#{SecureRandom.hex(3)}",
@@ -3900,7 +3974,7 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(raw(child, 'format_store')).not_to include('default_value_dependencies')
         stub_ceiling(1)
 
-        save_mapping(child, 'value_dependencies' => mapping, 'default_value_dependencies' => {})
+        save_mapping(child, { 'value_dependencies' => mapping, 'default_value_dependencies' => {} }, confirm: '1')
 
         expect(response).to have_http_status(302)
         expect([rows(child).last.action, rows(child).last.status]).to eq(%w[update_dependencies success])

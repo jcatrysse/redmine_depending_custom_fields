@@ -78,17 +78,20 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      Multi-value fields have no "(No change)" entry: with nothing selected they
      stay unchanged
    - "(none)" (in English the option reads "none") clears a field that is not
-     required. Required dependent fields whose parent field you can see offer
-     "(none)" too, but only while the parent selection allows no value (the
-     parent is "(none)" or its value has no linked values); at other times it
-     is hidden and disabled
+     required. Required dependent fields offer no "(none)", as in Redmine:
+     when the parent selection allows no value (the parent is "(none)" or its
+     value has no linked values), a required dependent field stays on
+     "(No change)" with the hint "No values are available for the selected
+     Hardware." and is not cleared
    - Setting a parent field to "(none)", or to a value that allows no values,
-     sets its dependent fields and all fields below them to "(none)", with the
-     hint "Cleared because the current choice for Hardware allows no values for
-     this field." This is the only case in which a dependent field is cleared
-     automatically. The browser does the clearing: without JavaScript a
-     dependent field left on "(No change)" that holds a value is refused for
-     that issue
+     sets its dependent fields that are not required, and the fields below
+     them, to "(none)", with the hint "Cleared because the current choice for
+     Hardware allows no values for this field." This is the only case in which
+     a dependent field is cleared automatically. The clearing stops at a
+     required dependent field: it stays on "(No change)", so the fields below
+     it are left as they are. The browser does the clearing: without
+     JavaScript a dependent field left on "(No change)" that holds a value is
+     refused for that issue
    - The server rejects a new value the parent value does not allow, also via
      API or email; a value already stored is accepted while its parent value
      is unchanged (see [Validation](#validation))
@@ -96,9 +99,12 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      whose dependent field keeps a value (left on "(No change)") that the new
      parent value does not allow is not saved; the other issues are saved, and
      the issues that failed are listed with the message above the bulk edit
-     form, for example "Model is invalid: #12". Without JavaScript, choosing
-     "(none)" on a required dependent field while the parent value allows
-     values is refused for each such issue with "cannot be blank"
+     form, for example "Model is invalid: #12". This also applies to a
+     required dependent field left on "(No change)" when the parent is set to
+     "(none)" or to a value that allows no values: an issue where it keeps a
+     value the new parent value does not allow is refused ("is invalid") and
+     keeps both values, an issue where it is blank is saved with the new
+     parent value
 
 ## Dependency editor
 
@@ -215,7 +221,9 @@ Values that do not start that way are never changed.
 - Project values page: the search, the pages and the value forms work,
   including the Save of a Key/Value list table on a filtered or paginated
   page; drag-and-drop and the warning before leaving with unsaved changes
-  need JavaScript, and the sort buttons post without their confirmation.
+  need JavaScript. The sort buttons of a field used only in this project post
+  without their browser question; on a field shared with other projects, or
+  global, the sort still asks through the confirmation panel of the server.
 
 ## Context menu wizard
 
@@ -238,7 +246,9 @@ with nothing selected). Saving without choosing a value changes nothing, and
 only the fields you set are saved. The wizard fields follow the bulk edit
 rules (see `Bulk edit` under [Features](#features)): a parent value filters
 the fields below it, a per-parent default is preselected with a hint, and
-"(none)" or a value that allows no values clears the fields below it. The
+"(none)" or a value that allows no values clears the fields below it that
+are not required (a required field stays on "(No change)", and the fields
+below it are left as they are). The
 hints appear under the field inside the wizard. The server also ignores a
 posted value for a field you may not edit on an issue, as Redmine's bulk edit
 does.
@@ -709,9 +719,8 @@ filtered in the browser; the server still validates it.
 ### Data attributes
 
 The server writes these attributes on the `<select>` or the
-`span.check_box_group` of each depending field, except `data-dcf-blank` and
-`data-dcf-required-none`, which mark an extra hidden input and an extra option
-(last two rows). Values are JSON where shown.
+`span.check_box_group` of each depending field, except `data-dcf-blank`, which
+marks an extra hidden input (last row). Values are JSON where shown.
 
 | Attribute | Value | When |
 |---|---|---|
@@ -728,7 +737,6 @@ The server writes these attributes on the `<select>` or the
 | `data-dcf-parent-label` | the parent field name | managed fields in form context |
 | `data-dcf-stored` | `{"child": [...], "parent": [...]}`, the stored values the server keeps while the parent is unchanged | managed fields in form context on saved records and copies |
 | `data-dcf-blank` | `1` | an id-less `<input type="hidden" name="<field name>" value="">` right before a managed single-value radio group (form context, required or not) and right before the `<select>` of a managed required drop-down with a default value (core renders it without a blank option); it posts '' when no radio button or option is chosen, so the field can be cleared, and a chosen value comes later and wins; the runtime never reads or changes it |
-| `data-dcf-required-none` | `1` | the `<option value="__none__">` with core's `label_none` text ("none" in English) that bulk edit of issues and time entries and the wizard add for required managed fields, right after "(No change)" (first for a multi-value field); the runtime enables it only while the parent selection allows no value (the parent is "(none)" or its value has no linked values) and keeps it hidden and disabled otherwise; posted while the parent value allows values, it is refused per record with "cannot be blank" |
 
 A dependent field you can see but cannot edit has no control; when its
 stored value matters for a parent change, the form gets one hidden carrier
@@ -1085,14 +1093,17 @@ visibility, required flag, tracker or project applicability.
   but only on an unfiltered list of at most 500 values; otherwise a line
   explains why drag-and-drop is not offered.
 - Sort: 'Sort A-Z' and 'Sort Z-A' are shown whenever the field has more than
-  one value, also on a filtered or paginated page. The browser asks for
-  confirmation with the number of values, and every value of the field is
-  sorted, inactive Key/Value list entries among the active ones; case and
-  accents are ignored and equal values keep their order. No stored issue
-  value, default value or dependency changes, and the page returns to page 1
-  with the search kept. There is no further confirmation step, also for a
-  shared or global field. Roles with the permission 'Manage custom fields'
-  get the sort action without a change to the role.
+  one value, also on a filtered or paginated page. For a field used only in
+  this project the browser asks for confirmation with the number of values.
+  For a field shared with other projects, or global, the browser asks
+  nothing: the page shows the confirmation panel with the number of values,
+  and the sort runs after you tick the confirmation checkbox and click
+  **Apply** (scripts post `confirm=1`). Every value of the field is sorted,
+  inactive Key/Value list entries among the active ones; case and accents
+  are ignored and equal values keep their order. No stored issue value,
+  default value or dependency changes, and the page returns to page 1 with
+  the search kept. Roles with the permission 'Manage custom fields' get the
+  sort action without a change to the role.
 - Key/Value list (enumeration) values are edited as Administration edits
   them: on an unfiltered list that is not paginated, the table is one form
   with a single **Save** that applies renames, reordering and the **Active**
@@ -1102,7 +1113,8 @@ visibility, required flag, tracker or project applicability.
   checked against every value of the field, and a page opened before another
   change gets the conflict message. While the page holds unsaved edits, the
   page and per-page links, the search and the sort buttons ask first (one
-  question; for the sort buttons together with the sort confirmation), and
+  question; for the sort buttons of a field used only in this project
+  together with the sort confirmation), and
   leaving the page any other way gets the browser's question. Redmine's
   preference 'Warn me when leaving a page with unsaved text' turns this
   warning off.
@@ -1125,15 +1137,20 @@ on the administration form.
   `dependencies_json`. **Save** stays disabled until the editor has started,
   so without JavaScript nothing can be saved; a notice says that JavaScript
   is required.
-- A field shared with other projects, or global, shows a warning banner.
-  Saves and replace imports on such a field need no further confirmation.
+- A field shared with other projects, or global, shows a warning banner and
+  a confirmation checkbox next to **Save**; a save, a replace import
+  included, needs it ticked (scripts post `confirm=1`). It is never ticked
+  when the page opens or comes back after a refused save. A save sent
+  without it comes back with your changes still in the editor and the
+  confirmation text, and nothing is saved.
 - When the parent field no longer exists, or is not available in the
   project, a notice replaces the editor.
 - The storage setting of the plugin applies (see [Settings](#settings)).
 - Every save, and every refused attempt, writes an audit row with a compact
-  summary: counts, a few samples and the SHA-256 of the mapping. Its 'source'
-  and 'import' details are reported by the browser and are informational
-  only.
+  summary: counts, a few samples and the SHA-256 of the mapping. A save that
+  still waits for the confirmation writes none, as for a rename or a
+  removal. Its 'source' and 'import' details are reported by the browser and
+  are informational only.
 - Posting `value_dependencies` / `default_value_dependencies` as nested
   parameters to this page is deprecated: it is accepted throughout 0.1.x,
   removable no earlier than 0.2.0, and each such request writes one warning
@@ -1165,10 +1182,15 @@ on the administration form.
   shows an impact panel and needs a confirmation checkbox when the field is
   shared or global, when the value is used in other projects, or when
   dependencies reference it; removing a value needs it also when the value
-  is used in this project. Dependency saves, replace imports and the sort
-  have no such step; the sort asks the browser confirmation only.
+  is used in this project. On a shared or global field, dependency saves
+  (replace imports included) and the sort need it too, as a checkbox next to
+  **Save** on the dependency page and as the confirmation panel for the sort;
+  on a field used only in this project they need none, and the sort
+  asks the browser confirmation only. Drag-and-drop ordering, adding a value
+  and the default value need no confirmation.
 * Every change, and every rejected attempt, is recorded in an append-only
-  audit log, written in the same transaction as the change. Project managers see
+  audit log, written in the same transaction as the change; a change that
+  still waits for its confirmation is not recorded. Project managers see
   the audit for their project in the settings tab; administrators can view the
   global log at `/dcf_config_audit`.
 * A list value added or renamed here has at most 255 characters (counted as

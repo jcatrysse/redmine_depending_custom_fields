@@ -4,7 +4,8 @@ require_relative '../rails_helper'
 
 # WP-04 characterization: pins what the project custom field configuration page
 # saves today (0.0.16) for dependency mappings and enumeration order. Only WP-27
-# may change an expectation here, and only as a listed flip.
+# and WP-34 (UD-23 changed by the owner on 2026-11-02) may change an
+# expectation here, and only as a listed flip.
 RSpec.describe 'Project custom field configuration saves (characterization)', type: :request do
   fixtures :users
 
@@ -30,11 +31,25 @@ RSpec.describe 'Project custom field configuration saves (characterization)', ty
                                   default_value_dependencies: { 'A' => 'c1' })
     end
 
-    # Shared (is_for_all) field: the dependency save has no confirmation step.
+    # Global (is_for_all) field. Flipped by WP-34 (UD-23): the dependency
+    # save needs the confirmation; without confirm it is refused with 422,
+    # the confirmation text and the unchecked box, the stores unchanged and
+    # no audit row; was saved (cleared) without a confirmation step. The
+    # confirmed request (confirm: '1') keeps every old assertion.
     it 'clears both stores of a global field when no dependency params are sent' do
       child = depending_pair(is_for_all: true)
 
-      patch custom_field_configuration_update_dependencies_path(project, child)
+      expect { patch custom_field_configuration_update_dependencies_path(project, child) }
+        .not_to change(RedmineDependingCustomFields::ConfigAuditEvent, :count)
+
+      expect(response).to have_http_status(422)
+      page = Nokogiri::HTML(response.body)
+      expect(page.at_css('#flash_warning').text.strip).to eq(I18n.t(:text_confirm_cross_project_change))
+      box = page.at_css('#dcf-dependencies-form input[type=checkbox][name=confirm][required]')
+      expect(box['checked']).to be_nil
+      expect(stores(child)).to eq([{ 'A' => %w[c1], 'B' => %w[c2] }, { 'A' => 'c1' }])
+
+      patch custom_field_configuration_update_dependencies_path(project, child), params: { confirm: '1' }
 
       expect(response).to redirect_to(custom_field_configuration_field_dependencies_path(project, child))
       expect(flash[:notice]).to eq(I18n.t(:notice_dependencies_saved))

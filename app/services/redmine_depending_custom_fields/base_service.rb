@@ -247,12 +247,9 @@ module RedmineDependingCustomFields
       Array(field.possible_values)
     end
 
+    # The scope banner case (FieldRelevance.scope, one rule with the page).
     def shared_or_global?
-      return true if field.is_a?(ProjectCustomField)
-      return true if field.is_for_all?
-
-      others = field.projects.reject { |p| p.id == project.id }
-      others.any?
+      FieldRelevance.scope(field, project) != :project
     end
 
     def affected_projects_count
@@ -261,8 +258,22 @@ module RedmineDependingCustomFields
       field.projects.size
     end
 
+    # The one confirm rule (WP-34): a String that ActiveModel::Type::Boolean
+    # casts to true ('1' as the forms post it). An Array, a Hash,
+    # ActionController::Parameters, an Integer or true never confirm; the
+    # dependency save passes confirm as posted.
     def confirmed?
-      ActiveModel::Type::Boolean.new.cast(@params[:confirm])
+      raw = @params[:confirm]
+      raw.is_a?(String) && ActiveModel::Type::Boolean.new.cast(raw) == true
+    end
+
+    # UD-23 (WP-34): a dependency save or a sort of a field shared with other
+    # projects or global asks once, before any write. The impact names no
+    # field and counts nothing; not audited (call re-raises it).
+    def confirm_shared_change!
+      return if confirmed? || !shared_or_global?
+
+      raise ConfirmationRequired.new(Impact.new(shared: true))
     end
 
     def block_removal_when_used?

@@ -38,9 +38,9 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
    - Per-parent defaults are still applied, with a visible hint.
    - A child is forced to "(none)" only when nothing can be valid: the parent is "(none)", or the parent value has no links.
    - The wizard root opens on "(no change)".
-   - Decisions: UD-09 (bulk semantics), UD-10 (required "(none)"), UD-11 (wizard root).
+   - Decisions: UD-09 (bulk semantics), UD-10 (required "(none)"; changed by the owner on 2026-11-02 to core behaviour, WP-34), UD-11 (wizard root).
    - Issues: UX-08, BC-05, QA-09.
-6. **Server deliverables are now explicit server work items with specs (R6, QA-12):** the blank sentinel for single radio children, and `__none__` for required depending children in bulk (FD-22, adopted).
+6. **Server deliverables are now explicit server work items with specs (R6, QA-12):** the blank sentinel for single radio children, and `__none__` for required depending children in bulk (FD-22, adopted; withdrawn by WP-34, UD-10 changed by the owner).
 7. **Hints (UX-05, UX-06).**
    - Hints name the parent field and the offending values, with generic fallbacks.
    - Each hint has a JS-generated id tied to the control with `aria-describedby`.
@@ -56,7 +56,7 @@ Each item names the review issues it answers. Section 0.1 lists every deliberate
 | Default | Deviation | Concrete reason |
 |---|---|---|
 | D1 (whole-set "neither child nor parent changed") | Per value (UD-04): while the parent is unchanged, values contained in the child's `value_was` (or, for issue copies, the copy source's values, UD-06) are exempt and only newly added values must be allowed | With the whole-set rule, adding an allowed value to a multi child that holds a legacy value posts `[legacy, new]` and is always rejected (R14). Per value matches core `ListFormat#validate_custom_value` (`values - Array.wrap(value_was) - possible_values`, core-7.0 `lib/redmine/field_format.rb`). |
-| D2 ("(no change)" hidden on descendants; child becomes default, else "(none)") | UD-09 (required children: UD-10). "(no change)" stays visible and enabled. The child becomes the per-parent default when one exists (shown with a hint), otherwise it stays on "(no change)". It is forced to "(none)" only for parent "(none)" or a parent value without links. | Example: setting Country=Belgium on 50 issues where some already hold City=Ghent would clear City on all of them. Today single children stay on "(no change)" (harness A1 posts `''`, which core bulk update skips), so this would be new data loss (BC-05, UX-08). |
+| D2 ("(no change)" hidden on descendants; child becomes default, else "(none)") | UD-09 (required children: UD-10). "(no change)" stays visible and enabled. The child becomes the per-parent default when one exists (shown with a hint), otherwise it stays on "(no change)". It is forced to "(none)" only for parent "(none)" or a parent value without links, and only on children that are not required (a required child keeps "(no change)" and the clear stops there, WP-34). | Example: setting Country=Belgium on 50 issues where some already hold City=Ghent would clear City on all of them. Today single children stay on "(no change)" (harness A1 posts `''`, which core bulk update skips), so this would be new data loss (BC-05, UX-08). |
 | D4 ("wizard behaviour otherwise unchanged") | The wizard root opens on "(no change)" instead of `cf.default_value` (UD-11) | Today Save without touching anything writes the root default onto every selected issue (`app/helpers/context_menu_wizard_helper.rb:11`). Any cascade would make that worse (QA-09). The controller already skips blanks (`app/controllers/context_menu_wizard_controller.rb:49-62`), so "(no change)" posts nothing. |
 | D5 ("at least one minor version") | Explicit targets (UD-01): the shims are deprecated in 0.1.0, kept throughout 0.1.x, and removable no earlier than 0.2.0 (together with the project nested params, which are deprecated in 0.1.0 and removable no earlier than 0.2.0) | BC-14 asks for explicit targets. `init.rb:14` is 0.0.15; per UD-01 the work ships in four releases, and this document's runtime ships in 0.1.0 (M2) (WP-15 to WP-20). |
 | D10 (jsdom only) | Add `jquery 3.7.1` as a devDependency (same as quality Q6; acorn ~8.18.0 for the ES2017 gate; UD-30) | Needed to test `updateIssueFrom` serialize parity and jQuery-triggered (select2) changes against real jQuery. |
@@ -74,7 +74,7 @@ These amendments come from the consolidated plan and override older wording else
 | Legacy marker (gap 6) | `data-dcf-stored` = server D1 baseline: the stored value for persisted records (`value_was` with a saved row, else `[]`), copy source values for issue copies (UD-06), absent for other new records. Row F6b is split into F6b-a (copy, kept) and F6b-b (plain new record, dropped). | 3.3, 5.4, 6, 9, 12.1 |
 | MutationObserver (gap 13) | Coalesced per callback, synchronous init of added roots, no timer debounce; jsdom test: one `replaceIssueFormWith` insertion causes exactly one `init` per root. Recorded in compat section 3. | 0, 0.1, 5.11, 12.1 |
 | Meta tag | `<meta name="dcf-i18n">` with a flat object of the keys of `ClientConfig::I18N` (10, 11 since UD-37, WP-18). | 0, 3.6, 7 |
-| Required "(none)" in bulk | `bulk_edit_tag` adds `<option value="__none__" data-dcf-required-none="1">` for required managed children; the runtime enables it only while the parent selection allows no value (UD-10, WP-19). | 3.4, 5.5 |
+| Required "(none)" in bulk | Changed by WP-34 (UD-10 changed by the owner on 2026-11-02): `bulk_edit_tag` is core's for every field, so a required managed child has no `__none__`; parent "(none)" or a value without links keeps "(no change)" with the `empty` hint and the clear stops there. Was: `<option value="__none__" data-dcf-required-none="1">`, enabled only while the parent selection allowed no value (WP-19). | 3.4, 5.5 |
 | Shared rules cases | `test/js/fixtures/shared/rules_cases.json` (WP-05; `spec/fixtures` is the DB fixture directory). | 4, 13, 14 |
 | Fixture ids | Fixed per-kind id ranges from WP-02 plus the normalizer, the sequence-bump self check and two seeds (`--seed 1`, `--seed 4242`); support file `spec/support/dcf_js_fixtures.rb` (WP-16). | 2, 12.1 |
 | Locale texts | Key names and owners stay here; the texts live only in `large_lists_i18n_registry.md`. | 3.6 |
@@ -200,7 +200,7 @@ This supersedes limits L11 on pruning; L11's integer enumeration ids stay. It is
    - Without JS the posted value is unchanged: the browser still posts the checked radio, or the selected option of a required drop-down without a '' option (below), after the sentinel. One exception, with or without JS (WP-19, accepted): the sentinel always posts the managed child, so core and `NonEditableDependencies` validate the custom values on every form save, as for a drop-down. A blank required radio child under a parent value with options therefore needs a value even on a notes-only save that posts no other custom field (for example with the parent read-only by workflow); before WP-19 nothing was posted and that save went through. See compatibility section 5 (row 'Notes-only save with a blank required radio child') and `spec/requests/dcf_sentinel_params_spec.rb` 'a notes-only save'.
    - This amends server guarantee 1 to: "adds attributes, and for single radio children one id-less hidden input".
    - Delivered (WP-19, open input from WP-17): the same sentinel goes immediately BEFORE the `<select>` of a required single drop-down child that core renders without a '' option (`is_required?` with a `default_value`, saved before the clear-on-save rule). When nothing is usable the runtime sets `selectedIndex = -1`, so the select posts nothing and the sentinel posts `''`; the no-options bypass then accepts the clear. Without JS the browser posts the selected (or first) option after the sentinel, as before. The runtime reads parents from non-hidden controls only (`findParent`), so a sentinel is never a parent value.
-2. **`__none__` for required children in bulk (FD-22, adopted; UD-10, WP-19).** `bulk_edit_tag` of an active child offers `[l(:label_none), '__none__']` even when `is_required?`. Core drops that option for required fields (core-7.0 `field_format.rb:615`).
+2. **`__none__` for required children in bulk (FD-22, adopted; UD-10, WP-19).** Withdrawn by WP-34 (UD-10 changed by the owner on 2026-11-02): no '(none)' for required children, as core; the runtime has no marked option any more. The rejected outcome below (core reports per issue) applies: a kept disallowed value is refused 'is invalid', a blank one is accepted by the no-options bypass, which stays unchanged. `bulk_edit_tag` of an active child offers `[l(:label_none), '__none__']` even when `is_required?`. Core drops that option for required fields (core-7.0 `field_format.rb:615`).
    - Consolidated form (server S13, WP-19): for required active children only, the option is rendered as `<option value="__none__" data-dcf-required-none="1">` right after "(no change)"; non-required output stays core's `List#bulk_edit_tag` plus the data attributes.
    - The runtime enables a `data-dcf-required-none` option only while the parent selection allows no value (parent "(none)", or a parent value without links), so it is never chosen as a fallback while options exist.
    - Without it, D2's "parent (none) clears descendants" is impossible for required children: every selected issue would fail with "invalid".
@@ -408,7 +408,7 @@ rememberKey = key (initial and parent changed; also on every user or third-party
 | `none`, or concrete value(s) whose links are empty | only `__none__` enabled (`''` enabled only when no `__none__` option exists) | `__none__` (hint `bulkCleared`); without a `__none__` option: `''` with hint `empty` |
 
 Notes:
-- Required children (UD-10, WP-19): their `__none__` option carries `data-dcf-required-none="1"` and is enabled only in the last row (parent `none`, or concrete values without links). In the "with links" row it stays hidden and disabled, so a required child is never cleared while options exist.
+- Required children (UD-10 changed by the owner on 2026-11-02, WP-34): core renders them without a `__none__` option, so the last row gives `''` with the hint `empty` for a single child and nothing selected for a multi child; nothing is applied. A field below a required child left on `''` reads its parent as "(no change)" (`parentState` gives `unfiltered` for `''` in bulk context), so the clearing cascade stops at a required field. Was (WP-19): a `__none__` option marked `data-dcf-required-none="1"`, enabled only in the last row.
 - The auto hint disappears when the user changes the child.
 - Bulk memory holds only the initial state and user picks.
 - `data-dcf-hide` is ignored in bulk (D3).
@@ -590,7 +590,7 @@ Release: every "after" column ships in 0.1.0 (M2) (WP-16 to WP-19; rows F10 and 
 | B2e | bulk parent value with no links | child unchanged, server invalid per issue | child "(none)" with the "Cleared because..." hint | C |
 | B2g | bulk grandchild | stays on visible "(no change)" (Q1) | unfiltered while its parent is "(no change)"; filtered with default or "(no change)" when its parent got a default | F |
 | B3 | bulk parent "(none)" | child disabled, mirror posts __none__ (A2, Q2) | child __none__, "(no change)" disabled, cascades | P outcome |
-| B3r | bulk parent "(none)", required child | stale value, invalid (U2) | __none__ offered (FD-22); cleared; accepted by the no-options bypass (WP-19: `runtime_bulk.test.js` 'B3r UD-10' on the regenerated `bulk_required`, 'B3r required child without the marked (none)' for the rejected outcome, the re-render fallback test, 'B3r UD-10 multi' and the re-rendered required multi child (marked (none) first, FM-02: nothing posted while the parent stays (no change)); `runtime_wizard.test.js` W2 required descendant; `spec/requests/bulk_update_dependencies_spec.rb`; system 'offers the marked (none) of a required child in bulk edit') | F |
+| B3r | bulk parent "(none)", required child | stale value, invalid (U2) | Changed by WP-34 (UD-10 changed by the owner): no __none__ (core); '' kept with the empty hint, nothing applied, the clear stops there; per issue a kept value is refused 'is invalid', a blank one saved (`runtime_bulk.test.js` B3r on the regenerated `bulk_required`, the multi, re-render and chain cases; `runtime_wizard.test.js` W2; `spec/requests/bulk_update_dependencies_spec.rb`; system 'gives a required child no (none) in bulk edit'). Was: __none__ offered (FD-22); cleared; accepted by the no-options bypass (WP-19: `runtime_bulk.test.js` 'B3r UD-10' on the regenerated `bulk_required`, 'B3r required child without the marked (none)' for the rejected outcome, the re-render fallback test, 'B3r UD-10 multi' and the re-rendered required multi child (marked (none) first, FM-02: nothing posted while the parent stays (no change)); `runtime_wizard.test.js` W2 required descendant; `spec/requests/bulk_update_dependencies_spec.rb`; system 'offers the marked (none) of a required child in bulk edit') | F |
 | B4 | bulk parent back to "(no change)" | forced value kept | child restored to its pre-cascade value and unfiltered | C |
 | B5 | bulk pick under "(no change)", then parent A | n/a | pick kept when allowed | N |
 | B6 | bulk hide_when_disabled | hidden while the parent is "(no change)" (M) | never hidden in bulk | F (D3) |
@@ -625,7 +625,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - The wizard reports server errors and stays open.
 - Switching the parent back restores the child value you picked, including a stored value.
 - The value you last picked for each parent value comes back when you switch the parent back, also after the form refreshes. (Added, WP-17, gap 11.)
-- Choosing "(none)" for a parent in bulk edit or the wizard now also clears required dependent fields (UD-10, WP-19).
+- Choosing "(none)" for a parent in bulk edit or the wizard now also clears required dependent fields (UD-10, WP-19). Withdrawn by WP-34 (UD-10 changed by the owner on 2026-11-02): required dependent fields are left as core renders them; see the Changed line of section 3 of the work packages (PC-76).
 
 **Changed (Upgrade notes):**
 1. Dependent fields are never disabled. Disallowed options are hidden and disabled, and a hint under the field explains why, naming the parent field.
@@ -716,7 +716,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - inactive values (QA-21, WP-16): a stored inactive child id, a stored inactive parent value, a per-parent default on an inactive id, and inactive ids in `data-dcf-map` without a matching option;
 - issue plus time_entry prefixes;
 - project form, user form;
-- bulk single, bulk multi, bulk required (with `__none__`), bulk chain, time-entry bulk;
+- bulk single, bulk multi, bulk required (core's options without `__none__` since WP-34; with the marked `__none__` from WP-19 to WP-34), bulk chain, time-entry bulk;
 - wizard template (root on "(no change)", implicit labels, named-route action).
 
 `test/js/contract_fixtures.test.js` asserts the filtering outcome for each scenario on the generated markup (expected `data-dcf-state`, enabled options and the spec-compliant entry list, WP-17).
@@ -746,7 +746,7 @@ The toolchain lands in WP-01 (0.0.16); the support helpers below are completed i
 
 1. Tooling plus the legacy characterization.
 2. Server C1 (server area):
-   - visibility-gated attributes, `data-dcf-stored`, the sentinel, `__none__` for required children in bulk;
+   - visibility-gated attributes, `data-dcf-stored`, the sentinel, `__none__` for required children in bulk (removed by WP-34);
    - D1 per value;
    - the named wizard route, root on "(no change)", wizard labels;
    - head hook plus meta;
@@ -790,7 +790,7 @@ WP-18 changes server and JS in one PR, so no state without filtering exists on m
    - This replaces whole-set `legacy_combination?` (R14). The shared parity cases in `test/js/fixtures/shared/rules_cases.json` cover add, remove and reorder for multi children.
    - Delivered by WP-09 in 0.1.0 (M1) (UD-04, UD-05, UD-06).
 4. **The blank sentinel** (3.4.1; WP-19, 0.1.0 (M2)), with specs: present only for single radio active children (and required drop-downs without a '' option, delivered); no id; label `for` unchanged; request spec posting `x=&x=r1` (stored r1) and `x=` (cleared) on all four versions (`spec/requests/dcf_sentinel_params_spec.rb`).
-5. **`__none__` for required active children in `bulk_edit_tag`** (3.4.2; marked `data-dcf-required-none="1"`; WP-19, 0.1.0 (M2), UD-10), with request specs:
+5. **`__none__` for required active children in `bulk_edit_tag`** (3.4.2; marked `data-dcf-required-none="1"`; WP-19, 0.1.0 (M2), UD-10), with request specs (removed by WP-34, UD-10 changed by the owner on 2026-11-02; the request specs below stay as pins of the unchanged server rule for scripted '__none__' posts):
    - `bulk_update` with `__none__` on a required child whose parent maps to nothing is accepted through the no-options bypass;
    - with a parent that maps to options, it gives the per-issue "cannot be blank" failure.
 6. **Wizard:** named route action (WP-15); `render_custom_field` with value `nil` (UD-11); implicit labels; request spec that Save without a choice changes nothing (WP-18).

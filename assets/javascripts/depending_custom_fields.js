@@ -167,7 +167,7 @@
     }
 
     function decideUnfiltered(i, out) {
-      var has = function (v) { return i.optionValues.has(v) && !(v === NONE && i.noneRequired); };
+      var has = function (v) { return i.optionValues.has(v); };
       out.state = 'unfiltered';
       if (i.ctx === 'bulk' && i.parentChanged) {
         var nc = i.memory.get(NOCHANGE_KEY);
@@ -189,12 +189,11 @@
         out.values = i.hasNone ? [NONE] : (single && i.hasBlank ? [BLANK] : []);
         out.auto = i.hasNone && !i.initial;
         out.hint = i.hasNone ? (out.auto ? 'bulkCleared' : null) : 'empty';
-        out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: !i.hasNone, noneEnabled: true,
-                       requiredNoneEnabled: true };
+        out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: !i.hasNone, noneEnabled: true };
         if (i.initial) out.rememberKey = i.key;
         return out;
       }
-      var ok = function (v) { return v === BLANK || (v === NONE && !i.noneRequired) || allowed.has(v); };
+      var ok = function (v) { return v === BLANK || v === NONE || allowed.has(v); };
       var has = function (v) { return i.optionValues.has(v); };
       var current = i.current.filter(ok);
       var values;
@@ -221,8 +220,7 @@
       if (!values.length && single && i.hasBlank) values = [BLANK];
       out.values = values;
       out.hint = out.auto ? 'bulkDefault' : null;
-      out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: true, noneEnabled: !i.noneRequired,
-                     requiredNoneEnabled: false };
+      out.filter = { allowed: allowed, eligible: out.eligible, blankEnabled: true, noneEnabled: true };
       if (i.initial) out.rememberKey = i.key;
       return out;
     }
@@ -287,7 +285,7 @@
       out.legacy = new Set(values.filter(function (v) { return eligible.has(v); }));
       // In form context __none__ is an ordinary value (core maps it in bulk only).
       out.filter = { allowed: allowed, eligible: eligible, blankEnabled: true,
-                     noneEnabled: allowed.has(NONE) || eligible.has(NONE), requiredNoneEnabled: false };
+                     noneEnabled: allowed.has(NONE) || eligible.has(NONE) };
       out.state = formState(i.kind, allowed.size, out.legacy.size);
       out.hint = out.state === 'ok' ? null : out.state;
       out.hideField = !!i.hide && !allowed.size && !out.legacy.size;
@@ -303,9 +301,7 @@
       return decideForm(i, out);
     }
 
-    // requiredNone: the option carries data-dcf-required-none="1" (UD-10).
-    function optionEnabled(filter, value, requiredNone) {
-      if (requiredNone && value === NONE) return !!(filter && filter.requiredNoneEnabled);
+    function optionEnabled(filter, value) {
       if (!filter) return true;
       if (value === BLANK) return filter.blankEnabled;
       if (value === NONE) return filter.noneEnabled;
@@ -525,8 +521,6 @@
       if (isSelect(ctl)) return Array.prototype.slice.call(ctl.options);
       return choiceInputs(ctl);
     }
-    // v: the option value, read once per evaluation.
-    function isRequiredNone(o, v) { return v === R.NONE && o.getAttribute('data-dcf-required-none') === '1'; }
 
     function setHidden(el, hidden) {
       if (el.hidden !== hidden) el.hidden = hidden;
@@ -544,12 +538,10 @@
     // rebuilt after every attribute change); values: their values, in order.
     function apply(ctl, d, options, values) {
       var target = new Set(d.values);
-      var enabled = function (o, v) {
-        return R.optionEnabled(d.filter, v, isRequiredNone(o, v)) || target.has(v);
-      };
+      var enabled = function (v) { return R.optionEnabled(d.filter, v) || target.has(v); };
       if (isSelect(ctl)) {
         options.forEach(function (o, k) {
-          var on = enabled(o, values[k]);
+          var on = enabled(values[k]);
           if (o.disabled !== !on) o.disabled = !on;
           setHidden(o, !on);
           setClass(o, 'dcf-legacy-option', d.eligible.has(values[k]));
@@ -577,7 +569,7 @@
         }
       } else {
         options.forEach(function (input, k) {
-          var on = enabled(input, values[k]);
+          var on = enabled(values[k]);
           var label = input.closest('label') || input;
           if (input.disabled !== !on) input.disabled = !on;
           setHidden(label, !on);
@@ -801,14 +793,13 @@
       // Each option value is read once per evaluation; apply reuses them.
       var optionVals = options.map(function (o) { return o.value; });
       var optionValues = new Set(optionVals);
-      var noneRequired = options.some(function (o, k) { return isRequiredNone(o, optionVals[k]); });
       var allowed = ps.kind === 'values' || ps.kind === 'static' ? R.allowedFor(cfg.map, ps.values) :
         (ps.kind === 'empty' || ps.kind === 'none' ? new Set() : null);
       var mem = memoryFor(scope, cfg);
       var d = R.decide({
         ctx: cfg.ctx, kind: ps.kind, key: ps.key, values: ps.values, prevValues: st.values, allowed: allowed,
         current: before, initial: initial, parentChanged: !initial, multiple: cfg.multiple,
-        hasBlank: optionValues.has(R.BLANK), hasNone: optionValues.has(R.NONE), noneRequired: noneRequired,
+        hasBlank: optionValues.has(R.BLANK), hasNone: optionValues.has(R.NONE),
         optionValues: optionValues, defaults: cfg.defaults, memory: mem, hide: cfg.hide, stored: cfg.stored
       });
       apply(ctl, d, options, optionVals);

@@ -3,8 +3,10 @@
     keeps show_usage and drops q and page; core shows its icon as a sprite on
     6.0 and later and through the class on 5.1. The sort buttons (WP-29) when
     the field has more than one value: they post direction, state_hash and a
-    filtering q, never the page, and ask through data-confirm with the count
-    of every value; the server checks are the guard (UD-23). %>
+    filtering q, never the page. Only a project-only field asks through
+    data-confirm with the count of every value; a field shared with other
+    projects or global gets the server confirmation panel instead, so no
+    field asks twice (UD-23, WP-34). %>
 <% show_sort = @values_page.total > 1 %>
 <% if @values_page.show_filter? || show_sort %>
   <div class="dcf-values-toolbar">
@@ -23,11 +25,11 @@
     <% if show_sort %>
       <% sort_path = custom_field_configuration_sort_values_path(@project, @field) %>
       <% sort_state = { state_hash: @state_hash }.merge(@values_page.list_state.slice(:q)) %>
-      <% sort_confirm = l(:text_dcf_sort_confirm, count: @values_page.total) %>
+      <% sort_data = scope == :project ? { confirm: l(:text_dcf_sort_confirm, count: @values_page.total) } : {} %>
       <%= button_to l(:label_dcf_sort_az), sort_path, method: :patch, params: sort_state.merge(direction: 'asc'),
-                    form_class: 'button_to dcf-values-sort', data: { confirm: sort_confirm } %>
+                    form_class: 'button_to dcf-values-sort', data: sort_data %>
       <%= button_to l(:label_dcf_sort_za), sort_path, method: :patch, params: sort_state.merge(direction: 'desc'),
-                    form_class: 'button_to dcf-values-sort', data: { confirm: sort_confirm } %>
+                    form_class: 'button_to dcf-values-sort', data: sort_data %>
     <% end %>
   </div>
 <% end %>

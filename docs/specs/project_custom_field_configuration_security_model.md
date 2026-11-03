@@ -134,6 +134,11 @@ Per operation, only:
 - `add`: `value` (string), `position` (int, optional).
 - `rename`: `old_value`/`enumeration_id`, `new_value`, `confirm` (bool).
 - `remove`: `value`/`enumeration_id`, `confirm` (bool).
+- WP-34: `confirm` counts only as a scalar String that casts to true (`1`
+  from the forms); an Array, a Hash, an Integer or true never confirms
+  (`BaseService#confirmed?`, the one rule of rename, remove, sort and the
+  dependency save). `sort` and `dependencies` take `confirm` too; the
+  dependency save passes it as posted.
 - `reorder`: `ordered_values` (array of existing identifiers).
 - `dependencies`: `value_dependencies` (hash, sanitized), `default_value_dependencies` (hash, sanitized).
 No other keys are permitted; nested `custom_field` blobs are rejected.
@@ -154,7 +159,9 @@ no earlier than 0.2.0).
 
 From 0.1.0 (Amendment A6, WP-29) `sort` takes `direction` (a scalar String,
 exactly `asc` or `desc`, anything else an audited 422; an Array or Hash is
-dropped by strong params and refused the same way) and `state_hash`. `q`,
+dropped by strong params and refused the same way) and `state_hash`, and from
+WP-34 `confirm` on a field shared with other projects or global (a scalar
+String). `q`,
 `page` and `per_page` are never permitted into a service: the controller reads
 them from `params` for the page, re-renders and redirects only, through
 `ValuesPage.coerce_query`, `coerce_page` and `coerce_per_page` (WP-28). The

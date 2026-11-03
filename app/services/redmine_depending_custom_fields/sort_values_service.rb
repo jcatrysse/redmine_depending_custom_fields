@@ -8,8 +8,10 @@ module RedmineDependingCustomFields
   # ties keep their order in both directions. Lists save the sorted
   # possible_values once; enumerations, inactive ones included (UD-24), get
   # positions 1..N through one CASE update per CHUNK of changed rows. No
-  # CustomValue rewrite, no cascade, no confirmation (UD-23). An already sorted
-  # field writes nothing and is still audited.
+  # CustomValue rewrite, no cascade. A field shared with other projects or
+  # global needs confirm after the direction check, before any write, also
+  # when already sorted (UD-23, WP-34). An already sorted field writes
+  # nothing and is still audited.
   class SortValuesService < BaseService
     CHUNK = 500
     DIRECTIONS = %w[asc desc].freeze
@@ -32,6 +34,8 @@ module RedmineDependingCustomFields
       unless direction.is_a?(String) && DIRECTIONS.include?(direction)
         raise OperationError.new(:error_reorder_mismatch)
       end
+
+      confirm_shared_change!
 
       desc = direction == 'desc'
       old_keys, new_keys, moved = list_family? ? sort_list!(desc) : sort_enumerations!(desc)

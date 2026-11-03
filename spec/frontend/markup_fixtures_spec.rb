@@ -556,10 +556,11 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       end
     end
     # WP-18: data-dcf-wizard-field marks the wizard field wrappers. WP-19:
-    # data-dcf-blank and data-dcf-required-none are allowed in their place
-    # only (check_markers); was all three forbidden. data-dcf-state is
-    # written by the runtime only.
-    expect(fragment.to_html).not_to match(/data-dcf-state/)
+    # data-dcf-blank is allowed in its place only (check_markers); was
+    # forbidden. data-dcf-state is written by the runtime only. Flipped by
+    # WP-34 (UD-10): data-dcf-required-none is refused anywhere again, as
+    # before WP-19; was allowed in its place (the marked (none)).
+    expect(fragment.to_html).not_to match(/data-dcf-(state|required-none)/)
     check_markers(name, fragment)
     expect(fragment.css('script')).to be_empty
     fields
@@ -568,9 +569,9 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   # WP-19 (server design 2.2): the sentinel is an id-less hidden input with
   # value '' right before the form-context single control of a managed field
   # with the same name: a radio group, or a select without a '' option (a
-  # required field with a default value). The marked (none) is the one
-  # '__none__' option of a managed bulk select, right after '' (first for a
-  # multi select). Every managed single radio group has its sentinel.
+  # required field with a default value). Every managed single radio group
+  # has its sentinel. Changed by WP-34 (UD-10): the marked (none) checks are
+  # gone, check_contract refuses the attribute anywhere.
   def check_markers(name, fragment)
     fragment.css('[data-dcf-blank]').each do |sentinel|
       label = "#{name}: sentinel #{sentinel['name']}"
@@ -592,15 +593,6 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       next if group.at_css('input[type=checkbox]')
 
       expect(group.previous_element&.[]('data-dcf-blank')).to eq('1'), "#{name}: radio group #{group['data-dcf-field']}"
-    end
-    fragment.css('[data-dcf-required-none]').each do |option|
-      select = option.parent
-      label = "#{name}: marked (none) in #{select['name']}"
-      expect([option.name, option['value'], option['data-dcf-required-none']]).to eq(%w[option __none__ 1]), label
-      expect([select.name, select['data-dcf-context'], select['data-dcf-parent'].present?]).to eq(['select', 'bulk', true]), label
-      values = select.css('option').map { |o| o['value'] }
-      expect(values.count('__none__')).to eq(1), label
-      expect(values.first(select['multiple'] ? 1 : 2)).to eq(select['multiple'] ? ['__none__'] : ['', '__none__']), label
     end
   end
 
@@ -704,12 +696,13 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(select_labelled(fragment, 'User parent').at_css('option[selected]')['value']).to eq('Alpha')
       end,
       # Flipped by WP-19 (UD-10): the marked (none) right after (No change);
-      # was no '__none__' option.
+      # was no '__none__' option. Flipped by WP-34 (UD-10 changed by the
+      # owner): core's options again, no '__none__' and no marker; was
+      # ['', '__none__', 'Ant', 'Ape', 'Bee'] with the marked (none).
       'bulk_required' => lambda do |fragment|
         options = field_named(fragment, 'Child field').css('option')
-        expect(options.pluck('value')).to eq(['', '__none__', 'Ant', 'Ape', 'Bee'])
-        expect(options.pluck('data-dcf-required-none')).to eq([nil, '1', nil, nil, nil])
-        expect(options[1].text).to eq('none')
+        expect(options.pluck('value')).to eq(['', 'Ant', 'Ape', 'Bee'])
+        expect(options.pluck('data-dcf-required-none')).to eq([nil, nil, nil, nil])
       end,
       # Flipped by WP-19: the sentinel right before the group; was none.
       'radio_required' => lambda do |fragment|
@@ -807,8 +800,9 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     expect(File).not_to exist(File.join(dcf_js_fixture_dir, 'legacy_mapping'))
   end
 
-  # WP-19: check_contract accepts the sentinel and the marked (none) only
-  # in their place.
+  # WP-19: check_contract accepts the sentinel only in its place. Changed by
+  # WP-34 (UD-10): the marked (none) is refused anywhere; was accepted in its
+  # place.
   describe 'the marker checks' do
     let(:group) do
       '<span class="check_box_group" data-dcf-field="2" data-dcf-context="form" data-dcf-kind="list" data-dcf-parent="1" ' \
@@ -834,12 +828,16 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       expect { contract(html) }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
     end
 
-    it 'accepts the sentinel before a form radio group and the marked (none) after (No change)' do
+    # Flipped by WP-34 (UD-10): the accept example keeps only the sentinel
+    # and core's plain bulk selects; was also the marked (none) after (No
+    # change) and first in a multi select (now refused, below).
+    it 'accepts the sentinel before a form radio group and a plain core bulk select' do
       expect { contract(sentinel + group) }.not_to raise_error
-      none = '<option data-dcf-required-none="1" value="__none__">none</option>'
-      expect { contract(bulk_select("<option value=\"\">(No change)</option>#{none}<option value=\"a\">a</option>")) }
+      expect { contract(bulk_select('<option value="">(No change)</option><option value="a">a</option>')) }
         .not_to raise_error
-      expect { contract(bulk_select("#{none}<option value=\"a\">a</option>", multiple: true)) }.not_to raise_error
+      expect { contract(bulk_select('<option value="a">a</option>', multiple: true)) }.not_to raise_error
+      plain = '<option value="">(No change)</option><option value="__none__">none</option><option value="a">a</option>'
+      expect { contract(bulk_select(plain)) }.not_to raise_error
     end
 
     it 'refuses a sentinel with an id, after the group, in bulk context or missing' do
@@ -851,10 +849,15 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       refused('<p data-dcf-state="ok"></p>')
     end
 
-    it 'refuses a marked (none) in form context, before (No change) or twice' do
+    # Flipped by WP-34 (UD-10): a marked (none) is refused in every place,
+    # also right after (No change) of a bulk select and first in a multi
+    # select; was refused only in form context, before (No change) or twice.
+    it 'refuses a marked (none) anywhere: after (No change), first in a multi select, in form context, twice' do
       none = '<option data-dcf-required-none="1" value="__none__">none</option>'
       plain = '<option value="">(No change)</option><option value="__none__">none</option>'
       expect { contract(bulk_select(plain, context: 'form')) }.not_to raise_error
+      refused(bulk_select("<option value=\"\">(No change)</option>#{none}<option value=\"a\">a</option>"))
+      refused(bulk_select("#{none}<option value=\"a\">a</option>", multiple: true))
       refused(bulk_select("<option value=\"\">(No change)</option>#{none}", context: 'form'))
       refused(bulk_select("#{none}<option value=\"\">(No change)</option>"))
       refused(bulk_select("<option value=\"\">(No change)</option>#{none}<option value=\"__none__\">none</option>"))

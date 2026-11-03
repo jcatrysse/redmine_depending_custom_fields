@@ -273,11 +273,14 @@ RSpec.describe 'Custom field cycle validation' do
             expect(stored_parent(x)).to eq(world.y.id)
           end
 
+          # Changed by WP-34 (UD-23): confirm '1', the cycle members are global
+          # fields (dcf_stored_cycles); was no confirm.
           it 'keep a DependencyMappingService save of a cycle member' do
             project = dcf_create_project
             RedmineDependingCustomFields::DependencyMappingService
               .new(project: project, field: CustomField.find(world.y.id), user: dcf_admin,
-                   params: { value_dependencies: { 'x2' => %w[y2] }, default_value_dependencies: { 'x2' => 'y2' } }).call
+                   params: { value_dependencies: { 'x2' => %w[y2] }, default_value_dependencies: { 'x2' => 'y2' },
+                             confirm: '1' }).call
 
             expect(CustomField.find(world.y.id).value_dependencies).to eq('x2' => %w[y2])
             expect(stored_parent(world.y)).to eq(world.x.id)

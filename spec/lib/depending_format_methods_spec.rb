@@ -1394,11 +1394,12 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           end
         end
 
-        # Flipped by WP-19 (UD-10): a required child gets core's (none)
-        # option marked data-dcf-required-none right after (No change),
-        # nothing else changes (drift guard); was core output without (none).
-        # The non-required half is unchanged.
-        it 'renders bulk tags as core List#bulk_edit_tag plus the bulk attributes, and the marked (none) for a required child' do
+        # Flipped by WP-34 (UD-10 changed by the owner on 2026-11-02): core
+        # output plus the bulk attributes for every field again, a required
+        # child without (none) as core renders it (the pre-WP-19 example);
+        # was the marked (none) right after (No change) for a required child
+        # (WP-19). The non-required half is unchanged.
+        it 'renders bulk tags as core List#bulk_edit_tag plus the bulk attributes, without (none) for a required child' do
           [false, true].each do |required|
             parent, child = styled(kind, 'check_box', required: required)
             issues = [kit_issue(project, parent => 'A', child => 'a1')]
@@ -1412,18 +1413,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
             expect(select['data-dcf-parent-values']).to be_nil
             expect(select['data-dcf-stored']).to be_nil
             expect(fragment.css('input')).to be_empty
-            values = select.css('option').map { |o| o['value'] }
-            expect(values.count('__none__')).to eq(1)
-            expect(values.first(2)).to eq(['', '__none__'])
-            marked = select.css('option[data-dcf-required-none]')
-            expect(marked.map { |o| [o['value'], o['data-dcf-required-none'], o.text] })
-              .to eq(required ? [['__none__', '1', I18n.t(:label_none)]] : [])
-            # The option and the newline options_for_select joins it with.
-            marked.each do |option|
-              option.next.remove if option.next&.text? && option.next.text == "\n"
-              option.remove
-            end
-            expect(without_dcf(fragment.to_html)).to eq(Nokogiri::HTML.fragment(bare).to_html)
+            expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(bare).to_html)
+            expect(select.css('option').map { |o| o['value'] }.include?('__none__')).to eq(!required)
+            expect(fragment.css('[data-dcf-required-none]')).to be_empty
           end
         end
 
@@ -1478,7 +1470,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           expect(Nokogiri::HTML.fragment(html).css('input[data-dcf-blank]')).to be_empty
         end
 
-        it 'adds neither the sentinel nor the marked (none) without parent data (unmanaged or ClientData failing)' do
+        # Changed by WP-34: the title only (was 'nor the marked (none)'); no
+        # field gets a (none) option for a required child since WP-34.
+        it 'adds neither the sentinel nor a (none) option for a required child without parent data (unmanaged or ClientData failing)' do
           parent, hidden_parent_child = styled(kind, 'check_box', required: true)
           member = dcf_create_user("wp19-#{SecureRandom.hex(3)}")
           dcf_add_member(member, project, dcf_create_role(permissions: [:view_issues, :edit_issues]))
@@ -1514,40 +1508,31 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
           end
         end
 
-        # WP-19 drift guard: the reimplemented body of a required child gives
-        # core's own output for the same field when it is not required, plus
-        # the data attributes; '__none__' sits in the same slot.
-        it 'renders the marked (none) exactly where core puts its own (none), single and multi' do
+        # Flipped by WP-34 (UD-10): a required child is core's own render of
+        # the same required field plus the data attributes, single and multi,
+        # also when '__none__' is posted (a script or a page opened before the
+        # upgrade: nothing is selected); was core's render of the field made
+        # optional, with the marked (none) in the slot of core's (none) (WP-19
+        # drift guard). Removed by WP-34: 'labels the marked (none) with the
+        # core label_none of the current locale' (no marked option is left).
+        it 'renders a required child exactly as core renders the same required field, single and multi' do
           [false, true].each do |multiple|
             parent, child = styled(kind, '', multiple: multiple, required: true)
             issues = [kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1'),
                       kit_issue(project, parent => 'B', child => multiple ? %w[b1] : 'b1')]
             real = view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str
-            optional = CustomField.find(child.id)
-            optional.is_required = false
-            core = stubbed { view.custom_field_tag_for_bulk_edit('issue', optional, issues, '').to_str }
-            options = Nokogiri::HTML.fragment(real).css('option')
+            core = stubbed { view.custom_field_tag_for_bulk_edit('issue', CustomField.find(child.id), issues, '').to_str }
+            fragment = Nokogiri::HTML.fragment(real)
+            values = fragment.css('option').map { |o| o['value'] }
 
             label = multiple ? 'multi' : 'single'
+            expect(fragment.at_css('select')['data-dcf-parent']).to eq(parent.id.to_s), label
             expect(without_dcf(real)).to eq(Nokogiri::HTML.fragment(core).to_html), label
-            expect(options.map { |o| o['value'] }.first(multiple ? 1 : 2)).to eq(multiple ? ['__none__'] : ['', '__none__']), label
-            expect(options.select { |o| o['data-dcf-required-none'] }.map { |o| o['value'] }).to eq(['__none__']), label
-            expect(real).to include('<option data-dcf-required-none="1" value="__none__">'), label
-            selected = view.custom_field_tag_for_bulk_edit('issue', child, issues, '__none__').to_str
-            expect(Nokogiri::HTML.fragment(selected).css('option[selected]').map { |o| o['value'] }).to eq(['__none__']), label
-          end
-        end
-
-        it 'labels the marked (none) with the core label_none of the current locale' do
-          parent, child = styled(kind, '', required: true)
-          issues = [kit_issue(project, parent => 'A', child => 'a1')]
-          locales.each do |locale|
-            text = I18n.with_locale(locale) do
-              Nokogiri::HTML.fragment(view.custom_field_tag_for_bulk_edit('issue', child, issues, '').to_str)
-                        .at_css('option[data-dcf-required-none]').text
-            end
-            expect(text).to eq(I18n.t(:label_none, locale: locale)), locale
-            expect(text).not_to match(/translation.missing/i), locale
+            expect(values).not_to include('__none__'), label
+            expect(values).to eq((multiple ? [] : ['']) + %w[a1 a2 b1].map { |name| kit_key(child, name) }), label
+            expect(fragment.css('[data-dcf-required-none]')).to be_empty, label
+            posted = view.custom_field_tag_for_bulk_edit('issue', child, issues, '__none__').to_str
+            expect(Nokogiri::HTML.fragment(posted).css('option[selected]')).to be_empty, label
           end
         end
 
@@ -1655,10 +1640,12 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       expect(html).not_to include('<y>')
     end
 
-    # WP-19: bulk_edit_tag reimplements core List#bulk_edit_tag for required
-    # managed children; a change of core's body (identical on 5.1 to 7.0)
-    # must fail here first.
-    it 'pins the core List#bulk_edit_tag body it reimplements for required children' do
+    # Changed by WP-34: WP-19 pinned the SHA-256 of core's List#bulk_edit_tag
+    # body (399c63f4...) because the module reimplemented it for required
+    # children. bulk_edit_tag calls super for every field again, so only the
+    # line UD-10 relies on is pinned: core omits (none) for a required field
+    # (the same line on 5.1, 6.0, 6.1 and 7.0).
+    it 'relies on core List#bulk_edit_tag omitting (none) for a required field' do
       file, line = Redmine::FieldFormat::List.instance_method(:bulk_edit_tag).source_location
       lines = File.readlines(file)[(line - 1)..]
       indent = lines.first[/\A */]
@@ -1666,8 +1653,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       source = (body + [lines[body.size]]).map(&:strip).join("\n")
 
       expect(source).to include("opts << [l(:label_none), '__none__'] unless custom_field.is_required?")
-      # The same 11 stripped lines on 5.1, 6.0, 6.1 and 7.0.
-      expect(Digest::SHA256.hexdigest(source)).to eq('399c63f4f7dec0ecf5958609eb7e13b55c4e7b4840fd4212a6fd2764725797d6')
+      source_file = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/depending_format_methods.rb', __dir__))
+      expect(source_file).not_to include('label_none')
+      expect(source_file).not_to include('required-none')
     end
   end
 

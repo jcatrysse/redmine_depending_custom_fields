@@ -154,30 +154,34 @@ test('W2 a concrete root preselects the per-parent default with its hint; back t
   assert.deepEqual(cfPairs(pg, pg.log.fetch[0]), [[ROOT, ''], [MIDDLE, ''], [LEAF, '']]);
 });
 
-// WP-19 (UD-10): a required middle field carries the marked (none) the
-// server renders (bulk_edit_tag through render_custom_field); the wizard
-// fixture has no required field, so the option is marked here.
-test('W2 a required descendant\'s marked (none) is usable only while the root allows nothing', async () => {
+// Flipped by WP-34 (UD-10 changed by the owner on 2026-11-02): a required
+// middle field gets core's select without (none) (bulk_edit_tag through
+// render_custom_field); the wizard fixture has no required field, so its
+// (none) is removed here. Root (none) leaves it on '' with the empty hint, the
+// leaf reads it as (no change) and stays unfiltered (the clear stops at a
+// required field), and the save posts '' for both; was the marked (none)
+// enabled and selected while the root allowed nothing (WP-19).
+test('W2 a required descendant without (none) stays on (no change) with the empty hint; the clear stops there', async () => {
   const body = F.tweak('wizard_template', (doc) => {
     const select = doc.querySelector('template').content.querySelector(`select[name="${MIDDLE}"]`);
-    select.querySelector('option[value="__none__"]').setAttribute('data-dcf-required-none', '1');
+    select.querySelector('option[value="__none__"]').remove();
   });
   const pg = await wizardPage({ body });
   const form = open(pg).querySelector('form');
   const middle = D.byName(form, MIDDLE);
-  const none = Array.from(middle.options).find((o) => o.value === '__none__');
-  assert.deepEqual([none.disabled, none.hidden, middle.value], [true, true, '']);
+  const leaf = D.byName(form, LEAF);
+  assert.deepEqual(Array.from(middle.options).map((o) => o.value).includes('__none__'), false);
+  assert.equal(form.querySelectorAll('[data-dcf-required-none]').length, 0);
   fire.choose(pg.window, D.byName(form, ROOT), 'Alpha');
-  assert.deepEqual([none.disabled, none.hidden, middle.value], [true, true, '']);
+  assert.deepEqual([middle.value, D.state(middle)], ['', 'ok']);
   fire.choose(pg.window, D.byName(form, ROOT), '__none__');
-  assert.deepEqual([none.disabled, none.hidden, middle.value], [false, false, '__none__']);
-  assert.equal(D.hintText(middle), 'Cleared because the current choice for Root field allows no values for this field.');
-  fire.choose(pg.window, D.byName(form, ROOT), '');
-  assert.deepEqual([none.disabled, none.hidden, middle.value], [true, true, '']);
-  fire.choose(pg.window, D.byName(form, ROOT), '__none__');
+  assert.deepEqual([middle.value, D.state(middle), D.selected(middle)], ['', 'none', ['']]);
+  assert.equal(D.hintText(middle), 'No values are available for the selected Root field.');
+  assert.equal(middle.classList.contains('dcf-auto-applied'), false);
+  assert.deepEqual([leaf.value, D.state(leaf), D.disabled(leaf)], ['', 'unfiltered', []]);
   submit(pg);
   await settle();
-  assert.deepEqual(cfPairs(pg, pg.log.fetch[0]).filter(([k]) => k === MIDDLE), [[MIDDLE, '__none__']]);
+  assert.deepEqual(cfPairs(pg, pg.log.fetch[0]), [[ROOT, '__none__'], [MIDDLE, ''], [LEAF, '']]);
 });
 
 test('W3 the action is resolved against the page URL: a relative URL root is kept', async () => {

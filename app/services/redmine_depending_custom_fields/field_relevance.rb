@@ -48,6 +48,19 @@ module RedmineDependingCustomFields
       SUPPORTED_DEPENDENCY_FORMATS.include?(field.field_format)
     end
 
+    # Scope of +field+ relative to +project+: :global for a project custom
+    # field or a field for all projects, :shared when it is enabled in a
+    # project other than this one (whatever that project's status), else
+    # :project. The one rule of the scope banner and badge, the dependency
+    # page checkbox, the sort buttons and the services' confirmation
+    # (UD-23, WP-34).
+    def scope(field, project)
+      return :global if field.is_a?(ProjectCustomField) || field.is_for_all?
+
+      others = field.projects.reject { |p| p.id == project.id }
+      others.any? ? :shared : :project
+    end
+
     # Type + project-scope membership, ignoring format. Used by the controller
     # to distinguish 404 (not in project) from 422 (unsupported format).
     def in_project?(field, project)

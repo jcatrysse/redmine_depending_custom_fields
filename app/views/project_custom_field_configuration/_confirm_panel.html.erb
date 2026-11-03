@@ -1,6 +1,28 @@
 <%# The panel names a dependent field only under the WP-12 rule (SD-16): the
     edited field, an administrator, or a field used in the project and
     visible to the user; the others are only counted. %>
+<%# WP-34 (UD-23): the sort variant of a field shared with other projects or
+    global names no field and has no usage lines; it posts the pending
+    direction and state_hash and a filtering q, never the page (as the sort
+    redirect), with the unchecked confirmation box. %>
+<% if pending_action.to_s == 'sort_values' %>
+<% body = capture do %>
+  <p><strong><%= l(:text_confirm_cross_project_change) %></strong></p>
+  <p><%= l(:text_dcf_sort_confirm, count: @values_page.total) %></p>
+  <% url, method = dcf_confirm_target(pending_action) %>
+  <%= form_tag(url, method: method) do %>
+    <% pending_params.slice(:direction, :state_hash).each do |k, v| %>
+      <%= hidden_field_tag k, v, id: nil %>
+    <% end %>
+    <%= render partial: 'list_state_fields', locals: { state: local_assigns.fetch(:list_state, {}).slice(:q) } %>
+    <p>
+      <label><%= check_box_tag :confirm, '1', false, required: true %>
+        <%= l(:text_dcf_confirm_understand) %></label>
+    </p>
+    <%= submit_tag l(:button_apply) %>
+  <% end %>
+<% end %>
+<% else %>
 <% affected = impact.affected_child_fields %>
 <% named = affected.select { |child| RedmineDependingCustomFields::UsageCalculator.nameable_child?(child, @field, @project, User.current) } %>
 <% body = capture do %>
@@ -36,5 +58,6 @@
     </p>
     <%= submit_tag l(:button_apply) %>
   <% end %>
+<% end %>
 <% end %>
 <div class="dcf-confirm-panel"><%= dcf_flash_box(:warning, body) %></div>

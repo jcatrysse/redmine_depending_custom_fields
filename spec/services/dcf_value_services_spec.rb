@@ -411,10 +411,11 @@ RSpec.describe 'DCF value operation services' do
                           'order_sha256' => order_digest(values.reverse))
     end
 
+    # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
     it 'chains the digests: the reorder before equals the sort after' do
       field = dcf_enum_field(names: %w[c a b])
       RedmineDependingCustomFields::SortValuesService
-        .new(project: project, field: field, user: user, params: { direction: 'asc' }).call
+        .new(project: project, field: field, user: user, params: { direction: 'asc', confirm: '1' }).call
       sort_after = JSON.parse(last_row(field).after_value)['order_sha256']
       ids = field.enumerations.order(:position).map { |e| e.id.to_s }
       reorder(field, ordered_values: ids.reverse)
@@ -568,42 +569,46 @@ RSpec.describe 'DCF value operation services' do
     end
 
     describe 'enumeration family' do
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'gives every enumeration a position 1..N, inactive ones interleaved (T-SORT-12, UD-24)' do
         field = dcf_enum_field(names: %w[c B a])
         field.enumerations.find_by(name: 'B').update!(active: false)
         names_before = CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name)
-        sort(field, direction: 'asc')
+        sort(field, direction: 'asc', confirm: '1')
         expect(enum_state(field)).to eq([['a', 1, true], ['B', 2, false], ['c', 3, true]])
         expect(CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id, :name)).to eq(names_before)
       end
 
       # Changed by WP-32: the rows are picked by exact name in Ruby; where(name:)
       # also matched 'A' under the case- and accent-insensitive MariaDB collation.
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'keeps the stored order of ties and sorts desc on the same keys' do
         field = dcf_enum_field(names: ['C', 'b', 'A', "\u00E4"])
         ids = field.enumerations.select { |enum| ['b', "\u00E4"].include?(enum.name) }.map(&:id)
         CustomFieldEnumeration.where(id: ids).update_all(active: false)
         expect(enum_state(field)).to eq([['C', 1, true], ['b', 2, false], ['A', 3, true], ["\u00E4", 4, false]])
-        sort(field, direction: 'asc')
+        sort(field, direction: 'asc', confirm: '1')
         expect(enum_state(field)).to eq([['A', 1, true], ["\u00E4", 2, false], ['b', 3, false], ['C', 4, true]])
-        sort(field, direction: 'desc')
+        sort(field, direction: 'desc', confirm: '1')
         expect(enum_state(field)).to eq([['C', 1, true], ['b', 2, false], ['A', 3, true], ["\u00E4", 4, false]])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'renumbers gapped positions and counts the rows written as moved' do
         field = dcf_enum_field(names: %w[a b c])
         field.enumerations.order(:position).each_with_index { |e, i| e.update_column(:position, [2, 5, 7][i]) }
-        sort(field, direction: 'asc')
+        sort(field, direction: 'asc', confirm: '1')
         expect(enum_state(field)).to eq([['a', 1, true], ['b', 2, true], ['c', 3, true]])
         expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(3)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'reads tied positions in [position, id] order' do
         field = dcf_enum_field(names: %w[b a c])
         field.enumerations.update_all(position: 1)
         old_keys = enum_ids(field)
         expect(old_keys).to eq(CustomFieldEnumeration.where(custom_field_id: field.id).order(:id).pluck(:id).map(&:to_s))
-        sort(field, direction: 'asc')
+        sort(field, direction: 'asc', confirm: '1')
         expect(enum_state(field).map(&:first)).to eq(%w[a b c])
         expect(JSON.parse(rows(field).last.before_value)['order_sha256']).to eq(digest(old_keys))
       end
@@ -611,11 +616,12 @@ RSpec.describe 'DCF value operation services' do
       # Changed by WP-32: Rails 7.2 and later quote the bound integers on MySQL
       # (WHEN '12' THEN '1'), so both patterns accept optional quotes and the
       # ids of every statement are counted, never an empty scan.
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'updates only the changed rows, one CASE statement per CHUNK, saving no field (T-SORT-17)' do
         stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
         field = dcf_enum_field(names: %w[E D C B A])
         middle = field.enumerations.find_by(name: 'C').id
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         expect(enum_state(field)).to eq([['A', 1, true], ['B', 2, true], ['C', 3, true], ['D', 4, true], ['E', 5, true]])
         updates = updates_of(sqls, 'custom_field_enumerations')
         expect(updates.size).to eq((4 / 2.0).ceil)
@@ -631,17 +637,19 @@ RSpec.describe 'DCF value operation services' do
         expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(4)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'sends the last chunk too when the changed rows do not fill it' do
         stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
         field = dcf_enum_field(names: %w[B C D E A])
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         expect(enum_state(field).map(&:first)).to eq(%w[A B C D E])
         expect(updates_of(sqls, 'custom_field_enumerations').size).to eq((5 / 2.0).ceil)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'builds the SQL from integers only, whatever the labels' do
         field = dcf_enum_field(names: ["x' THEN 0 END; DROP TABLE users; --", '%{a} ?', 'a'])
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         updates = updates_of(sqls, 'custom_field_enumerations')
         expect(updates).not_to be_empty
         updates.each do |sql|
@@ -652,12 +660,13 @@ RSpec.describe 'DCF value operation services' do
         expect(User.where(id: 1)).to exist
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'rewrites no CustomValue of an enumeration field (T-SORT-13)' do
         field = dcf_enum_field(names: %w[c b a])
         b = field.enumerations.find_by(name: 'b')
         dcf_issue_with_value(project, field, b.id)
         before = CustomValue.where(custom_field_id: field.id).pluck(:id, :value)
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         expect(CustomValue.where(custom_field_id: field.id).pluck(:id, :value)).to eq(before)
         expect(before.first.last).to eq(b.id.to_s)
         expect(updates_of(sqls, 'custom_values')).to be_empty
@@ -694,17 +703,19 @@ RSpec.describe 'DCF value operation services' do
         expect(rows(field).last.changes_summary).to eq('Sorted 3 value(s) Z-A (0 moved)')
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'writes nothing for enumerations already at 1..N in sorted order' do
         field = dcf_enum_field(names: %w[a B c])
         field.enumerations.find_by(name: 'B').update!(active: false)
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         expect(sqls.grep(/\AUPDATE/i)).to be_empty
         expect(JSON.parse(rows(field).last.after_value)['moved']).to eq(0)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'audits a field with one value or none as a no-op' do
         [own_list(%w[Only]), dcf_enum_field(names: [])].each do |field|
-          sqls = statements { sort(field, direction: 'desc') }
+          sqls = statements { sort(field, direction: 'desc', confirm: '1') }
           expect(sqls.grep(/\AUPDATE/i)).to be_empty
           expect(rows(field).last.status).to eq('success')
         end
@@ -727,11 +738,12 @@ RSpec.describe 'DCF value operation services' do
         expect([row.action, row.status, row.error_message]).to eq(['sort_values', 'success', nil])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'digests enumeration ids as Strings, inactive included, and counts every value' do
         field = dcf_enum_field(names: %w[c a b])
         field.enumerations.find_by(name: 'a').update!(active: false)
         old_keys = enum_ids(field)
-        sort(field, direction: 'asc')
+        sort(field, direction: 'asc', confirm: '1')
         new_keys = enum_ids(field)
         row = rows(field).last
         expect(JSON.parse(row.before_value)).to eq('count' => 3, 'order_sha256' => digest(old_keys))
@@ -773,6 +785,7 @@ RSpec.describe 'DCF value operation services' do
         expect(rows(field).where(status: 'success')).to be_empty
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'refuses a stale state_hash with 409 and applies nothing; a blank one is not checked (T-SORT-16)' do
         field = dcf_enum_field(names: %w[c b a])
         before = enum_state(field)
@@ -782,9 +795,9 @@ RSpec.describe 'DCF value operation services' do
         expect(enum_state(field)).to eq(before)
         expect([rows(field).last.status, rows(field).last.error_message]).to eq(%w[validation_failed error_stale_edit])
         expect { sort(field, direction: 'up', state_hash: 'stale') }.to expect_refused(:error_stale_edit)
-        sort(field, direction: 'asc', state_hash: '')
+        sort(field, direction: 'asc', state_hash: '', confirm: '1')
         expect(enum_state(field).map(&:first)).to eq(%w[a b c])
-        sort(field, direction: 'desc', state_hash: RedmineDependingCustomFields::BaseService.state_hash(field))
+        sort(field, direction: 'desc', state_hash: RedmineDependingCustomFields::BaseService.state_hash(field), confirm: '1')
         expect(enum_state(field).map(&:first)).to eq(%w[c b a])
       end
 
@@ -816,17 +829,124 @@ RSpec.describe 'DCF value operation services' do
         end
       end
 
-      it 'asks no confirmation for a global or a shared field and ignores confirm (UD-23)' do
+      # Flipped by WP-34 (UD-23 changed by the owner on 2026-11-02): a global
+      # or a shared field asks for the confirmation unless confirm is '1';
+      # was 'asks no confirmation for a global or a shared field and ignores
+      # confirm (UD-23)', sorted with confirm nil and '0'.
+      it 'asks the confirmation for a global or a shared field unless confirm is 1 (UD-23, WP-34)' do
         global = dcf_list_field(values: %w[c b a], is_for_all: true)
         shared = dcf_list_field(values: %w[c b a], is_for_all: false, projects: [project, dcf_create_project(name: 'O')])
         [[global, nil], [shared, '0']].each do |field, confirm|
-          expect { sort(field, direction: 'asc', confirm: confirm) }.not_to raise_error
+          expect { sort(field, direction: 'asc', confirm: confirm) }
+            .to raise_error(RedmineDependingCustomFields::ConfirmationRequired)
+          expect(field.reload.possible_values).to eq(%w[c b a])
+          expect(rows(field)).to be_empty
+          sort(field, direction: 'asc', confirm: '1')
+          expect(field.reload.possible_values).to eq(%w[a b c])
+          expect(rows(field).pluck(:action, :status)).to eq([%w[sort_values success]])
+        end
+      end
+
+      # WP-34: the direction check comes first (an audited 422, never the
+      # confirmation), then the confirmation, then any write; also for an
+      # already sorted field; positions and possible values stay unchanged
+      # and no row is written while it waits.
+      it 'asks a global enumeration and a list without writing, after the direction check, also when sorted' do
+        enum = dcf_enum_field(names: %w[c b a])
+        list = dcf_list_field(values: %w[c b a], is_for_all: true)
+        sorted = dcf_list_field(values: %w[a b c], is_for_all: true)
+        before = enum_state(enum)
+        store = raw_store(list)
+        sqls = statements do
+          [enum, list, sorted].each do |field|
+            expect { sort(field, direction: 'desc') }.to raise_error(RedmineDependingCustomFields::ConfirmationRequired)
+          end
+        end
+        expect(updates_of(sqls, 'custom_field_enumerations') + updates_of(sqls, 'custom_fields')).to eq([])
+        expect([enum_state(enum), raw_store(list), sorted.reload.possible_values]).to eq([before, store, %w[a b c]])
+        [enum, list, sorted].each { |field| expect(rows(field)).to be_empty }
+
+        expect { sort(enum, direction: 'up') }.to expect_refused(:error_reorder_mismatch)
+        expect(rows(enum).pluck(:status, :error_message)).to eq([%w[validation_failed error_reorder_mismatch]])
+
+        sort(enum, direction: 'desc', confirm: '1')
+        expect(enum_state(enum).map(&:first)).to eq(%w[c b a])
+        sort(sorted, direction: 'asc', confirm: '1')
+        expect(rows(sorted).pluck(:action, :status)).to eq([%w[sort_values success]])
+        expect(JSON.parse(rows(sorted).last.after_value)['moved']).to eq(0)
+      end
+
+      it 'sorts a project-only field without confirm and ignores confirm (WP-34)' do
+        # All fields first: Project#all_issue_custom_fields is memoized on project.
+        fields = Array.new(4) { own_list(%w[c b a]) }
+        [nil, '0', ['1'], '1'].zip(fields).each do |confirm, field|
+          params = { direction: 'asc' }
+          params[:confirm] = confirm unless confirm.nil?
+          sort(field, params)
           expect(field.reload.possible_values).to eq(%w[a b c])
         end
       end
     end
 
+    # WP-34: BaseService#confirmed? is the one confirm rule of rename,
+    # remove, sort and the dependency save: a String that
+    # ActiveModel::Type::Boolean casts to true. An Array, a Hash, Parameters,
+    # an Integer or true never confirm (strong params drop them for rename,
+    # remove and sort; the dependency save passes confirm raw).
+    describe 'the confirm rule (WP-34)' do
+      let(:refused) { [nil, '', '0', 'false', 'off', ['1'], { 'a' => '1' }, ActionController::Parameters.new('a' => '1'), 1, true] }
+
+      def global_list(values = %w[b a])
+        dcf_list_field(values: values, is_for_all: true)
+      end
+
+      it 'confirms a rename and a removal on a global field with 1 or true only' do
+        # All fields first: Project#all_issue_custom_fields is memoized on project.
+        fields = Array.new(refused.size) { global_list }
+        confirmed = Array.new(2) { global_list }
+        refused.zip(fields).each do |confirm, field|
+          expect { rename(field, old_value: 'a', new_value: 'z', confirm: confirm) }
+            .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
+          expect { remove(field, value: 'a', confirm: confirm) }
+            .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
+          expect(field.reload.possible_values).to eq(%w[b a])
+        end
+        %w[1 true].zip(confirmed).each do |confirm, field|
+          rename(field, old_value: 'a', new_value: 'z', confirm: confirm)
+          remove(field, value: 'b', confirm: confirm)
+          expect(field.reload.possible_values).to eq(%w[z])
+        end
+      end
+
+      it 'confirms a sort on a global field with 1 or true only' do
+        fields = Array.new(refused.size) { global_list }
+        confirmed = Array.new(2) { global_list }
+        refused.zip(fields).each do |confirm, field|
+          expect { sort(field, direction: 'asc', confirm: confirm) }
+            .to raise_error(RedmineDependingCustomFields::ConfirmationRequired), confirm.inspect
+          expect(field.reload.possible_values).to eq(%w[b a])
+        end
+        %w[1 true].zip(confirmed).each do |confirm, field|
+          sort(field, direction: 'asc', confirm: confirm)
+          expect(field.reload.possible_values).to eq(%w[a b])
+        end
+      end
+
+      it 'is defined once in BaseService and used by the four services' do
+        dir = File.expand_path('../../app/services/redmine_depending_custom_fields', __dir__)
+        sources = Dir[File.join(dir, '*.rb')].to_h { |path| [File.basename(path), File.read(path)] }
+        expect(sources.select { |_name, text| text.include?('def confirmed?') }.keys).to eq(['base_service.rb'])
+        expect(sources.select { |_name, text| text.include?('params[:confirm]') }.keys).to eq(['base_service.rb'])
+        users = sources.select { |_name, text| text.include?('confirmed?') }.keys.sort
+        expect(users).to eq(%w[base_service.rb remove_value_service.rb rename_value_service.rb])
+        # The dependency save and the sort ask through the one scope rule.
+        scoped = sources.select { |_name, text| text.include?('confirm_shared_change!') }.keys.sort
+        expect(scoped).to eq(%w[base_service.rb dependency_mapping_service.rb sort_values_service.rb])
+      end
+    end
+
     describe 'transaction and storage errors' do
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'rolls every chunk back when the audit insert fails' do
         stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 2)
         field = dcf_enum_field(names: %w[E D C B A])
@@ -834,30 +954,32 @@ RSpec.describe 'DCF value operation services' do
         before = enum_state(field)
         allow_any_instance_of(RedmineDependingCustomFields::AuditRecorder)
           .to receive(:record_success!).and_raise(StandardError, 'boom')
-        expect { sort(field, direction: 'asc') }.to raise_error(StandardError, 'boom')
+        expect { sort(field, direction: 'asc', confirm: '1') }.to raise_error(StandardError, 'boom')
         expect(enum_state(field)).to eq(before)
         expect { sort(list, direction: 'asc') }.to raise_error(StandardError, 'boom')
         expect(list.reload.possible_values).to eq(%w[c b a])
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'maps ValueTooLong to a save_failed row without SQL or a value' do
         field = dcf_enum_field(names: %w[c b a])
         before = enum_state(field)
         allow_any_instance_of(ActiveRecord::Relation).to receive(:update_all)
           .and_raise(ActiveRecord::ValueTooLong, "PG::Error: SECRET-SQL 'Label X'")
-        expect { sort(field, direction: 'asc') }.to expect_refused(:error_dcf_value_too_long)
+        expect { sort(field, direction: 'asc', confirm: '1') }.to expect_refused(:error_dcf_value_too_long)
         row = rows(field).last
         expect([row.status, row.error_message]).to eq(%w[save_failed error_dcf_value_too_long])
         expect(row.attributes.values.join(' ')).not_to include('SECRET-SQL')
         expect(enum_state(field)).to eq(before)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'lets any other database error propagate unaudited, without its message in a row' do
         field = dcf_enum_field(names: %w[c b a])
         before = enum_state(field)
         allow_any_instance_of(ActiveRecord::Relation).to receive(:update_all)
           .and_raise(ActiveRecord::StatementInvalid, "PG::Error: SECRET-SQL 'Label X'")
-        expect { sort(field, direction: 'asc') }.to raise_error(ActiveRecord::StatementInvalid)
+        expect { sort(field, direction: 'asc', confirm: '1') }.to raise_error(ActiveRecord::StatementInvalid)
         expect(enum_state(field)).to eq(before)
         expect(events.all.map { |row| row.attributes.values.join(' ') }.join).not_to include('SECRET-SQL')
       end
@@ -891,13 +1013,14 @@ RSpec.describe 'DCF value operation services' do
         CustomField.find(field.id)
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'issues ceil(moved / CHUNK) UPDATE statements and the same other statements for 30 and 300 values' do
         stub_const('RedmineDependingCustomFields::SortValuesService::CHUNK', 10)
         small = reversed_enums(30)
         large = reversed_enums(300)
         sort(own_list(%w[b a]), direction: 'asc')
-        small_sqls = statements { sort(small, direction: 'asc') }
-        large_sqls = statements { sort(large, direction: 'asc') }
+        small_sqls = statements { sort(small, direction: 'asc', confirm: '1') }
+        large_sqls = statements { sort(large, direction: 'asc', confirm: '1') }
         expect(updates_of(small_sqls, 'custom_field_enumerations').size).to eq(30 / 10)
         expect(updates_of(large_sqls, 'custom_field_enumerations').size).to eq(300 / 10)
         expect(enum_state(large).map(&:first).first(2)).to eq(%w[N0001 N0002])
@@ -1632,12 +1755,13 @@ RSpec.describe 'DCF value operation services' do
       expect(rows_of(field).last.changes_summary).to eq('Saved 3 enumeration value(s): reordered')
     end
 
+    # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
     it 'refuses a stale state_hash with 409 before the scope and id checks (T-ENP-9)' do
       field = dcf_enum_field(names: %w[c b a])
       a = ordered(field).last
       stale = RedmineDependingCustomFields::BaseService.state_hash(field)
       RedmineDependingCustomFields::SortValuesService
-        .new(project: project, field: field, user: user, params: { direction: 'asc' }).call
+        .new(project: project, field: field, user: user, params: { direction: 'asc', confirm: '1' }).call
       before = enum_state(field)
       expect { page_save(field, page_rows([a.reload], a.id => { name: 'A' }), state_hash: stale) }
         .to raise_error(RedmineDependingCustomFields::OperationError) { |e|
@@ -2138,11 +2262,12 @@ RSpec.describe 'DCF value operation services' do
         end
       end
 
+      # Changed by WP-34 (UD-23): confirm '1' on the global (dcf_enum_field) sort; was no confirm.
       it 'never stores through save_field! when sorting or reordering enumerations' do
         stub_ceiling(1)
         field = dcf_enum_field(names: %w[c b a])
         seen = watch_saves
-        sort(CustomField.find(field.id), direction: 'asc')
+        sort(CustomField.find(field.id), direction: 'asc', confirm: '1')
         ids = CustomField.find(field.id).enumerations.order(:position).pluck(:id).map(&:to_s)
         reorder(CustomField.find(field.id), ordered_values: ids.reverse)
         expect(seen).to eq([])

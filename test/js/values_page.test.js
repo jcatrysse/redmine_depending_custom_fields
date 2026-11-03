@@ -22,12 +22,15 @@ afterEach(() => D.closeAll());
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// sortConfirm false: the sort buttons of a shared or global field carry no
+// data-confirm (WP-34, UD-23: the server panel asks).
 function markup(opts) {
-  const o = Object.assign({ scope: true, warn: WARN, button: false }, opts || {});
+  const o = Object.assign({ scope: true, warn: WARN, button: false, sortConfirm: true }, opts || {});
   const attrs = (o.scope ? ' data-dcf-page-scope="1"' : '') + (o.warn === null ? '' : ` data-dcf-warn-unsaved="${esc(o.warn)}"`);
+  const confirmAttr = o.sortConfirm ? ` data-confirm="${esc(SORT)}"` : '';
   const submit = (label) => (o.button
-    ? `<button type="submit" data-confirm="${esc(SORT)}"><span>${label}</span></button>`
-    : `<input type="submit" value="${label}" data-confirm="${esc(SORT)}">`);
+    ? `<button type="submit"${confirmAttr}><span>${label}</span></button>`
+    : `<input type="submit" value="${label}"${confirmAttr}>`);
   const sortForm = (dir, label) => '<form class="button_to dcf-values-sort" method="post" ' +
     'action="/projects/p/custom_field_configuration/fields/1/values/sort"><input type="hidden" name="_method" value="patch">' +
     `${submit(label)}<input type="hidden" name="direction" value="${dir}"><input type="hidden" name="state_hash" value="h"></form>`;
@@ -257,6 +260,32 @@ test('the Apply button and Enter in q go through the same submit question', asyn
     await later();
     assert.equal(submitEl.getAttribute('data-confirm'), SORT, 'data-confirm is restored');
   });
+});
+
+// WP-34 (UD-23): on a shared or global field the sort buttons carry no
+// data-confirm (the server panel is the only confirmation). With unsaved
+// edits the guard asks the unsaved question alone, once; Cancel stops the
+// click; a clean page asks nothing in the browser; no data-confirm appears.
+[false, true].forEach((button) => {
+  test(`a sort button without data-confirm asks only the unsaved question while dirty (${button ? 'button' : 'input'})`, async () => {
+    const p = await load({ button, sortConfirm: false, answers: [false, true] });
+    const submitEl = p.sortSubmit();
+    assert.equal(submitEl.hasAttribute('data-confirm'), false);
+    p.type(p.name(), 'Changed');
+    const target = button ? submitEl.querySelector('span') : submitEl;
+    assert.equal(p.click(target).defaultPrevented, true, 'Cancel: nothing is submitted');
+    assert.deepEqual([p.log.prompts, p.log.ujsPrompts, p.log.sent], [[WARN], 0, []]);
+    target.click();
+    assert.deepEqual([p.log.prompts, p.log.ujsPrompts, p.log.sent], [[WARN, WARN], 0, ['button_to dcf-values-sort']]);
+    await later();
+    assert.equal(submitEl.hasAttribute('data-confirm'), false, 'no data-confirm is restored');
+  });
+});
+
+test('a clean page asks nothing in the browser for a sort button without data-confirm', async () => {
+  const p = await load({ sortConfirm: false });
+  p.sortSubmit().click();
+  assert.deepEqual([p.log.prompts, p.log.ujsPrompts, p.log.sent], [[], 0, ['button_to dcf-values-sort']]);
 });
 
 test('a clean page leaves the sort question to rails-ujs alone', async () => {

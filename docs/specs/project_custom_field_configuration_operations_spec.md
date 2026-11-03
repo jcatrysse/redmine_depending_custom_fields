@@ -382,11 +382,19 @@ F and G are one operation, `DependencyMappingService`, audited as
    offenders of 40 characters (summary at most 1,000); the flash is the
    generic text only.
 5. **Save and audit.** One `field.save!` of the edited field only (no
-   cascade, no prune, no confirmation step on shared or global fields,
-   UD-23); the success row holds the compact delta v2 (Audit Spec §3).
+   cascade, no prune); the success row holds the compact delta v2 (Audit
+   Spec §3). Changed by WP-34 (UD-23 changed by the owner on 2026-11-02):
+   before the delta and the first write, after the parse and the
+   validation (their 422s come first), a field shared with other projects
+   or global needs `confirm` (a String that casts to true, `1` from the
+   page) on the editor save, a replace import and the deprecated nested
+   params alike, else needs-confirmation (no row, nothing written); was no
+   confirmation step on shared or global fields.
 6. **Re-render.** A 422 after an ok parse shows the posted mapping in the
    editor, dirty; a parser error or the legacy path shows the stored
-   mapping. Every re-render reloads the field first, so the rendered
+   mapping. The needs-confirmation 422 (WP-34) follows the same rule, with
+   the warning flash `text_confirm_cross_project_change` and the unchecked
+   required confirmation checkbox. Every re-render reloads the field first, so the rendered
    `state_hash` is the stored one (R9). A 409 (stale `state_hash`) shows the
    stored mapping and the posted version as `data-dcf-editor-conflict-mapping`
    (parsed once, after authorization), with the shared conflict panel (use my
@@ -420,7 +428,13 @@ Params: `direction` (`asc` or `desc`), `state_hash` (optional, as everywhere).
    of `::JSON.generate` over the ordered keys (list values, or enumeration ids
    as Strings, inactive included), scrubbed to valid UTF-8 first.
 6. No server confirmation, shared and global fields included (UD-23): the
-   buttons ask through `data-confirm` only.
+   buttons ask through `data-confirm` only. Changed by WP-34 (UD-23 changed
+   by the owner on 2026-11-02): after step 2 and before any write, also for
+   an already sorted field, a field shared with other projects or global
+   needs `confirm`, else needs-confirmation (no row): the values page shows
+   the sort confirmation panel (no usage lines, names no field) posting the
+   pending `direction`, `state_hash` and a filtering `q`; `data-confirm`
+   stays on the buttons of project-only fields only.
 
 ## Normalization & comparison rules
 
@@ -458,3 +472,8 @@ Params: `direction` (`asc` or `desc`), `state_hash` (optional, as everywhere).
 | In-use (when blocking enabled) | 422 | error_value_in_use |
 | Stale edit | 409/422 | error_stale_edit |
 | Needs confirmation | 422 (re-render) | text_confirm_cross_project_change |
+
+Needs confirmation (WP-34): rename and remove (unchanged), and on a field
+shared with other projects or global the dependency save (§F/§G: the
+dependency page with the warning flash and the posted mapping dirty) and the
+sort (§J: the values page with the sort panel). Not audited.

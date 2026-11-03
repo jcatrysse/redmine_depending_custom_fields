@@ -3,13 +3,18 @@
 require_relative '../rails_helper'
 
 # WP-19: bulk edit, time-entry bulk edit and the context-menu wizard with
-# depending children. A required managed child gets core's (none) option
-# marked data-dcf-required-none (UD-10); the server still decides per record:
-# a blank required child is accepted only while its parent value allows
-# nothing (the CustomFieldPatch bypass), otherwise core's 'cannot be blank'
-# refuses that record and nothing is cleared. Core saves each record on its
-# own and re-renders bulk edit (HTTP 200, #errorExplanation) listing the
-# records it could not save (QA-14, gap 12, FM-02, FM-22).
+# depending children. Changed by WP-34 (UD-10 changed by the owner on
+# 2026-11-02): a required managed child gets core's select, without any
+# (none) option (core omits it for required fields); was core's (none) marked
+# data-dcf-required-none (WP-19). The server decides per record, unchanged: a
+# blank required child is accepted only while its parent value allows
+# nothing (the CustomFieldPatch bypass of 0.0.11), otherwise core's 'cannot
+# be blank' refuses that record and nothing is cleared; a required child
+# that keeps a value its new parent value does not allow is refused 'is
+# invalid'. A '__none__' for a required child now comes only from a script
+# or a page opened before the upgrade. Core saves each record on its own and
+# re-renders bulk edit (HTTP 200, #errorExplanation) listing the records it
+# could not save (QA-14, gap 12, FM-02, FM-22).
 RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
   include DcfFormatCharacterization
 
@@ -101,8 +106,18 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
     Issue.find(issue.id)
   end
 
-  describe 'the marked (none) option on the bulk forms' do
-    it 'follows (No change) on a required managed child, plain core (none) on an optional one' do
+  # Flipped by WP-34 (UD-10): was 'the marked (none) option on the bulk
+  # forms', the marked option right after (No change) (first in a multi
+  # select) of every required managed child.
+  describe 'the bulk forms of a required managed child (core select, WP-34)' do
+    def values_of(select)
+      select.css('option').map { |o| o['value'] }
+    end
+
+    # Changed by WP-34: the required child offers (No change) and its values
+    # only, no marked option on the page; was ['', nil], ['__none__', '1'],
+    # ['a1', nil] and one marked option. The optional child is unchanged.
+    it 'offers (No change) and the values on a required managed child, plain core (none) on an optional one' do
       parent, required = kit
       _other, optional = kit(required: false)
       issues = [kit_issue(project, parent => 'A', required => 'a1', optional => 'a1'),
@@ -111,22 +126,25 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       expect(response).to have_http_status(200)
 
       required_select = doc.at_css("select[data-dcf-field='#{required.id}']")
-      expect(options_of(required_select).first(3)).to eq([['', nil], ['__none__', '1'], ['a1', nil]])
-      expect(required_select.at_css('option[value="__none__"]').text).to eq(I18n.t(:label_none))
+      expect(options_of(required_select)).to eq([['', nil], ['a1', nil], ['a2', nil], ['b1', nil]])
       expect(options_of(doc.at_css("select[data-dcf-field='#{optional.id}']")).first(2)).to eq([['', nil], ['__none__', nil]])
-      expect(doc.css('[data-dcf-required-none]').size).to eq(1)
+      expect(doc.css('[data-dcf-required-none]')).to be_empty
       expect(doc.css('[data-dcf-blank]')).to be_empty
     end
 
-    it 'puts the option first on a required managed multi child' do
+    # Changed by WP-34: the values only; was the marked option first.
+    it 'offers only the values on a required managed multi child' do
       parent, child = kit(multiple: true)
       issues = [kit_issue(project, parent => 'A', child => %w[a1])]
       get '/issues/bulk_edit', params: { ids: issues.map(&:id) }
 
-      expect(options_of(doc.at_css("select[data-dcf-field='#{child.id}']")).first(2)).to eq([['__none__', '1'], ['a1', nil]])
+      expect(options_of(doc.at_css("select[data-dcf-field='#{child.id}']"))).to eq([['a1', nil], ['a2', nil], ['b1', nil]])
+      expect(doc.css('[data-dcf-required-none]')).to be_empty
     end
 
-    it 'is localized with core label_none in German, without a missing translation' do
+    # Changed by WP-34: (No change) in German followed by the first value;
+    # was (No change) and core's label_none in German.
+    it 'is localized in German without a (none) option and without a missing translation' do
       parent, child = kit
       german = dcf_create_user("de-#{SecureRandom.hex(3)}")
       german.update_columns(admin: true, language: 'de')
@@ -134,12 +152,15 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       get '/issues/bulk_edit', params: { ids: [kit_issue(project, parent => 'A', child => 'a1').id] }
       select = doc.at_css("select[data-dcf-field='#{child.id}']")
 
-      expected = [I18n.t(:label_no_change_option, locale: :de), I18n.t(:label_none, locale: :de)]
-      expect(select.css('option').first(2).map(&:text)).to eq(expected)
+      expect(select.css('option').first(2).map(&:text)).to eq([I18n.t(:label_no_change_option, locale: :de), 'a1'])
+      expect(select.css('option').map(&:text)).not_to include(I18n.t(:label_none, locale: :de))
+      expect(values_of(select)).not_to include('__none__')
       expect(response.body).not_to match(/translation.missing/i)
     end
 
-    it 'is absent for a required child whose parent the member cannot see in one selected project' do
+    # Changed by WP-34: absent also when the member sees the parent; was
+    # present (the marked option) for the selection of one project.
+    it 'is absent whether or not the member can see the parent in every selected project' do
       parent, child = kit
       member_role = dcf_create_role(permissions: [:view_issues, :edit_issues])
       other = dcf_create_project
@@ -153,18 +174,24 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       select = doc.at_css("select[data-dcf-field='#{child.id}']")
 
       expect(select['data-dcf-parent']).to be_nil
-      expect(options_of(select).map(&:first)).not_to include('__none__')
+      expect(values_of(select)).not_to include('__none__')
 
       get '/issues/bulk_edit', params: { ids: [issues.first.id] }
-      expect(options_of(doc.at_css("select[data-dcf-field='#{child.id}']")).map(&:first)).to include('__none__')
+      select = doc.at_css("select[data-dcf-field='#{child.id}']")
+      expect(select['data-dcf-parent']).to eq(parent.id.to_s)
+      expect(values_of(select)).not_to include('__none__')
+      expect(doc.css('[data-dcf-required-none]')).to be_empty
     end
 
-    it 'reaches time-entry bulk edit and the context-menu wizard unchanged' do
+    # Changed by WP-34: (No change) and the values on time-entry bulk edit
+    # and in the wizard template; was the marked option second.
+    it 'reaches time-entry bulk edit and the context-menu wizard as core renders them' do
       te_parent, te_child = kit(type: TimeEntryCustomField)
       entries = [time_entry(te_parent => 'A', te_child => 'a1'), time_entry(te_parent => 'B', te_child => 'b1')]
       get '/time_entries/bulk_edit', params: { ids: entries.map(&:id) }
       expect(response).to have_http_status(200)
-      expect(options_of(doc.at_css("select[data-dcf-field='#{te_child.id}']")).first(2)).to eq([['', nil], ['__none__', '1']])
+      expect(options_of(doc.at_css("select[data-dcf-field='#{te_child.id}']"))).to eq([['', nil], ['a1', nil], ['a2', nil], ['b1', nil]])
+      expect(doc.css('[data-dcf-required-none]')).to be_empty
 
       root = dcf_list_field(values: %w[A B C])
       middle = dcf_list_field(format: 'depending_list', values: %w[a1 a2 b1], parent: root)
@@ -178,13 +205,102 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       template = doc.at_css("template#cf-wizard-#{root.id}")
       select = template.at_css("select[name='issue[custom_field_values][#{middle.id}]']")
 
-      expect(options_of(select).first(2)).to eq([['', nil], ['__none__', '1']])
+      expect(options_of(select)).to eq([['', nil], ['a1', nil], ['a2', nil], ['b1', nil]])
+      expect(values_of(template.at_css("select[name='issue[custom_field_values][#{leaf.id}]']")).first(2)).to eq(['', '__none__'])
       expect(template.css('option[selected]')).to be_empty
-      expect(template.css('[data-dcf-required-none]').size).to eq(1)
+      expect(template.css('[data-dcf-required-none]')).to be_empty
+    end
+  end
+
+  # WP-34 (UD-10): without (none), a bulk change of the parent to (none) or to
+  # a value without links leaves a required child on (No change) (a multi
+  # child posts nothing, FM-02). Observed, the server rule unchanged: each
+  # record whose required child keeps a value is refused '<Child> is invalid'
+  # and keeps parent and child; each record whose required child is blank is
+  # saved with the new parent value (the 0.0.11 bypass).
+  describe 'a required child left on (No change) under a parent that allows nothing (WP-34)' do
+    def posted(parent, child, target)
+      parent_value = target == '__none__' ? '__none__' : kit_key(parent, target)
+      child.multiple? ? { parent => parent_value } : { parent => parent_value, child => '' }
+    end
+
+    def stored_blank?(record, field)
+      Array(value(record, field)).reject(&:blank?).empty?
+    end
+
+    [:list, :enumeration].each do |kind|
+      [false, true].each do |multiple|
+        it "refuses the issue whose required #{kind} #{multiple ? 'multi ' : ''}child keeps a value, saves the blank one" do
+          parent, child = kit(kind, multiple: multiple)
+          %w[__none__ C].each do |target|
+            kept = kit_issue(project, parent => 'A', child => multiple ? %w[a1] : 'a1')
+            empty = kit_issue(project, parent => 'B', child => [])
+            bulk_update([kept, empty], posted(parent, child, target))
+
+            expect(response).to have_http_status(200), target
+            expect(failure_text).to eq(failed_issues([kept], 2)), target
+            expect(failure_items).to eq(["#{message(Issue, child, invalid)}: ##{kept.id}"]), target
+            expect([value(kept, parent), value(kept, child)])
+              .to eq([kit_key(parent, 'A'), kit_value(child, %w[a1])]), target
+            expect(value(empty, parent)).to eq(target == '__none__' ? '' : kit_key(parent, 'C')), target
+            expect(stored_blank?(empty, child)).to be(true), target
+            select = doc.at_css("select[data-dcf-field='#{child.id}']")
+            expect(select.css('option[value="__none__"]')).to be_empty, target
+            expect(doc.css('[data-dcf-required-none]')).to be_empty, target
+          end
+        end
+      end
+
+      it "refuses the time entry whose required #{kind} child keeps a value, saves the blank one" do
+        parent, child = kit(kind, type: TimeEntryCustomField)
+        %w[__none__ C].each do |target|
+          kept = time_entry(parent => kit_key(parent, 'A'), child => kit_key(child, 'a1'))
+          empty = time_entry(parent => kit_key(parent, 'B'), child => '')
+          post '/time_entries/bulk_update',
+               params: { ids: [kept.id, empty.id], time_entry: { custom_field_values: keys(posted(parent, child, target)) } }
+
+          expect(response).to have_http_status(200), target
+          expect(failure_text).to eq(I18n.t(:notice_failed_to_save_time_entries, count: 1, total: 2, ids: "##{kept.id}")), target
+          expect(failure_items).to eq(["#{message(TimeEntry, child, invalid)}: ##{kept.id}"]), target
+          expect([value(kept, parent), value(kept, child)]).to eq([kit_key(parent, 'A'), kit_key(child, 'a1')]), target
+          expect(value(empty, parent)).to eq(target == '__none__' ? '' : kit_key(parent, 'C')), target
+          expect(value(empty, child)).to be_blank, target
+          expect(doc.css("select[data-dcf-field='#{child.id}'] option[value='__none__']")).to be_empty, target
+        end
+      end
+
+      it "answers the wizard save of a required #{kind} child on (No change) issue by issue (422 after saving the blank one)" do
+        parent, child = kit(kind)
+        %w[__none__ C].each do |target|
+          kept = kit_issue(project, parent => 'A', child => 'a1')
+          empty = kit_issue(project, parent => 'B', child => [])
+          post '/depending_custom_fields/save',
+               params: { ids: [kept.id, empty.id], issue: { custom_field_values: keys(posted(parent, child, target)) } }
+
+          expect(response).to have_http_status(422), target
+          expect(JSON.parse(response.body)['errors']).to eq([message(Issue, child, invalid)]), target
+          expect([value(kept, parent), value(kept, child)]).to eq([kit_key(parent, 'A'), kit_key(child, 'a1')]), target
+          expect(value(empty, parent)).to eq(target == '__none__' ? '' : kit_key(parent, 'C')), target
+          expect(value(empty, child)).to be_blank, target
+        end
+      end
+    end
+
+    it 'keeps core cannot be blank for a blank required child once the parent value has links' do
+      parent, child = kit
+      empty = kit_issue(project, parent => 'C', child => [])
+      bulk_update([empty], parent => 'A', child => '')
+
+      expect(response).to have_http_status(200)
+      expect(failure_items).to eq(["#{message(Issue, child, blank)}: ##{empty.id}"])
+      expect(value(empty, parent)).to eq('C')
     end
   end
 
   describe 'POST /issues/bulk_update' do
+    # WP-34: the '__none__' posts for a required child below are scripted
+    # posts (or a page opened before the upgrade): the forms no longer offer
+    # it. The server rule they pin is unchanged.
     [:list, :enumeration].each do |kind|
       context "with a required #{kind} child" do
         it 'clears it when the parent is set to (none) in the same request' do
@@ -206,6 +322,9 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
           issues.each { |issue| expect(value(issue, child)).to eq('') }
         end
 
+        # Changed by WP-34: the re-render has no (none) for the required
+        # child, so the posted '__none__' selects nothing; was the marked
+        # option selected. The per-issue result is unchanged.
         it 'refuses each issue whose parent value allows options with cannot be blank, clearing nothing' do
           parent, child = kit(kind)
           issues = [kit_issue(project, parent => 'A', child => 'a1'), kit_issue(project, parent => 'B', child => 'b1')]
@@ -215,14 +334,15 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
           expect(failure_text).to eq(failed_issues(issues, 2))
           expect(failure_items).to eq(["#{message(Issue, child, blank)}: #{issues.map { |i| "##{i.id}" }.join(', ')}"])
           expect(issues.map { |issue| value(issue, child) }).to eq([kit_key(child, 'a1'), kit_key(child, 'b1')])
-          # The re-render selects the posted (none) (the runtime puts it back
-          # on (No change) while the parent is unchanged).
-          selected = doc.css("select[data-dcf-field='#{child.id}'] option[selected]")
-          expect(selected.map { |o| [o['value'], o['data-dcf-required-none']] }).to eq([%w[__none__ 1]])
+          select = doc.at_css("select[data-dcf-field='#{child.id}']")
+          expect(select.css('option[value="__none__"]')).to be_empty
+          expect(select.css('option[selected]')).to be_empty
         end
       end
 
-      # The marked (none) of a required multi child posts ['__none__'].
+      # A script posts ['__none__'] for a required multi child (the WP-19
+      # marked option did). Changed by WP-34: the re-render selects nothing;
+      # was the marked option selected.
       it "clears a required #{kind} multi child posted as (none) only where the parent value allows nothing" do
         parent, child = kit(kind, multiple: true)
         cleared = kit_issue(project, parent => 'C', child => %w[a1])
@@ -234,8 +354,9 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
         expect(failure_items).to eq(["#{message(Issue, child, blank)}: ##{refused.id}"])
         expect(Array(value(cleared, child)).reject(&:blank?)).to eq([])
         expect(value(refused, child)).to match_array([kit_key(child, 'a1'), kit_key(child, 'a2')])
-        selected = doc.css("select[data-dcf-field='#{child.id}'] option[selected]")
-        expect(selected.map { |o| [o['value'], o['data-dcf-required-none']] }).to eq([%w[__none__ 1]])
+        select = doc.at_css("select[data-dcf-field='#{child.id}']")
+        expect(select.css('option[value="__none__"]')).to be_empty
+        expect(select.css('option[selected]')).to be_empty
       end
     end
 
@@ -271,6 +392,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
     # Gap 12: the parent is not available on the second issue's tracker, so
     # bulk edit shows no parent control; each issue is judged against its own
     # parent (an unavailable parent allows nothing and counts as changed).
+    # Changed by WP-34: the required child offers no (none) (was the marked
+    # option second); the '__none__' post below is a scripted one.
     it 'judges a mixed-tracker selection per issue' do
       parent, child = kit
       with_parent = kit_issue(project, parent => 'A', child => 'a2')
@@ -282,7 +405,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       expect(doc.css("[name='issue[custom_field_values][#{parent.id}]']")).to be_empty
       select = doc.at_css("select[data-dcf-field='#{child.id}']")
       expect(select['data-dcf-parent']).to eq(parent.id.to_s)
-      expect(options_of(select).first(2)).to eq([['', nil], ['__none__', '1']])
+      expect(options_of(select).first(2)).to eq([['', nil], ['a1', nil]])
+      expect(options_of(select).map(&:first)).not_to include('__none__')
 
       bulk_update([with_parent, lacking], child => 'a1')
       expect(response).to have_http_status(200)
@@ -354,6 +478,7 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
   end
 
   describe 'POST /time_entries/bulk_update' do
+    # WP-34: the '__none__' posts for a required child are scripted posts.
     def bulk_update_entries(entries, values, extra = {})
       post '/time_entries/bulk_update',
            params: { ids: entries.map(&:id), time_entry: { custom_field_values: keys(values) }.merge(extra) }
@@ -405,6 +530,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
   end
 
   describe 'POST /depending_custom_fields/save (wizard)' do
+    # WP-34: the '__none__' posts for a required child are scripted posts
+    # (the wizard maps '__none__' to '', unchanged).
     def wizard_save(issues, values)
       post '/depending_custom_fields/save', params: { ids: issues.map(&:id), issue: { custom_field_values: keys(values) } }
     end

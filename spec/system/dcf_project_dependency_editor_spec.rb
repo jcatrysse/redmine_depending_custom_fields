@@ -9,7 +9,9 @@ require_relative '../rails_helper'
 # data-dcf-editor-mapping with a blank hidden input, a stale save across two
 # windows with the conflict panel, and a CSV import through the WP-26 panel
 # saved and audited with source import. Screenshots (the scope banner icon
-# included) go to tmp/capybara/dcf/wp-27/.
+# included) go to tmp/capybara/dcf/wp-27/. WP-34 (UD-23 changed by the owner
+# on 2026-11-02): the fields are global, so Save needs the required
+# confirmation checkbox (screenshots in tmp/capybara/dcf/wp-34/).
 RSpec.describe 'Project dependency editor in the browser (WP-27)', type: :system do
   fixtures :users
 
@@ -24,9 +26,9 @@ RSpec.describe 'Project dependency editor in the browser (WP-27)', type: :system
   end
   let(:path) { "/projects/#{project.identifier}/custom_field_configuration/fields/#{child.id}/dependencies" }
 
-  def shot(name, anchor = 'fieldset.dcf-dep-editor')
+  def shot(name, anchor = 'fieldset.dcf-dep-editor', wp: 'wp-27')
     page.execute_script('var e = document.querySelector(arguments[0]); if (e) e.scrollIntoView();', anchor)
-    dir = Rails.root.join('tmp', 'capybara', 'dcf', 'wp-27')
+    dir = Rails.root.join('tmp', 'capybara', 'dcf', wp)
     FileUtils.mkdir_p(dir)
     file = dir.join("#{name}-#{version}.png").to_s
     page.driver.browser.save_screenshot(file)
@@ -66,8 +68,17 @@ RSpec.describe 'Project dependency editor in the browser (WP-27)', type: :system
     expect(page).to have_css('fieldset.dcf-dep-editor .dcf-dep-editor__sections')
   end
 
+  # Changed by WP-34 (UD-23): ticks the confirmation box of the global field
+  # first (it is never checked after a 422 or a 409, and the browser refuses
+  # the submit while it is unticked); was the Save click alone. The unticked
+  # and the server-side cases have their own examples below.
   def save
+    confirm_box.check
     find('form input[type=submit][data-dcf-editor-submit]').click
+  end
+
+  def confirm_box
+    find('#dcf-dependencies-form input[type=checkbox][name=confirm]')
   end
 
   def last_row
@@ -187,5 +198,44 @@ RSpec.describe 'Project dependency editor in the browser (WP-27)', type: :system
     after = JSON.parse(last_row.after_value)
     expect(after.values_at('source', 'import', 'added')).to eq(['import', { 'mode' => 'merge', 'rows' => 2 }, 2])
     expect(last_row.changes_summary).to start_with('Updated dependency mapping (import, merge, 2 rows): +2/-0 links')
+  end
+
+  # WP-34 (UD-23): the required box blocks an unticked Save in the browser (no
+  # request); without the attribute (a script) the server answers 422 with
+  # the posted mapping dirty, the warning flash and the box unchecked;
+  # ticked, the save goes through. Ticking alone does not make the page dirty.
+  it 'asks for the confirmation of a global field next to Save, in the browser and on the server' do
+    dcf_login
+    edit
+    expect(confirm_box[:required]).to be_truthy
+    expect(confirm_box).not_to be_checked
+    confirm_box.check
+    expect(editor_js('wantsWarning()')).to be(false)
+    confirm_box.uncheck
+    tick(open_section('Germany'), 'Lyon')
+    rows = RedmineDependingCustomFields::ConfigAuditEvent.count
+    find('form input[type=submit][data-dcf-editor-submit]').click
+    expect(js("document.querySelector('#dcf-dependencies-form input[name=confirm]').validity.valueMissing")).to be(true)
+    expect(page).to have_no_css('#flash_warning')
+    expect(page).to have_no_css('#flash_notice')
+    expect(RedmineDependingCustomFields::ConfigAuditEvent.count).to eq(rows)
+
+    js("document.querySelector('#dcf-dependencies-form input[name=confirm]').removeAttribute('required'); null")
+    find('form input[type=submit][data-dcf-editor-submit]').click
+    expect(page).to have_css('#flash_warning', text: I18n.t(:text_confirm_cross_project_change))
+    expect(page).to have_css('fieldset[data-dcf-editor][data-dcf-editor-dirty="1"]')
+    expect(confirm_box).not_to be_checked
+    expect(confirm_box[:required]).to be_truthy
+    expect(editor_js('dirty')).to be(true)
+    mapping = JSON.parse(find('fieldset[data-dcf-editor]')['data-dcf-editor-mapping'])
+    expect(mapping['value_dependencies']).to include('Germany' => %w[Lyon])
+    expect(stored(child)[0]).to eq('Belgium' => %w[Antwerp Brussels], 'France' => %w[Paris])
+    expect(RedmineDependingCustomFields::ConfigAuditEvent.count).to eq(rows)
+    shot('project-editor-confirmation', '#flash_warning', wp: 'wp-34')
+
+    save
+    expect(page).to have_css('#flash_notice', text: I18n.t(:notice_dependencies_saved))
+    expect(stored(child)[0]).to include('Germany' => %w[Lyon])
+    expect(RedmineDependingCustomFields::ConfigAuditEvent.count).to eq(rows + 1)
   end
 end

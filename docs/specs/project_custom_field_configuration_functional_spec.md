@@ -165,7 +165,9 @@ lists of at most 500 values. **Sort A-Z / Z-A** orders every value of the field
 in one step, also on filtered or paginated pages: the buttons appear whenever
 the field has more than one value and ask for confirmation in the browser
 (`text_dcf_sort_confirm`, with the count of every value; no server panel,
-UD-23). Case and accents are ignored, ties keep their order, inactive
+UD-23; changed by WP-34: only for fields used in this project alone, while a
+field shared with other projects or global asks through the server
+confirmation panel instead). Case and accents are ignored, ties keep their order, inactive
 Key/Value entries are sorted among the active ones (UD-24). Nothing else
 changes: no stored issue value, default or dependency is rewritten. The flash
 is `notice_values_sorted`; the page returns to page 1 with the search kept.

@@ -698,9 +698,11 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(trip_overhead('/issues/bulk_edit', managed: 5, params: { ids: [world[:issue].id] })).to eq(0)
     end
 
-    # WP-19: the radio sentinel and the marked (none) of a required child read
-    # only the computed attributes and the loaded field.
-    it 'adds no database round trip for radio sentinels and the marked (none) of required children (WP-19)' do
+    # WP-19: the radio sentinel reads only the computed attributes and the
+    # loaded field. Flipped by WP-34 (UD-10): required children get core's
+    # bulk select without a marked (none), 0 such options; was 3 (one per
+    # required child). The round trip overhead stays 0.
+    it 'adds no database round trip for radio sentinels and required children in bulk edit (WP-19, WP-34)' do
       world = g6_world(children: 3, distinct: true)
       world[:children].each { |child| child.update!(edit_tag_style: 'check_box', is_required: true) }
       as(g6_member)
@@ -711,7 +713,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(doc.css('input[data-dcf-blank]').size).to eq(3)
       expect(trip_overhead(edit, managed: 3)).to eq(0)
       get '/issues/bulk_edit', params: bulk
-      expect(doc.css('option[data-dcf-required-none]').size).to eq(3)
+      expect(doc.css('option[data-dcf-required-none]').size).to eq(0)
+      expect(doc.css('select[data-dcf-parent] option[value="__none__"]').size).to eq(0)
       expect(trip_overhead('/issues/bulk_edit', managed: 3, params: bulk)).to eq(0)
     end
 

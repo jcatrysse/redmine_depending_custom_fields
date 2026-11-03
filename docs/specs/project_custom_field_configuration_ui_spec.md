@@ -145,7 +145,8 @@ Active checkbox (no position input, no handle), the hidden `batch_scope`
 shown on this page only.") above the one Save. While the form holds unsaved
 edits, `dcf_values_page.js` asks with core's `text_warn_on_leaving_unsaved`
 before the page and per-page links, the search and the sort buttons (one
-question; for a sort button together with its confirmation) and sets the
+question; for a sort button of a project-only field together with its
+confirmation, WP-34) and sets the
 browser's leave question; core's preference 'Warn me when leaving a page with
 unsaved text' turns it off (the form then carries no
 `data-dcf-warn-unsaved`).
@@ -184,6 +185,11 @@ shared dependency editor (the partial of the admin form, project mode):
   `text_shared_field_warning`, by the field's own scope) through
   `dcf_flash_box` (core's notice icon on 6.0 and later, the class background
   icon on 5.1). Shared and global fields get no confirmation step (UD-23).
+  Changed by WP-34 (UD-23 changed by the owner on 2026-11-02): they get a
+  required confirmation checkbox (`text_dcf_confirm_understand`) inside the
+  form next to Save, never pre-checked; without it the page comes back with
+  422, the warning flash `text_confirm_cross_project_change` and the posted
+  mapping dirty.
 - Notices instead of the editor: `text_dcf_parent_missing` when the parent
   pointer resolves to no field of the same type and family (dangling, own,
   other type or family); `text_dcf_parent_not_available` (the parent name,
@@ -291,7 +297,9 @@ and nl. WP-32 adds no key (200 flattened keys per locale).
   form and the pagination links are plain links, so both work without
   JavaScript, as does the page-mode Save; the leave warning needs JavaScript;
   the sort buttons are `button_to` forms whose `data-confirm` needs rails-ujs,
-  so without JavaScript they post without the confirmation.
+  so without JavaScript they post without the confirmation. Changed by WP-34
+  (UD-23): only project-only fields carry `data-confirm`; on shared and global
+  fields the server confirmation panel asks, also without JavaScript.
 
 ## 10. Out-of-scope UI
 

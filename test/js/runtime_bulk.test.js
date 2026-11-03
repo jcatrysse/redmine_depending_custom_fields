@@ -1,7 +1,8 @@
 'use strict';
 // WP-17: the runtime in bulk edit and the context-menu wizard
-// (data-dcf-context="bulk"), revised D2 (UD-09) and the required '(none)'
-// option (UD-10), rows B1..B9 of frontend design 9 on the generated fixtures.
+// (data-dcf-context="bulk"), revised D2 (UD-09) and required children as core
+// renders them (UD-10, changed by the owner on 2026-11-02, WP-34), rows B1..B9
+// of frontend design 9 on the generated fixtures.
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const D = require('./support/dom');
@@ -53,8 +54,9 @@ test('B1m an untouched multi child posts nothing (the WP-03 hotfix outcome)', as
   invariants(pg);
 });
 
-// WP-19: the server now renders a managed required multi child with the
-// marked (none) (B3r UD-10 multi); this markup is the rejected UD-10 outcome.
+// WP-34 (UD-10): the server renders a managed required multi child as core
+// does, without a (none) option, as this tweak of bulk_multi (was the rejected
+// UD-10 outcome while WP-19 rendered the marked option).
 test('B1r a required multi child (no __none__ option) stays enabled and posts nothing', async () => {
   const html = F.tweak('bulk_multi', (doc) => F.named(doc, `${CHILD}[]`).querySelector('option[value="__none__"]').remove());
   const pg = await load(html);
@@ -170,91 +172,108 @@ test('B3 parent (none): child __none__, (no change) disabled, the cascade contin
   invariants(pg);
 });
 
-// WP-19: the server renders the marked (none) (UD-10, adopted); was the
-// fixture as rendered. Markup without it (the rejected UD-10 outcome, quality
-// C7) keeps "" with the empty hint.
-test('B3r required child without the marked (none): parent (none) keeps "" with the empty hint', async () => {
-  const pg = await load(F.tweak('bulk_required', (doc) => F.named(doc, CHILD).querySelector('option[value="__none__"]').remove()));
-  const c = child(pg);
-  assert.deepEqual(Array.from(c.options).map((o) => o.value), ['', 'Ant', 'Ape', 'Bee']);
-  fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([D.selected(c), D.state(c)], [[''], 'none']);
-  assert.equal(D.hintText(c), 'No values are available for the selected Parent field.');
-  fire.choose(pg.window, parentOf(pg), 'Gamma');
-  assert.deepEqual([D.selected(c), D.state(c)], [[''], 'empty']);
-  invariants(pg);
-});
-
-// WP-19: on the regenerated fixture (the marked option was injected before).
-test('B3r UD-10: the data-dcf-required-none option is enabled only while nothing is allowed, never a fallback', async () => {
+// Changed by WP-34 (UD-10 changed by the owner on 2026-11-02): on the
+// regenerated fixture as rendered (core: no (none) for a required child); was
+// a tweak removing the marked (none) the WP-19 server rendered. Quality
+// protocol C7, the rejected outcome: '' stays selected with the empty hint,
+// every value hidden and disabled, nothing applied, '' posted.
+test('B3r required child as rendered (no (none)): parent (none) or a value without links keeps "" with the empty hint', async () => {
   const pg = await load('bulk_required');
   const c = child(pg);
-  const none = option(c, '__none__');
-  assert.deepEqual([none.getAttribute('data-dcf-required-none'), c.options[1]], ['1', none]);
-  assert.deepEqual([none.disabled, none.hidden], [true, true], 'at load (no change)');
-  fire.choose(pg.window, parentOf(pg), 'Alpha');
-  assert.deepEqual([none.disabled, none.hidden, D.selected(c)], [true, true, ['Ape']]);
+  assert.deepEqual(Array.from(c.options).map((o) => o.value), ['', 'Ant', 'Ape', 'Bee']);
+  assert.equal(c.querySelectorAll('[data-dcf-required-none]').length, 0);
   fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([none.disabled, none.hidden, D.selected(c)], [false, false, ['__none__']]);
-  assert.equal(D.hintText(c), 'Cleared because the current choice for Parent field allows no values for this field.');
-  assert.equal(c.classList.contains('dcf-auto-applied'), false, 'a clear is not a default');
+  assert.deepEqual([D.selected(c), D.state(c), D.disabled(c)], [[''], 'none', ['Ant', 'Ape', 'Bee']]);
+  assert.deepEqual(D.hiddenValues(c), ['Ant', 'Ape', 'Bee']);
+  assert.equal(D.hintText(c), 'No values are available for the selected Parent field.');
+  assert.equal(c.classList.contains('dcf-auto-applied'), false);
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
   fire.choose(pg.window, parentOf(pg), 'Gamma');
-  assert.deepEqual([none.disabled, D.selected(c)], [false, ['__none__']]);
+  assert.deepEqual([D.selected(c), D.state(c), D.disabled(c)], [[''], 'empty', ['Ant', 'Ape', 'Bee']]);
+  assert.equal(D.hintText(c), 'No values are available for the selected Parent field.');
+  assert.equal(c.classList.contains('dcf-auto-applied'), false);
+  assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual([D.selected(c), D.state(c)], [['Ape'], 'ok']);
   fire.choose(pg.window, parentOf(pg), '');
-  assert.deepEqual([none.disabled, none.hidden, D.selected(c)], [true, true, ['']]);
-  fire.choose(pg.window, parentOf(pg), 'Beta');
-  assert.deepEqual([none.disabled, D.selected(c)], [true, ['']]);
+  assert.deepEqual([D.selected(c), D.state(c), D.disabled(c)], [[''], 'unfiltered', []]);
   invariants(pg);
 });
 
-// WP-19: a required managed multi child gets the marked (none) first (no
-// (No change) option in a multiple select); the server output for it is
-// bulk_multi with the marker. Untouched it still posts nothing (FM-02).
+// Changed by WP-34 (UD-10): was 'B3r UD-10 multi', the marked (none) of a
+// required multi child enabled and selected while nothing is allowed. Core
+// renders no (none): nothing is selected and nothing is posted (FM-02), with
+// the empty hint and no clear.
 const requiredMulti = (selected) => F.tweak('bulk_multi', (doc) => {
   const sel = F.named(doc, `${CHILD}[]`);
-  sel.querySelector('option[value="__none__"]').setAttribute('data-dcf-required-none', '1');
+  sel.querySelector('option[value="__none__"]').remove();
   if (selected) F.selectValues(sel, selected);
 });
 
-test('B3r UD-10 multi: the marked (none) of a required multi child is enabled only while nothing is allowed', async () => {
+test('B3r a required multi child (no (none)): parent (none) or a value without links selects nothing and posts nothing', async () => {
   const pg = await load(requiredMulti());
   const c = child(pg);
-  const none = option(c, '__none__');
-  assert.deepEqual([c.options[0], none.disabled, none.hidden, D.selected(c), childEntries(pg)], [none, true, true, [], []]);
   fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([none.disabled, none.hidden, D.selected(c)], [false, false, ['__none__']]);
-  assert.deepEqual(childEntries(pg), [`${CHILD}[]=__none__`]);
+  assert.deepEqual([D.selected(c), D.state(c), D.disabled(c), childEntries(pg)], [[], 'none', ['Ant', 'Ape', 'Bee'], []]);
+  assert.equal(D.hintText(c), 'No values are available for the selected Parent field.');
+  assert.equal(c.classList.contains('dcf-auto-applied'), false);
   fire.choose(pg.window, parentOf(pg), 'Alpha');
-  assert.deepEqual([none.disabled, none.hidden, none.selected], [true, true, false]);
-  assert.deepEqual(D.selected(c), ['Ape']);
+  assert.deepEqual([D.selected(c), childEntries(pg)], [['Ape'], [`${CHILD}[]=Ape`]]);
   fire.choose(pg.window, parentOf(pg), 'Gamma');
-  assert.deepEqual([none.disabled, D.selected(c)], [false, ['__none__']]);
+  assert.deepEqual([D.selected(c), D.state(c), childEntries(pg)], [[], 'empty', []]);
+  assert.equal(D.hintText(c), 'No values are available for the selected Parent field.');
   fire.choose(pg.window, parentOf(pg), '');
-  assert.deepEqual([none.disabled, none.hidden, D.selected(c), childEntries(pg)], [true, true, [], []]);
+  assert.deepEqual([D.selected(c), D.state(c), childEntries(pg)], [[], 'unfiltered', []]);
   invariants(pg);
 });
 
-test('B3r a re-rendered required multi child with the marked (none) selected under (no change) posts nothing', async () => {
-  const pg = await load(requiredMulti(['__none__']));
+// Changed by WP-34 (UD-10): was 'B3r a re-rendered required multi child with
+// the marked (none) selected under (no change) posts nothing'. A re-render
+// keeps a picked value; under a parent that allows nothing it is dropped and
+// nothing is posted.
+test('B3r a re-rendered required multi child keeps a pick under (no change) and drops it when nothing is allowed', async () => {
+  const pg = await load(requiredMulti(['Bee']));
   const c = child(pg);
-  const none = option(c, '__none__');
-  assert.deepEqual([D.state(c), D.selected(c), none.disabled, none.hidden], ['unfiltered', [], true, true]);
-  assert.deepEqual(childEntries(pg), []);
+  assert.deepEqual([D.state(c), D.selected(c), childEntries(pg)], ['unfiltered', ['Bee'], [`${CHILD}[]=Bee`]]);
   fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([D.selected(c), none.disabled], [['__none__'], false]);
+  assert.deepEqual([D.selected(c), childEntries(pg)], [[], []]);
+  fire.choose(pg.window, parentOf(pg), '');
+  assert.deepEqual([D.selected(c), childEntries(pg)], [['Bee'], [`${CHILD}[]=Bee`]]);
   invariants(pg);
 });
 
-// WP-19: a failed bulk update re-renders the posted (none) selected; under
-// a parent left on (no change) it is never selected and disabled at once.
-test('B3r a re-rendered bulk form with the marked (none) selected under (no change) falls back to (no change)', async () => {
-  const pg = await load(F.tweak('bulk_required', (doc) => F.selectValues(F.named(doc, CHILD), ['__none__'])));
+// Changed by WP-34 (UD-10): was 'B3r a re-rendered bulk form with the marked
+// (none) selected under (no change) falls back to (no change)'. A failed bulk
+// update after a scripted '__none__' re-renders the required select with
+// nothing selected (core has no such option): the runtime keeps (no change).
+test('B3r a re-rendered required child after a posted __none__ stays on (no change)', async () => {
+  const pg = await load(F.tweak('bulk_required', (doc) => F.selectValues(F.named(doc, CHILD), [])));
   const c = child(pg);
-  const none = option(c, '__none__');
-  assert.deepEqual([D.state(c), D.selected(c), none.disabled, none.hidden], ['unfiltered', [''], true, true]);
-  assert.deepEqual(childEntries(pg), [`${CHILD}=`]);
+  assert.deepEqual([D.state(c), D.selected(c), childEntries(pg)], ['unfiltered', [''], [`${CHILD}=`]]);
   fire.choose(pg.window, parentOf(pg), '__none__');
-  assert.deepEqual([D.selected(c), none.disabled], [['__none__'], false]);
+  assert.deepEqual([D.selected(c), D.state(c), childEntries(pg)], [[''], 'none', [`${CHILD}=`]]);
+  invariants(pg);
+});
+
+// WP-34 (UD-10): the automatic clear stops at a required dependent field. A
+// required middle field (its (none) removed, as core renders it) stays on ''
+// with the empty hint, so the leaf reads its parent as (no change): it stays
+// unfiltered and keeps its pre-cascade value. Optional children below an
+// optional parent are still cleared (B3, UD-09).
+test('B3r the cascade stops at a required middle field: the leaf stays unfiltered with its value', async () => {
+  const MIDDLE = name('issue', 9100002);
+  const LEAF = name('issue', 9100003);
+  const pg = await load(F.tweak('bulk_chain', (doc) => F.named(doc, MIDDLE).querySelector('option[value="__none__"]').remove()));
+  const middle = child(pg, '9100002');
+  const leaf = child(pg, '9100003');
+  fire.choose(pg.window, leaf, 'Colt');
+  fire.choose(pg.window, parentOf(pg), '__none__');
+  assert.deepEqual([D.selected(middle), D.state(middle)], [[''], 'none']);
+  assert.equal(D.hintText(middle), 'No values are available for the selected Root field.');
+  assert.deepEqual([D.selected(leaf), D.state(leaf), D.disabled(leaf)], [['Colt'], 'unfiltered', []]);
+  assert.equal(leaf.classList.contains('dcf-auto-applied'), false);
+  assert.deepEqual(E.list(pg.document.forms[0], 'issue[custom_field_values]'),
+    [`${PARENT}=__none__`, `${MIDDLE}=`, `${LEAF}=Colt`]);
   invariants(pg);
 });
 

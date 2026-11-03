@@ -1,7 +1,7 @@
 # Server core design, revision 2: point 1 (server), point 5 (server), point 6, canonical client contract
 
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 (server side), 5 (server side), 6; plus the server side of 2 and 4 (radio blank sentinel, required '(none)', the `[data-dcf-parent]` discovery contract). Owner area: server. Work packages: WP-03 (cache hotfix part), WP-04 (server characterization), WP-05, WP-06, WP-08, WP-09 (with its follow-up WP-09b), WP-10, WP-15, WP-16, WP-18 (server part: head hook, ClientConfig, cache removal), WP-19; interfaces consumed by WP-11 (`storage_preview`), WP-24 (`value_options`) and WP-27 (`parent_of`). Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-07, UD-08, UD-10, UD-11, UD-12, UD-13, UD-14, UD-15, UD-16, UD-28, UD-34.
+> Points: 1 (server side), 5 (server side), 6; plus the server side of 2 and 4 (radio blank sentinel, required '(none)' (removed by WP-34, UD-10 changed by the owner), the `[data-dcf-parent]` discovery contract). Owner area: server. Work packages: WP-03 (cache hotfix part), WP-04 (server characterization), WP-05, WP-06, WP-08, WP-09 (with its follow-up WP-09b), WP-10, WP-15, WP-16, WP-18 (server part: head hook, ClientConfig, cache removal), WP-19; interfaces consumed by WP-11 (`storage_preview`), WP-24 (`value_options`) and WP-27 (`parent_of`). Decisions: UD-01, UD-02, UD-03, UD-04, UD-05, UD-06, UD-07, UD-08, UD-10, UD-11, UD-12, UD-13, UD-14, UD-15, UD-16, UD-28, UD-34.
 
 This is the complete revised design. It replaces revision 1.
 
@@ -71,7 +71,7 @@ Core facts used:
 | Issue(s) | Change in this revision |
 |---|---|
 | R1, R2, QA-01, UX-02, BC-01, SP-04, SP-05 | One canonical contract owned here (section 2): context `form/bulk`; `data-dcf-parent-values` gated by parent visibility; parent attributes only on managed fields (effective parent: valid, acyclic, visible); unpruned map; meta `dcf-i18n` (flat object with the keys of `ClientConfig::I18N`, 11 since UD-37); one UMD runtime file, no separate rules script (compat section 2.4 "Rules asset"). |
-| R6, FD-22 | Radio blank sentinel added. `__none__` with `data-dcf-required-none` for required managed children in bulk (UD-10). |
+| R6, FD-22 | Radio blank sentinel added. `__none__` with `data-dcf-required-none` for required managed children in bulk (UD-10; removed by WP-34 (UD-10 changed by the owner on 2026-11-02), core output again). |
 | R13 | One fixture mechanism (generated markup) with fixed per-kind id ranges, a normalizer and a sequence-bump self check, checked under two seeds (compat section 2.4 "Fixture ids"). The JSON contract fixture is deleted. |
 | R14, QA-06, BC-06 | D1 is per value. |
 | QA-07 | Issue copies are judged against the source issue. |
@@ -142,7 +142,7 @@ Option-level and sibling markup:
 | Markup | Emitted when | Purpose |
 |---|---|---|
 | `<input type="hidden" name="<tag_name>" value="" data-dcf-blank="1" autocomplete="off">` (no id), immediately before `span.check_box_group`, or immediately before the `<select>` of a required single drop-down child without a '' option | managed, `form` context, single-value child, and `edit_tag_style == 'check_box'`, or (WP-19, open input from WP-17) a drop-down child that `is_required?` with `default_value.present?` (core `select_edit_tag` then omits the '' option; only a default saved before the clear-on-save rule or written past it). `ClientData.sentinel?(cf, data)`; never for a `[]` tag name | Lets a radio child post `''` when no radio is checked, and such a select when the runtime deselects every option (`selectedIndex = -1`). Last-wins param parsing is verified on Rack 2.2.24, AP 7.2.4 and AP 8.1.4 (frontend finding 4) and pinned on 5.1 to 7.0 by `spec/requests/dcf_sentinel_params_spec.rb`, urlencoded and multipart. A checked radio or selected option comes later in the form and wins. |
-| `<option data-dcf-required-none="1" value="__none__">none</option>` (text: core `label_none`), placed right after "(no change)", first for a multi child | managed, `bulk` context, **required** child (core omits `__none__` for required, F6) | D2 for required descendants. **Client rule:** this option is enabled and selectable only while the parent selection yields no allowed values (bulk kind `none`, or the allowed set is empty). Otherwise it stays hidden and disabled and is never chosen as a fallback. **Server:** posting it for a required child while the parent offers options fails per issue with "cannot be blank" (core plus the CustomFieldPatch bypass), so nothing is cleared silently. |
+| `<option data-dcf-required-none="1" value="__none__">none</option>` (text: core `label_none`), placed right after "(no change)", first for a multi child | managed, `bulk` context, **required** child (core omits `__none__` for required, F6) | Removed by WP-34 (UD-10 changed by the owner on 2026-11-02): `bulk_edit_tag` calls super for every field, so a required child has no `__none__` (core); the server rule below is unchanged and a kept disallowed value is refused per issue 'is invalid', a blank one accepted by the bypass. Was: D2 for required descendants. **Client rule:** this option is enabled and selectable only while the parent selection yields no allowed values (bulk kind `none`, or the allowed set is empty). Otherwise it stays hidden and disabled and is never chosen as a fallback. **Server:** posting it for a required child while the parent offers options fails per issue with "cannot be blank" (core plus the CustomFieldPatch bypass), so nothing is cleared silently. |
 | `<span hidden="hidden" data-dcf-locked-parent="<parent id>" data-dcf-locked-stored='["A"]' data-dcf-locked-allowed-by='[["B","D"]]'></span>` (no id, no name, no text), rendered from `view_issues_form_details_bottom` (inside `#all_attributes`) and `view_projects_form` by `Hooks::ReadOnlyCarrierHook` (WP-16, UD-37) | one per depending child that the user sees but cannot edit (workflow read-only: in `visible_custom_field_values`, not in `editable_custom_field_values`), on a persisted record whose custom fields the user may edit (`safe_attribute?('custom_field_values')`, the guard of core's form), holding a stored value, whose effective parent the user can see and edit on the form and that is available on the record. Never for a role-invisible child. None on project forms in Redmine 5.1 to 7.0 (every visible project field is editable). | Lets the runtime (WP-17) predict the WP-09b refusal of a parent change: `locked-stored` is the stored parent baseline (`ParentState#baseline`), `locked-allowed-by` one entry per stored child value with the parent keys that allow it (sanitized mapping, not pruned). A change to the values V is refused when V differs from `locked-stored` as a set and some entry holds none of V. Strings only; the names are outside the C1 set and never start with `data-dcf-parent`. |
 
 Semantics:
@@ -158,7 +158,7 @@ Semantics:
 - **Comparison.** The client compares every value as `String(x)`.
 
 Guarantees, asserted by specs:
-1. The server adds no element with an id: only data attributes, the id-less sentinel and, in bulk, the marked option (WP-19). `custom_field_tag_with_label` (core-7.0 `app/helpers/custom_fields_helper.rb:122-130`) keeps `for=` on single selects. Multi selects and check groups have no `for`, as before.
+1. The server adds no element with an id: only data attributes and the id-less sentinel (WP-19; the marked bulk option of WP-19 was removed by WP-34). `custom_field_tag_with_label` (core-7.0 `app/helpers/custom_fields_helper.rb:122-130`) keeps `for=` on single selects. Multi selects and check groups have no `for`, as before.
 2. Elements the client creates (hints) may carry JS-generated unique ids and `aria-describedby` on the control (UX-06). They are never part of the server-rendered tag, so the label-for scan is unaffected. `replaceIssueFormWith` copies only input/select/textarea values (core-7.0 `application-legacy.js:727-737`).
 3. Rendering adds 0 queries per field when the parent is available on the object, and at most one query per distinct parent that is not available on the object (section 3.3). For a copy, `data-dcf-stored` reads the source issue's `custom_field_values`, which core already loaded in `copy_from` (F8). Exceptions in ClientData are caught: the field then renders without data-dcf-* (fail open, BC-12). Server validation is unaffected.
 
@@ -267,7 +267,7 @@ i18n constant names (gap 5): the meta map is `RedmineDependingCustomFields::Clie
   - user-custom-field form with a role-restricted parent (QA-23);
   - bulk single;
   - bulk multi;
-  - bulk required (required-none option);
+  - bulk required (core's options; the required-none option of WP-19 was removed by WP-34);
   - bulk chain;
   - time-entry bulk edit;
   - wizard template;
@@ -513,17 +513,12 @@ module DependingFormatMethods
     view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 }) + html
   end
 
+  # WP-34 (UD-10 changed by the owner): core's body for every field again;
+  # WP-19 reimplemented it for required managed children with a marked
+  # __none__ option.
   def bulk_edit_tag(view, tag_id, tag_name, custom_field, objects, value, options = {})
     data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
-    merged = ClientData.merge_options(options, data)
-    return super(view, tag_id, tag_name, custom_field, objects, value, merged) unless custom_field.is_required? && data.key?(:dcf_parent)
-
-    # Required managed child: core omits __none__ (F6). Same body as core plus the marked option.
-    opts = []
-    opts << [l(:label_no_change_option), ''] unless custom_field.multiple?
-    opts << [l(:label_none), '__none__', { 'data-dcf-required-none' => '1' }]
-    opts += possible_values_options(custom_field, objects)
-    view.select_tag(tag_name, view.options_for_select(opts, value), merged.merge(multiple: custom_field.multiple?))
+    super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
   end
 end
 ```
@@ -616,7 +611,7 @@ Details:
 - `parent_visible?` applies the 2.1 rule and rescues StandardError, giving false.
 - `encode` turns canonical enumeration ids into Integers (`kind(cf) == 'enumeration'` and `CANONICAL_ID`), recursively for arrays.
 - `data-dcf-stored` stays all-String (no `encode`): the client compares as `String(x)`, and the values are exactly what `dependency_check` compares against.
-- ClientData and the overrides ship in 0.1.0 (M2): the every-field and managed attributes, `data-dcf-stored` and the fixtures in WP-16 (additive, the legacy JS ignores them); the sentinel and the required-none option in WP-19 (delivered: the fixtures `radio`, `radio_required` and `bulk_required` regenerated).
+- ClientData and the overrides ship in 0.1.0 (M2): the every-field and managed attributes, `data-dcf-stored` and the fixtures in WP-16 (additive, the legacy JS ignores them); the sentinel and the required-none option in WP-19 (delivered: the fixtures `radio`, `radio_required` and `bulk_required` regenerated); the required-none option was removed again by WP-34 (`bulk_required` regenerated to its pre-WP-19 bytes).
 - Unit spec `spec/lib/client_data_spec.rb` (WP-16): unmanaged fields (no parent, dangling, cycle, self, invisible parent) carry only the every-field attributes; managed form context carries parent-values, parent-label and stored; a copy carries stored from the copy source and a plain new record carries none (gap 6); bulk is gated per project; `visible_by?` raising counts as not visible; a corrupt mapping renders without data-dcf-* (fail open).
 
 ## 7. Point 1: cache removal and the context menu without cache (D4)
@@ -974,7 +969,7 @@ Requirements on the parity spec (quality area):
 | Self or cyclic parent set | saved silently | 422 or form error when the parent changes | 0.1.0 (M1) (WP-10) |
 | Parent select | excludes self only | excludes self and descendants; keeps the current parent | 0.1.0 (M1) (WP-10) |
 | Required radio child | cannot be cleared | sentinel posts `''` | 0.1.0 (M2) (WP-19) |
-| Required child in bulk or wizard | no "(none)" | "(none)" marked, usable only while no options are allowed | 0.1.0 (M2) (WP-19) |
+| Required child in bulk or wizard | no "(none)" | no "(none)", as core (WP-34, UD-10 changed by the owner; the marked "(none)" of WP-19 was removed before any release); a kept disallowed value is refused per issue 'is invalid', a blank one is saved | 0.1.0 (M3) (WP-34) |
 | possible_values_options(project) for an Issue field | all-hidden 3-tuples | base list (no lookup; invisible in core menus) | 0.1.0 (M2) (WP-15) |
 | value_from_keyword | linear scans per keyword | one Hash per call, same results | 0.1.0 (M1) (WP-06) |
 | JSON API | | unchanged; new 422 reasons only; byte-identical round trip of name-only PUTs; core issue and project updates: 422 for a parent change blocked by a non-editable child | 0.1.0 (M1) (WP-10, WP-11, WP-09b) |
@@ -1017,7 +1012,7 @@ The work-package split in `large_lists_work_packages.md` is canonical; the WP an
    - SelectionGraph, the patch, the hook, ParentDetector, the partial's form action and the route; controller and helper cleanup; removal of ParentMenuBuilder [WP-15];
    - ClientData and the overrides (including `data-dcf-stored`); the markup fixture spec [WP-16];
    - the head hook and ClientConfig; the wizard partial wrappers; removal of the cache, the dispatch and MappingBuilder [WP-18];
-   - the sentinel and the required-none option [WP-19].
+   - the sentinel and the required-none option [WP-19; the option removed by WP-34].
 5. **Docs:**
    - README Integration (contract 2.2, events) [WP-18], Compatibility (Ruby >= 2.7) [WP-07], Downgrade note [WP-18], API normalization [WP-14 for the new 422 reasons; WP-32 for editor normalization];
    - CHANGELOG (section 19) [per WP; finalized in WP-07, WP-14 and WP-20];
@@ -1031,7 +1026,7 @@ Added:
 - Circular parent selections are refused (form error, 422 in the API). [0.1.0 (M1), WP-10]
 - The admin form warns about stored cycles. [0.1.0 (M1), WP-10]
 - Required radio-style depending fields can be cleared. [0.1.0 (M2), WP-19; listed under Fixed in the canonical 0.1.0 (M2) section]
-- In bulk edit and the context-menu wizard, required dependent fields offer "(none)" while the parent selection allows no value. [0.1.0 (M2), WP-19; UD-10]
+- In bulk edit and the context-menu wizard, required dependent fields offer "(none)" while the parent selection allows no value. [0.1.0 (M2), WP-19; UD-10. Withdrawn by WP-34: the canonical section 3 has the M3 Changed line for UD-10 instead (PC-76)]
 
 Changed:
 - **Stored values.**

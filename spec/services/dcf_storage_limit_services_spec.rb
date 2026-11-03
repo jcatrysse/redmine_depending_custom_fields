@@ -131,6 +131,8 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       dcf_list_field(format: 'depending_list', name: 'Child <b>&', values: %w[a1 b1], parent: parent)
     end
 
+    # Changed by WP-34 (UD-23): confirm '1', the child is global and the
+    # storage ceiling is checked only on a confirmed save; was no confirm.
     it 'raises error_dcf_mapping_too_large for DependencyMappingService and changes nothing' do
       stored = column_value(child, 'format_store')
       stub_limit('format_store', stored.bytesize)
@@ -139,7 +141,7 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       expect do
         error = rejected do
           service('DependencyMappingService', child, { value_dependencies: { 'A' => %w[a1 b1] },
-                                                       default_value_dependencies: { 'A' => 'a1' } }).call
+                                                       default_value_dependencies: { 'A' => 'a1' }, confirm: '1' }).call
         end
       end.to change(events, :count).by(1)
 
@@ -434,6 +436,7 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
     # payload_bytes and payload_sha256): the compact delta v2 of a mapping whose
     # full JSON is above the cap is stored byte-identical, without markers; the
     # marker case stays covered by the AddValueService example below.
+    # Changed by WP-34 (UD-23): confirm '1' on the global child; was no confirm.
     it 'saves a mapping whose full JSON is above 16,384 bytes and stores the compact delta unshrunk (T-AUD-10)' do
       parent = dcf_list_field(name: "Parent-#{SecureRandom.hex(3)}", values: DcfLargeList.names(10, prefix: 'P'))
       children = DcfLargeList.names(200)
@@ -443,7 +446,7 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       full_json = ActiveSupport::JSON.encode(value_dependencies: mapping, default_value_dependencies: {})
       expect(full_json.bytesize).to be > 16_384
 
-      service('DependencyMappingService', child, { value_dependencies: mapping }).call
+      service('DependencyMappingService', child, { value_dependencies: mapping, confirm: '1' }).call
 
       expect(child.reload.value_dependencies).to eq(mapping)
       row = events.where(status: 'success').order(:id).last

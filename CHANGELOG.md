@@ -173,7 +173,6 @@
 * Added: Size validation against MySQL/MariaDB TEXT limits for List, Key/Value list and both depending formats; nothing is truncated anymore.
 * Added: Rake tasks redmine:depending_custom_fields:report_sizes and redmine:depending_custom_fields:widen_core_columns (opt-in, dry run by default, CONFIRM=1 to apply).
 * Added: A database storage usage line on the custom field form and project pages at 90 percent of the column limit.
-* Added: In bulk edit and the wizard, required dependent fields offer '(none)' while the parent selection allows no value.
 * Added: Hints are announced to screen readers.
 * Added: The value you last picked for each parent value comes back when you switch the parent back, also after the form refreshes.
 * Added: A dependency editor replaces the checkbox matrix on the admin custom field form and on the project dependency page: collapsible sections per parent value, search, check or uncheck all shown, filters for values without links, counters, per-parent defaults inside each section and inactive values shown and kept.
@@ -215,6 +214,8 @@
 * Changed: The project dependency page shows the global/shared field warning, and a notice instead of the editor when the parent field is not available in the project or no longer exists.
 * Changed: The admin form asks for confirmation before a format change that would discard unsaved dependency edits, warns before leaving with unsaved edits, and now places the dependency editor after 'Hide when no valid options' and the edit style.
 * Changed: On the admin form of a List (depending) field without values yet, the dependency editor offers the CSV import (not the export) with 'Add missing child values' ticked, so a new field can be filled from a file.
+* Changed: In bulk edit and the context-menu wizard, required dependent fields offer no '(none)', as in Redmine, and are not cleared when the parent is set to '(none)' or to a value that allows nothing; an issue whose required dependent field keeps a value the new parent value does not allow is not saved (is invalid), one where that field is blank is saved.
+* Changed: In project settings, saving the dependencies (replace imports included) and sorting the values of a field shared with other projects or global need the confirmation checkbox, as rename and removal do; scripts post confirm=1.
 * Fixed: Key/Value list (depending): a disallowed new value gives one error instead of two, and the edit form no longer shows the stored value twice.
 * Fixed: On MySQL/MariaDB, a value list or dependency mapping that is too large gives a clear validation error (HTTP 422 in the APIs, audited error in project settings) instead of an internal error or silent truncation.
 * Fixed: A large mapping save on widened MySQL columns no longer rolls back because its audit row overflowed.

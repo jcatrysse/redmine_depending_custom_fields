@@ -230,20 +230,23 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
 
     before { allow(User).to receive(:current).and_return(dcf_manager(project)) }
 
-    def patch_json(field, raw)
+    def patch_json(field, raw, extra = {})
       state = RedmineDependingCustomFields::BaseService.state_hash(CustomField.find(field.id))
       patch custom_field_configuration_update_dependencies_path(project, field),
-            params: { dependencies_json: raw, state_hash: state }, headers: { 'CONTENT_TYPE' => 'multipart/form-data' }
+            params: { dependencies_json: raw, state_hash: state }.merge(extra),
+            headers: { 'CONTENT_TYPE' => 'multipart/form-data' }
     end
 
     golden_names.each do |name|
+      # Changed by WP-34 (UD-23): the contract fields are global, so the save
+      # posts confirm '1' (as the ticked checkbox does); was no confirm.
       it "saves #{name}.json as posted, ignores the placeholder base and audits source and import" do
         _parent, child = contract_fields(name)
         raw = golden(name)
         expect(raw.scan(placeholder).size).to eq(1)
         allow(payload).to receive(:parse).and_call_original
 
-        expect { patch_json(child, raw) }.to change(events, :count).by(1)
+        expect { patch_json(child, raw, confirm: '1') }.to change(events, :count).by(1)
 
         expect(response).to redirect_to(custom_field_configuration_field_dependencies_path(project, child))
         expect(payload).to have_received(:parse).once

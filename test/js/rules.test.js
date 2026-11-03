@@ -11,11 +11,12 @@ const R = require('../../assets/javascripts/depending_custom_fields.js');
 const FIXTURES = path.join(__dirname, 'fixtures', 'markup');
 const set = (s) => Array.from(s);
 
-// One child: options '', a1, a2, b1; parent A allows a1 and a2.
+// One child: options '', a1, a2, b1; parent A allows a1 and a2. Changed by
+// WP-34 (UD-10): no noneRequired input (was false).
 const base = (o) => Object.assign({
   ctx: 'form', kind: 'values', key: R.parentKey(['A']), values: ['A'], prevValues: [],
   allowed: new Set(['a1', 'a2']), current: [''], initial: true, parentChanged: false, multiple: false,
-  hasBlank: true, hasNone: false, noneRequired: false, optionValues: new Set(['', 'a1', 'a2', 'b1']),
+  hasBlank: true, hasNone: false, optionValues: new Set(['', 'a1', 'a2', 'b1']),
   defaults: new Map(), memory: new Map(), hide: false, stored: null
 }, o);
 const bulk = (o) => base(Object.assign({
@@ -365,24 +366,27 @@ test('optionEnabled: form, bulk links and bulk nothing-allowed rows', () => {
   assert.equal(R.optionEnabled(null, 'anything'), true);
 });
 
-test('optionEnabled: a data-dcf-required-none option only while nothing is allowed (UD-10)', () => {
-  const opts = { noneRequired: true };
-  const unfiltered = R.decide(bulk(Object.assign({ kind: 'unfiltered', key: R.NOCHANGE_KEY, allowed: null }, opts)));
-  assert.equal(R.optionEnabled(unfiltered.filter, '__none__', true), false);
-  const links = R.decide(bulk(Object.assign({ initial: false, parentChanged: true, current: ['__none__'] }, opts)));
-  assert.equal(R.optionEnabled(links.filter, '__none__', true), false);
-  assert.ok(!links.values.includes('__none__'), 'never a fallback while options exist');
-  const remembered = R.decide(bulk(Object.assign({ initial: false, parentChanged: true,
-    memory: new Map([[R.parentKey(['A']), ['__none__']]]) }, opts)));
-  assert.deepEqual(remembered.values, ['']);
-  // WP-17 review round 2: a remembered pick filtered down to nothing is
-  // ignored and the default applies; the required (none) is never a fallback.
-  const rememberedDefault = R.decide(bulk(Object.assign({ initial: false, parentChanged: true,
-    memory: new Map([[R.parentKey(['A']), ['__none__']]]), defaults: new Map([['A', ['a1']]]) }, opts)));
-  assert.deepEqual([rememberedDefault.values, rememberedDefault.auto, rememberedDefault.hint], [['a1'], true, 'bulkDefault']);
-  const nothing = R.decide(bulk(Object.assign({ allowed: new Set(), initial: false, parentChanged: true }, opts)));
+// Flipped by WP-34 (UD-10 changed by the owner on 2026-11-02): the runtime has
+// no marked (none) any more (optionEnabled takes two arguments; the decide
+// input noneRequired and the filter flag requiredNoneEnabled are gone); was
+// 'optionEnabled: a data-dcf-required-none option only while nothing is
+// allowed (UD-10)'. A required child (no __none__ option) whose parent allows
+// nothing keeps '' (the empty hint); a third argument changes nothing.
+test('optionEnabled: two arguments, no marked (none); a required child without __none__ keeps "" (UD-10, WP-34)', () => {
+  assert.equal(R.optionEnabled.length, 2);
+  const required = { hasNone: false, optionValues: new Set(['', 'a1', 'a2', 'b1']) };
+  const nothing = R.decide(bulk(Object.assign({ allowed: new Set(), initial: false, parentChanged: true }, required)));
+  assert.deepEqual([nothing.values, nothing.state, nothing.hint, nothing.auto], [[''], 'empty', 'empty', false]);
+  assert.deepEqual(['', '__none__', 'a1'].map((v) => R.optionEnabled(nothing.filter, v)), [true, true, false]);
   assert.equal(R.optionEnabled(nothing.filter, '__none__', true), true);
-  assert.deepEqual(nothing.values, ['__none__']);
+  assert.equal(Object.prototype.hasOwnProperty.call(nothing.filter, 'requiredNoneEnabled'), false);
+  const none = R.decide(bulk(Object.assign({ kind: 'none', key: R.NONE_KEY, values: [], allowed: new Set(), initial: false,
+    parentChanged: true }, required)));
+  assert.deepEqual([none.values, none.state, none.hint], [[''], 'none', 'empty']);
+  const links = R.decide(bulk(Object.assign({ initial: false, parentChanged: true, current: ['__none__'] }, required)));
+  assert.deepEqual(links.values, ['']);
+  const unfiltered = R.decide(bulk({ kind: 'unfiltered', key: R.NOCHANGE_KEY, allowed: null, current: ['__none__'] }));
+  assert.deepEqual(unfiltered.values, ['__none__'], 'an optional child keeps a plain (none) under (no change)');
   // In form context '' is always enabled and __none__ is an ordinary value
   // (WP-17 resume: it was never enabled before), enabled only when allowed.
   const form = R.decide(base({})).filter;

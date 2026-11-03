@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-21)
+1. Defects tracked separately (SD-01 to SD-22)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -36,6 +36,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-19 | minor (redmine_extended_api) | Extended API XML output is not well-formed; dependency mappings are rendered as XML attributes |
 | SD-20 | minor (redmine_extended_api) | The Extended API proxy answers 500 for a .json or .xml path of a controller without API authentication |
 | SD-21 | minor (redmine_extended_api) | Extended API writes outside its attribute policy: create assigns every safe attribute, and the core custom field paths accept API keys |
+| SD-22 | major (core change, open) | On the current Redmine 6.1-stable and 7.0-stable a time entry no longer validates the custom fields the user cannot see, so a parent change is accepted while a hidden dependent field keeps a value the new parent value does not allow |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
 
@@ -246,6 +247,16 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 **Evidence.** (1) On create, core's `build_new_custom_field` assigns the unfiltered `params[:custom_field]` through `safe_attributes=` before the Extended API filters anything, so `POST /extended_api/custom_fields.json` applies `dependencies_json` (pruned: probe P10 stores `{"Belgium":["Antwerp"]}` of a payload that also named `Atlantis`), while `PUT` drops it with 200 (probe P8). (2) `accept_api_auth :index, :show, :create, :update, :destroy` applies to core's own paths too: `PUT /custom_fields/:id.json` with an administrator key saves the change and then answers 406 (core's `update` responds to HTML and JS only; probe C1, C2), `POST /custom_fields.json` creates the field and `DELETE /custom_fields/:id.json` deletes it, both answering 302. This plugin's request spec 'does not accept an administrator API key on the update (core accept_api_auth :index only)' pins core's behaviour and fails in a checkout with the Extended API installed (406 instead of 401 or 403); it is kept unchanged, so this plugin's suite is not green with the Extended API installed (1 failure on 5.1 and 7.0, recorded as a deviation in the WP-33 Delivered block; the owner accepts it or has the Extended API fixed).
 
 **Recommendation (in the Extended API).** Build the new record without the core assignment for extended requests (override `build_new_custom_field` to call `safe_attributes=` only with the policy-filtered params in `create`), and answer 404 for API-format requests to create, update and destroy that do not come through `/extended_api`.
+
+### SD-22: Time entries skip the validation of custom fields the user cannot see on the current 6.1-stable and 7.0-stable
+
+**Status.** Open, found during WP-34 (not caused by it), owner decision needed; not fixed here (outside the WP-34 scope).
+
+**Severity.** major (a hidden dependent field of a time entry can keep a value its new parent value does not allow; nothing is cleared or disclosed).
+
+**Evidence.** The prepared checkouts of 2026-11-03 are 6.1-stable `e79efdc` ('Merged r25415 from trunk', 2026-11-02) and 7.0-stable `eed6a02` ('Merged r25417 from trunk', 2026-11-02). Both add `TimeEntry#validate_custom_field_values`, which validates `editable_custom_field_values(User.current)` only (the visible ones); 5.1-stable `16eb9e6` and 6.0-stable `ac3b28c` do not have it. The example 'a child the user cannot edit while the parent changes (UD-07) on a time entry rejects the change for a child not visible for the user role, in en and de' (`spec/requests/dcf_issue_flows_spec.rb:513`) fails on 7.0 with the base commit `ad5cb64` as well as with WP-34 (`expected false, got true` for `entry.valid?`), so the CHANGELOG sentence 'Time entries and other objects already refused such changes' no longer holds on these cores. The spec is kept unchanged (as for SD-21).
+
+**Recommendation.** Extend the WP-09b check (`NonEditableDependencies`, today issues and projects) to time entries on cores that skip the hidden values, with the same naming rule (a hidden child never named, the error on the parent), and adjust the CHANGELOG line; or accept the core behaviour and rewrite the line. Owner decision.
 
 ## 2. Defects fixed inside the plan
 

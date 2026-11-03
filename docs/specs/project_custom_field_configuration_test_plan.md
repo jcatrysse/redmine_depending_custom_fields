@@ -97,7 +97,8 @@ statement per slice of changed rows, the last partial slice included) and a
 user without the permission (one `authorization_failed` row); T-SORT-18
 `before` `{count, order_sha256}` and `after` `{direction, count, moved,
 order_sha256}`, golden digests. Plus: no confirmation for shared or global
-fields (UD-23), rollback of every chunk when the audit insert fails,
+fields (UD-23; flipped by WP-34: the confirmation for shared and global
+fields, `spec/requests/dcf_shared_field_confirmation_spec.rb`), rollback of every chunk when the audit insert fails,
 `ValueTooLong` mapped without SQL, other database errors left unaudited, a
 hidden child left byte-identical, G6 statement counts and an opt-in `:perf`
 sort of 25,000 enumerations.

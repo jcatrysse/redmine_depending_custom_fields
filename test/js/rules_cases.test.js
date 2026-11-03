@@ -62,10 +62,11 @@ function clientValid(row, c, values) {
     assert.equal(clientValid(row, c, row.child), row.valid, 'the client rule equals DependencyRules');
     // The runtime decision on the rendered child never posts what the server refuses.
     const options = new Set([''].concat(row.child, row.child_was, Object.keys(row.map).flatMap((k) => [].concat(row.map[k]).map(String))));
+    // Changed by WP-34 (UD-10): no noneRequired input (was false).
     const d = R.decide({
       ctx: 'form', kind: c.ps.kind, key: c.ps.key, values: c.ps.values, prevValues: [], allowed: c.allowed,
       current: row.child.length ? row.child : [''], initial: true, parentChanged: false, multiple: row.multiple,
-      hasBlank: true, hasNone: false, noneRequired: false, optionValues: options, defaults: new Map(),
+      hasBlank: true, hasNone: false, optionValues: options, defaults: new Map(),
       memory: new Map(), hide: false, stored: c.stored
     });
     const posted = d.values.filter((v) => !R.isBlank(v));
@@ -91,10 +92,11 @@ function clientValid(row, c, values) {
       // An unchanged parent state is a no-op in the runtime (sig).
       if (prev && prev.kind === ps.kind && prev.key === ps.key) return;
       const allowed = R.allowedFor(map, ps.values);
+      // Changed by WP-34 (UD-10): no noneRequired input (was false).
       const d = R.decide({
         ctx: 'form', kind: ps.kind, key: ps.key, values: ps.values, prevValues: prev ? prev.values : [], allowed,
         current, initial: step === 0, parentChanged: step > 0, multiple: row.multiple, hasBlank: true, hasNone: false,
-        noneRequired: false, optionValues: options, defaults: new Map(), memory, hide: false, stored
+        optionValues: options, defaults: new Map(), memory, hide: false, stored
       });
       const posted = d.values.filter((v) => !R.isBlank(v));
       const unchanged = R.sameSet(ps.values, row.parent_was);

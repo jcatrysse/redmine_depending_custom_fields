@@ -121,8 +121,10 @@ RSpec.describe 'Format singleton state' do
       fmt.edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", cfv)
       fmt.bulk_edit_tag(view, 'tag', "issue[custom_field_values][#{child.id}]", child, [issue], '')
       RedmineDependingCustomFields::ClientData.locked_children(issue)
-      # WP-19: the sentinel of a single radio child and the reimplemented bulk
-      # body of a required child run too.
+      # WP-19: the sentinel of a single radio child and the bulk tag of a
+      # required child run too. Flipped by WP-34 (UD-10): the bulk tag is
+      # core's output without a marked (none); was to include
+      # 'data-dcf-required-none'.
       radio_parent, radio = build_kit(kind)
       radio.update!(edit_tag_style: 'check_box', is_required: true)
       radio = CustomField.find(radio.id)
@@ -130,7 +132,9 @@ RSpec.describe 'Format singleton state' do
       radio_value = on_radio.custom_field_values.detect { |v| v.custom_field_id == radio.id }
       name = "issue[custom_field_values][#{radio.id}]"
       expect(fmt.edit_tag(view, 'tag', name, radio_value)).to include('data-dcf-blank')
-      expect(fmt.bulk_edit_tag(view, 'tag', name, radio, [on_radio], '')).to include('data-dcf-required-none')
+      bulk = fmt.bulk_edit_tag(view, 'tag', name, radio, [on_radio], '')
+      expect(bulk).to include('data-dcf-parent')
+      expect(bulk).not_to include('data-dcf-required-none')
       RedmineDependingCustomFields::ClientData.sentinel?(radio, {})
     end
 

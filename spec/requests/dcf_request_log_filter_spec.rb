@@ -120,10 +120,12 @@ RSpec.describe 'Request log filter for dependencies_json (WP-32)', type: :reques
   describe 'project dependency page' do
     before { as(dcf_manager(project)) }
 
+    # Changed by WP-34 (UD-23): the child is global, so the save posts
+    # confirm '1'; was no confirm. The filter is the same for both.
     def save(raw, state)
       logged_params do
         patch custom_field_configuration_update_dependencies_path(project, child),
-              params: { dependencies_json: raw, state_hash: state }, headers: multipart
+              params: { dependencies_json: raw, state_hash: state, confirm: '1' }, headers: multipart
       end
     end
 

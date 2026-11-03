@@ -81,8 +81,9 @@ const EXPECTED = {
     entries: ['user[custom_field_values][9100001]=Alpha', 'user[custom_field_values][9100002]=Ant'] },
   bulk_single: bulkSingle('issue'),
   bulk_multi: { controls: [ctl('9100002', 'unfiltered', ['__none__', 'Ant', 'Ape', 'Bee'], [])], entries: [`${P}=`] },
-  // WP-19 (UD-10): the marked (none) is disabled and hidden at load.
-  bulk_required: { controls: [ctl('9100002', 'unfiltered', ['', 'Ant', 'Ape', 'Bee'], [''], { requiredNone: true })],
+  // Changed by WP-34 (UD-10): core's options, no marked (none) (the pre-WP-19
+  // entry); was the requiredNone flag (the marked option disabled and hidden).
+  bulk_required: { controls: [ctl('9100002', 'unfiltered', ['', 'Ant', 'Ape', 'Bee'], [''])],
     entries: [`${P}=`, `${C}=`] },
   bulk_chain: { controls: [ctl('9100002', 'unfiltered', ['', '__none__', 'Ant', 'Ape', 'Bee'], ['']),
     ctl('9100003', 'unfiltered', ['', '__none__', 'Cub', 'Calf', 'Colt'], [''])], entries: [`${P}=`, `${C}=`, `${L3}=`] },
@@ -219,15 +220,9 @@ Object.keys(EXPECTED).forEach((scenario) => {
         assert.equal(c.closest('p').hidden, w.pHidden);
         assert.equal(c.closest('p').classList.contains('dcf-hidden'), w.pHidden);
       }
-      // WP-19: the server marks the required (none); the runtime keeps it
-      // disabled and hidden while the parent is (no change).
-      const marked = c.querySelectorAll('option[data-dcf-required-none]');
-      if (w.requiredNone) {
-        assert.deepEqual(Array.from(marked).map((o) => [o.value, o.getAttribute('data-dcf-required-none'), o.disabled, o.hidden]),
-          [['__none__', '1', true, true]]);
-      } else {
-        assert.equal(marked.length, 0);
-      }
+      // Changed by WP-34 (UD-10): no fixture carries a marked (none); was the
+      // requiredNone flag of bulk_required (disabled and hidden at load).
+      assert.equal(c.querySelectorAll('option[data-dcf-required-none]').length, 0);
     });
     writtenOnly(plain(html), doc);
     const form = doc.forms[0];

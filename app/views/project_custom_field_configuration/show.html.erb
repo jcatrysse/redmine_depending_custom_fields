@@ -40,7 +40,7 @@
                        list_state: list_state } %>
 <% end %>
 
-<%= render partial: 'values_toolbar', locals: { clear_path: clear_path } %>
+<%= render partial: 'values_toolbar', locals: { clear_path: clear_path, scope: scope } %>
 
 <div class="box">
   <% if @values_page.filtered? && !@values_page.empty_match? %>

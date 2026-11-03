@@ -139,7 +139,7 @@ New probes for revision 2 are in `$S/design/project/proto2/`. All files pass `Li
 13. **Error re-renders reload the field** before computing `state_hash` (R9).
 14. **Flash safety.** `translate_error(e)` (limits WP-12; one signature `translate_error(error_or_key)`, Symbol or `OperationError`) HTML-escapes every interpolation value. Flashes never contain payload content.
 15. **Banners.**
-    - The global/shared banner on `edit_dependencies` is based on the child scope. Shared and global fields get no server-side confirmation panel for dependency saves (replace imports included) or sort; only the scope banner and the sort JS confirm (UD-23).
+    - The global/shared banner on `edit_dependencies` is based on the child scope. Shared and global fields get no server-side confirmation panel for dependency saves (replace imports included) or sort; only the scope banner and the sort JS confirm (UD-23). Changed by WP-34 (UD-23 changed by the owner on 2026-11-02): the same scope (one rule, `FieldRelevance.scope`) decides a required confirmation checkbox inside the form next to Save (`name="confirm" value="1"`, label `text_dcf_confirm_understand`, never pre-checked, outside the editor root and the shared partial); `DependencyMappingService` raises `ConfirmationRequired` after the parse and `validate_mapping!`, before any write, unless `confirmed?`; `update_dependencies` rescues it with 422, `flash.now[:warning]` = `text_confirm_cross_project_change` and the posted mapping dirty (the stored mapping on the deprecated nested path). The sort gets the server confirmation panel (section 6).
     - Notices replace the editor when the parent is missing or not relevant, decided with `DependencyRules.parent_of` (gap 2).
     - Flash boxes carry `notice_icon` on 6.0+.
 
@@ -552,6 +552,7 @@ end
 | Payload over 4 MiB (crafted; the editor pre-checks) | 422 `error_dcf_dependencies_too_large_to_send` (editor key, WP-25) with `size` and `limit` | DB state, clean | blank | `validation_failed`, `too_large` |
 | Storage over the column limit or the ceiling | 422 `error_dcf_mapping_too_large` (field, size, limit) | posted state in `data-dcf-editor-mapping`, `data-dcf-editor-dirty="1"`, with a fresh `state_hash` (R9) | blank (gap 1) | `validation_failed`, machine message |
 | Stale `state_hash` | 409 `error_stale_edit` | DB state, clean, plus the shared conflict panel from `data-dcf-editor-conflict-mapping` (UD-17) | blank | `validation_failed` (existing) |
+| Shared or global field saved without `confirm=1` (editor save, replace import, nested params; WP-34, UD-23) | 422, `#flash_warning` `text_confirm_cross_project_change`, the confirmation checkbox unchecked; checked after the preamble (403, 404, 409), the parse and the validation (their 422s come first), before any write | posted state in `data-dcf-editor-mapping`, `data-dcf-editor-dirty="1"`, fresh `state_hash` (R9); the stored mapping, clean, on the nested path | blank (gap 1) | none (as rename and remove: `ConfirmationRequired` is re-raised without a row) |
 | Unauthorized PATCH (any payload, including malformed or 1,000,000 digits) | 403 (`deny_access`) | n/a | n/a | `authorization_failed` from the service preamble when the request reaches the service; `DependencyPayload.parse` never called (SP-20b, gap 12) |
 | Closed project | 403 | n/a | n/a | none (`require_active_project`, as today) |
 | Parent missing or not relevant (`DependencyRules.parent_of`, gap 2) | 200 notice, no form; a direct PATCH gives 422 `error_invalid_dependency` or 404 (unchanged) | n/a | n/a | failure row for the PATCH |
@@ -673,7 +674,7 @@ end
 <% end %>
 ```
 
-- **Sort buttons:** `button_to` for `label_dcf_sort_az` and `label_dcf_sort_za` when `total > 1`, posting `direction`, `state_hash` and `q`, with `data-confirm` = `text_dcf_sort_confirm` (count = total).
+- **Sort buttons:** `button_to` for `label_dcf_sort_az` and `label_dcf_sort_za` when `total > 1`, posting `direction`, `state_hash` and `q`, with `data-confirm` = `text_dcf_sort_confirm` (count = total). Changed by WP-34 (UD-23): `data-confirm` only for project-only fields; shared and global fields get the server panel instead, so no field asks twice.
 - **Info lines:**
   - `text_dcf_values_filtered` when filtered;
   - `text_dcf_drag_reorder_large` (`max: 500`) when paginated;
@@ -693,7 +694,7 @@ end
 
 ## 6. Sort A-Z / Z-A
 
-Implemented by WP-29 (0.1.0 (M3)). Decisions: UD-23 (shared and global fields: JS confirm only, no server confirmation panel) and UD-24 (inactive enumerations sorted together with active ones). Errors reach the flash through `translate_error(e)` (gap 4).
+Implemented by WP-29 (0.1.0 (M3)). Decisions: UD-23 (shared and global fields: JS confirm only, no server confirmation panel; changed by the owner on 2026-11-02 and implemented by WP-34: `SortValuesService` raises `ConfirmationRequired` after the direction check and before any write, also for an already sorted field, unless `confirmed?`; the values page re-renders with 422 and the sort variant of `_confirm_panel` (no usage lines, names no field, `text_dcf_sort_confirm` with the count) whose form PATCHes `custom_field_configuration_sort_values_path` with the pending `direction` and `state_hash`, a filtering `q` only and the unchecked required `confirm` box; the buttons carry `data-confirm` only for project-only fields) and UD-24 (inactive enumerations sorted together with active ones). Errors reach the flash through `translate_error(e)` (gap 4).
 
 **Route:**
 
@@ -838,7 +839,7 @@ The global CSS keeps only the runtime and wizard rules (frontend area).
 | notice_values_sorted | WP-29 | none | `sort_values` success flash | see large_lists_i18n_registry.md |
 | label_dcf_sort_az | WP-29 | none | sort button | see large_lists_i18n_registry.md |
 | label_dcf_sort_za | WP-29 | none | sort button | see large_lists_i18n_registry.md |
-| text_dcf_sort_confirm | WP-29 | `%{count}` | sort button `data-confirm` (UD-23) | see large_lists_i18n_registry.md |
+| text_dcf_sort_confirm | WP-29 | `%{count}` | sort button `data-confirm` of project-only fields (UD-23) and the sort confirmation panel of shared and global fields (WP-34) | see large_lists_i18n_registry.md |
 | text_dcf_values_filtered | WP-28 | `%{count}`, `%{total}` | values page info line when filtered | see large_lists_i18n_registry.md |
 | text_dcf_drag_reorder_large | WP-28 | `%{max}` | values page info line when paginated | see large_lists_i18n_registry.md |
 | text_dcf_drag_reorder_filtered | WP-28 | none | values page info line when filtered | see large_lists_i18n_registry.md |
@@ -930,6 +931,7 @@ Elsewhere:
 | Stored orphans | silently dropped by the next save | counted by the editor on load (same copy as admin), dropped on save, `orphans_removed` in the audit |
 | update_dependencies audit | `before` NULL, `after` = full mapping (overflows MySQL TEXT, 500) | v2 delta, at most about 12 KB, `mapping_sha256` |
 | Global or shared banner on the dependency page | missing | shown (child scope), with an icon on 6.0+ |
+| Dependency save or sort of a shared or global field (WP-34, UD-23) | saved without confirmation (0.0.15 to WP-33) | confirmation needed: a required checkbox next to Save (422 re-render dirty without it, nothing written, no audit row) and the sort confirmation panel; project-only fields unchanged |
 | Parent missing or not relevant | "No values yet." or a matrix whose save fails | specific notice, no form |
 | Values page, 500 values or fewer | all rows, drag | same, plus sort buttons and the search box (above 25 values, `FILTER_MIN`) |
 | Values page, more than 500 values | all rows, drag over the Rack limit 404s | search box, paginated (above 500 values, UD-21), sort buttons, no drag, page-scoped enumeration save with a leave warning |

@@ -49,8 +49,9 @@ class ProjectCustomFieldConfigurationController < ApplicationController
                             action: :reorder_values, notice: :notice_values_reordered)
   end
 
-  # Sort A-Z / Z-A (WP-29): no confirmation panel (UD-23); the buttons ask
-  # through data-confirm only.
+  # Sort A-Z / Z-A (WP-29). A field shared with other projects or global
+  # gets the confirmation panel (UD-23, WP-34); the buttons of a project-only
+  # field ask through data-confirm only.
   def sort_values
     perform_value_operation(RedmineDependingCustomFields::SortValuesService,
                             action: :sort_values, notice: :notice_values_sorted)
@@ -73,7 +74,10 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   end
 
   # The service parses dependencies_json after its preamble authorized the
-  # user (SP-20b); a 422 reuses its parse result, a 409 parses once here.
+  # user (SP-20b); a 422 reuses its parse result, a 409 parses once here. A
+  # missing confirmation of a shared or global field (UD-23, WP-34) is no
+  # OperationError: the page comes back with the posted mapping dirty, the
+  # warning flash and the unchecked confirmation box, nothing written.
   def update_dependencies
     service = RedmineDependingCustomFields::DependencyMappingService.new(
       project: @project, field: @field, user: User.current,
@@ -82,6 +86,10 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     service.call
     flash[:notice] = translate_error(:notice_dependencies_saved)
     redirect_to custom_field_configuration_field_dependencies_path(@project, @field)
+  rescue RedmineDependingCustomFields::ConfirmationRequired
+    flash.now[:warning] = translate_error(:text_confirm_cross_project_change)
+    prepare_dependencies(posted: posted_payload(service))
+    render :edit_dependencies, status: dcf_status_code(:unprocessable_entity)
   rescue RedmineDependingCustomFields::OperationError => e
     case e.http_status
     when :forbidden then deny_access
@@ -158,7 +166,7 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     @pending_action = action
     @pending_params = value_params
     prepare_show
-    render :show, status: :unprocessable_entity
+    render :show, status: dcf_status_code(:unprocessable_entity)
   rescue RedmineDependingCustomFields::OperationError => e
     case e.http_status
     when :forbidden then deny_access
@@ -271,9 +279,10 @@ class ProjectCustomFieldConfigurationController < ApplicationController
 
   # dependencies_json is passed on as posted (the service refuses anything
   # but a String) and wins over the nested params, the deprecated fallback
-  # when the key is absent.
+  # when the key is absent. confirm is passed on as posted on both paths;
+  # BaseService#confirmed? accepts a String only.
   def dependency_params
-    out = { state_hash: params[:state_hash] }
+    out = { state_hash: params[:state_hash], confirm: params[:confirm] }
     if params.key?(:dependencies_json)
       out[:dependencies_json] = params[:dependencies_json]
     else

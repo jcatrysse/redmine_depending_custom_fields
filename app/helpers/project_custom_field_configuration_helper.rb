@@ -10,12 +10,10 @@ module ProjectCustomFieldConfigurationHelper
     RedmineDependingCustomFields::FieldRelevance.dependency_capable?(field)
   end
 
-  # Scope of a field relative to +project+: :global / :shared / :project.
+  # Scope of a field relative to +project+: :global / :shared / :project
+  # (the one rule, FieldRelevance.scope).
   def dcf_field_scope(field, project)
-    return :global if field.is_a?(ProjectCustomField) || field.is_for_all?
-
-    others = field.projects.reject { |p| p.id == project.id }
-    others.any? ? :shared : :project
+    RedmineDependingCustomFields::FieldRelevance.scope(field, project)
   end
 
   def dcf_scope_badge(field, project)
@@ -101,6 +99,8 @@ module ProjectCustomFieldConfigurationHelper
       [custom_field_configuration_rename_value_path(@project, @field), :patch]
     when :remove_value
       [custom_field_configuration_remove_value_path(@project, @field), :delete]
+    when :sort_values
+      [custom_field_configuration_sort_values_path(@project, @field), :patch]
     else
       [custom_field_configuration_field_path(@project, @field), :patch]
     end

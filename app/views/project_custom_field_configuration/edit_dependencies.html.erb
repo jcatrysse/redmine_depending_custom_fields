@@ -30,6 +30,13 @@
                  field: @field, parent: @parent, view: self,
                  posted: @posted_payload, conflict: @conflict_payload) %>
     <p class="buttons">
+      <%# UD-23 (WP-34): a field shared with other projects or global needs the
+          confirmation; never checked, also after a 422 or a 409. Outside the
+          editor root and the shared partial (the admin form has none). %>
+      <% unless scope == :project %>
+        <label class="dcf-confirm-box"><%= check_box_tag :confirm, '1', false, required: true, autocomplete: 'off' %>
+          <%= l(:text_dcf_confirm_understand) %></label>
+      <% end %>
       <%= submit_tag l(:button_save), name: nil, disabled: true, data: { dcf_editor_submit: 1 } %>
       <%= link_to l(:button_cancel), custom_field_configuration_field_path(@project, @field) %>
     </p>
