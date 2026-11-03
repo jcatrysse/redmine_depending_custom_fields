@@ -507,7 +507,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-32
 
-**Status: Resolved by the owner.** The owner stated that CI runs only manually, or when Claude deliberately starts it. Claude may therefore dispatch the manual workflows deliberately, for example to obtain version-matrix evidence it cannot produce locally or before tagging a release. Conditions: only after the local gates pass; at most once per workflow per commit SHA unless a fix was pushed; never editing workflow triggers; every dispatch is reported (workflow, SHA, run URL, result). Automatic triggers are never added.
+**Status: Resolved by the owner.** The owner stated that CI runs only manually, or when Claude deliberately starts it. Claude may therefore dispatch the manual workflows deliberately, for example to obtain version-matrix evidence it cannot produce locally or before tagging a release. Conditions: only after the local gates pass; at most once per workflow per commit SHA unless a fix was pushed; never editing workflow triggers; every dispatch is reported (workflow, SHA, run URL, result). Automatic triggers are never added. Owner, 2026-11-03: Claude may dispatch the GitHub workflows once, deliberately, on the final commit of the owner follow-up (after WP-36 and the final reviews), and reports the result.
 
 **Question.** May Claude dispatch the manual workflows?
 

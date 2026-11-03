@@ -250,7 +250,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ### SD-22: Time entries skip the validation of custom fields the user cannot see on the current 6.1-stable and 7.0-stable
 
-**Status.** Open, found during WP-34 (not caused by it), owner decision needed; not fixed here (outside the WP-34 scope).
+**Status.** Open, found during WP-34 (not caused by it). Owner decision of 2026-11-03: fix it in the plugin (extend the WP-09b check to time entries, the error on the parent, a hidden child never named, the same behaviour on every Redmine version), as a small work package after WP-34.
 
 **Severity.** major (a hidden dependent field of a time entry can keep a value its new parent value does not allow; nothing is cleared or disclosed).
 
