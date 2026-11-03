@@ -8,7 +8,7 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 ## Contents
 
-1. Defects tracked separately (SD-01 to SD-17)
+1. Defects tracked separately (SD-01 to SD-21)
 2. Defects fixed inside the plan
 
 ## 1. Defects tracked separately
@@ -32,6 +32,10 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 | SD-15 | security (low) | SECURITY: the full dependency mapping is embedded in every page, including the login page |
 | SD-16 | security (low) | SECURITY: the project confirmation panel names dependent fields the manager cannot see |
 | SD-17 | major | On MySQL/MariaDB a list value rename also rewrites stored values that differ only in case or accents |
+| SD-18 | minor (redmine_extended_api) | The Extended API ignores the entries of a Key/Value list (depending) field |
+| SD-19 | minor (redmine_extended_api) | Extended API XML output is not well-formed; dependency mappings are rendered as XML attributes |
+| SD-20 | minor (redmine_extended_api) | The Extended API proxy answers 500 for a .json or .xml path of a controller without API authentication |
+| SD-21 | minor (redmine_extended_api) | Extended API writes outside its attribute policy: create assigns every safe attribute, and the core custom field paths accept API keys |
 
 ### SD-01: SECURITY: context-menu wizard save writes custom fields the user may not edit
 
@@ -191,17 +195,57 @@ Research for this plan uncovered defects in 0.0.15. Some are fixed inside the wo
 
 **Evidence.** Found by the WP-12 implementation. `app/views/project_custom_field_configuration/_confirm_panel.html.erb:9` lists `impact.affected_child_fields.map(&:name)`; `UsageCalculator.affected_child_fields` (`app/services/redmine_depending_custom_fields/usage_calculator.rb:69-75`) takes every dependent field through `FieldRelevance.children_of`, without a project or role-visibility filter. A project manager who renames or removes a parent value therefore sees the names of dependent fields that are not used in the project or are hidden for the manager's roles. Plugin rule: a role-invisible field is never named.
 
-**Status.** Fixed in 0.1.0 (M3) by WP-28: `_confirm_panel.html.erb` names a dependent field only when `UsageCalculator.nameable_child?` holds, the WP-12 rule of `BaseService#nameable_field?` (the edited field, an administrator, or a field used in the project and visible to the user, checked fail closed); the line reads `label_affected_child_fields: <count of all affected fields> (<nameable names>)`, so the others are only counted, and the usage and dependency reference counts are unchanged. `spec/services/dcf_usage_calculator_spec.rb` checks both rules give the same answer for the edited field, a visible, a role-hidden, a role-restricted, an out-of-project and a time entry field as a manager and as an administrator, and that a raising check names nothing; `spec/requests/dcf_project_custom_field_configuration_spec.rb` (confirmation panel naming, SD-16) shows a manager's 422 panels for a list rename, a list removal and an enumeration removal through the delete link naming the visible and the role-restricted child but neither the role-hidden (`visible: false`, another role) nor the out-of-project child anywhere in the body, with the count 4; an administrator sees all four names; a panel with only a hidden child shows the count alone, and a name with markup is escaped once. No CHANGELOG line (section 3 has none for SD-16).
+**Status.** Fixed in 0.1.0 (M3) by WP-28: `_confirm_panel.html.erb` names a dependent field only when `UsageCalculator.nameable_child?` holds, the WP-12 rule of `BaseService#nameable_field?` (the edited field, an administrator, or a field used in the project and visible to the user, checked fail closed); the line reads `label_affected_child_fields: <count of all affected fields> (<nameable names>)`, so the others are only counted, and the usage and dependency reference counts are unchanged. `spec/services/dcf_usage_calculator_spec.rb` checks both rules give the same answer for the edited field, a visible, a role-hidden, a role-restricted, an out-of-project and a time entry field as a manager and as an administrator, and that a raising check names nothing; `spec/requests/dcf_project_custom_field_configuration_spec.rb` (confirmation panel naming, SD-16) shows a manager's 422 panels for a list rename, a list removal and an enumeration removal through the delete link naming the visible and the role-restricted child but neither the role-hidden (`visible: false`, another role) nor the out-of-project child anywhere in the body, with the count 4; an administrator sees all four names; a panel with only a hidden child shows the count alone, and a name with markup is escaped once. CHANGELOG (owner K6 of 2026-11-02, added by WP-33 to the section 3 M3 list and 'Unreleased (0.1.0)', PC-73, UN-66): "Security: The confirmation panel of a value rename or removal in project settings no longer names dependent fields you cannot see (not used in the project or hidden for your role); they are only counted."
 
 ### SD-17: On MySQL/MariaDB a list value rename also rewrites stored values that differ only in case or accents
 
-**Status.** Open, found by WP-32 and not fixed there (decided on the owner's mandate, to be confirmed by the owner: no unplanned production change in the release work package); tracked separately, for the owner to decide before 0.1.0 is tagged or in a later work package. Present since the project rename service shipped (0.0.12).
+**Status.** Fixed in 0.1.0 (M3) by WP-33 (owner decision of 2026-11-02): `UsageCalculator.value_rows(field, values)` is the one lookup of stored values by value. On MySQL and MariaDB (`Redmine::Database.mysql?`) it adds `CAST(CONVERT(custom_values.value USING utf8mb4) AS BINARY) = ?` (or `IN (?)`) to the plain predicate, so the UTF-8 bytes are compared instead of the column collation, whatever the column character set; PostgreSQL and SQLite keep the plain `where(value: ...)`. `usage_total`, `usage_here` (and so `usage_other`), the `page_usage` base and the `RenameValueService` rewrite go through it, and `RemoveValueService` (including `block_removal_when_used`) and `UpdateEnumerationsService` follow; `grouped_value_counts` groups by the same expression. Trailing spaces are significant (decision: exact bytes, as on PostgreSQL; neither `COLLATE utf8mb4_bin`, which pads spaces on MariaDB and MySQL 5.7 and is tied to one character set, nor the deprecated `BINARY` operator). Red first on MariaDB 10.11 (7.0) against the unchanged code: the usage of `A` read `[4, 2]` instead of `[2, 1]`, a rename of `A` to `A` rewrote the `a`, `Á` and `A ` rows, a rename of `A` to `a` also rewrote `Á`, two different emoji counted together, a project-only rename asked for confirmation for an `a` used elsewhere, and a removal was refused as in use for an `A`; green after the fix on MariaDB 5.1 and 7.0 and on PostgreSQL. Specs: `spec/services/dcf_value_services_spec.rb` 'exact value matching (SD-17, WP-33)' (untagged), `spec/services/dcf_usage_calculator_spec.rb` 'exact values (WP-33)' (the helper SQL, a static guard, and on MySQL a probe of the predicate under every available collation and on utf8mb3 and latin1 values), `spec/requests/dcf_project_custom_field_configuration_spec.rb` 'list value rename on MySQL and MariaDB (SD-17, WP-33)' (`:mysql`). CHANGELOG (PC-74, UN-67): "Fixed: On MySQL/MariaDB, renaming a list value in project settings rewrites only the values stored exactly as that value, no longer those that differ only in case, accents or trailing spaces, and the usage counts of a rename or removal are exact." Values already merged by earlier renames stay merged.
 
 **Severity.** major (data integrity, MySQL and MariaDB only)
 
 **Evidence.** `RenameValueService` rewrites the stored issue values with `CustomValue.where(custom_field_id: field.id, value: old).update_all(value: nv)` (`app/services/redmine_depending_custom_fields/rename_value_service.rb:41`). The comparison follows the column collation; MariaDB's default `utf8mb4_general_ci` ignores case and accents. Probe run by WP-32 (a temporary spec, removed afterwards): a List field with the values `A`, `a` and `B` and one stored value `A` and one `a`; renaming `A` to `C` from project settings leaves `["C", "C"]` on MariaDB 10.11 (Redmine 7.0) and `["C", "a"]` on PostgreSQL. The possible values themselves are compared in Ruby and stay correct, so after the rename the stored `a` values show as `C`. The usage counts of the values page are exact since WP-28 (`UsageCalculator.page_usage` compares as binary), but the rename impact panel and the update do not.
 
 **Recommendation.** Compare exactly on MySQL and MariaDB (a binary comparison such as the one `UsageCalculator.grouped_value_counts` uses) in the rename update and its usage counts, with a `:mysql` request spec that is red first; check the other `where(value: ...)` reads of the services the same way.
+
+### SD-18: The Extended API ignores the entries of a Key/Value list (depending) field
+
+**Status.** Open, cause in `redmine_extended_api` (found by the WP-33 integration run, d103a2d); not fixed here (WP-33 rule: fix here only when the cause is in this plugin).
+
+**Severity.** minor (an integration cannot create or change the entries; no data is lost)
+
+**Evidence.** `POST /extended_api/custom_fields.json` with `field_format: depending_enumeration` and `enumerations: [{name: 'Alpha'}, {name: 'Beta'}]` answers 201 with `"enumerations": []`, and a `PUT` with `enumerations` answers 200 with `[]` (probes on 5.1, 7.0 and MariaDB 7.0). The same call with `field_format: enumeration` creates both entries. `CustomFieldsControllerPatch#extract_enumerations_param` returns `[]` unless the format is exactly `enumeration` (`lib/redmine_extended_api/patches/custom_fields_controller_patch.rb:160-161`), and `AttributePolicy` lists no `enumerations` for the depending format.
+
+**Recommendation (in the Extended API).** Accept every format whose class is a `Redmine::FieldFormat::EnumerationFormat` (or `RedmineDependingCustomFields::FIELD_FORMAT_DEPENDING_ENUMERATION` when defined) in `extract_enumerations_param`. Workaround: this plugin's `PUT /depending_custom_fields/:id.json` (also reachable as `/extended_api/depending_custom_fields/:id.json`) with `enumerations`, or the administration form; `value_dependencies` keyed by the entry ids then work through the Extended API (probe E6, E7).
+
+### SD-19: Extended API XML output is not well-formed; dependency mappings are rendered as XML attributes
+
+**Status.** Open, cause in `redmine_extended_api` (WP-33 integration run); not fixed here. JSON output is correct.
+
+**Severity.** minor (XML clients only)
+
+**Evidence.** `GET /extended_api/custom_fields/:id.xml` returns two top-level elements, `<extended_api>` with the metadata and then `<custom_field>`, for every custom field, so no XML parser accepts it (REXML `ParseException` on 5.1, 7.0 and MariaDB 7.0). `show.api.rsb` also passes the mapping Hash to the builder, which renders it as attributes: `<value_dependencies Belgium="[&quot;Antwerp&quot;]" a]="[&quot;Paris&quot;]"/>`; a parent value that is no XML name (`a]`, spaces, an enumeration id such as `1`) gives an invalid attribute name.
+
+**Recommendation (in the Extended API).** Put the metadata inside the one root element (or into a header), and render each mapping as elements, for example `<value_dependency parent="Belgium"><value>Antwerp</value></value_dependency>`, or document the mappings as JSON only.
+
+### SD-20: The Extended API proxy answers 500 for a .json or .xml path of a controller without API authentication
+
+**Status.** Open, cause in `redmine_extended_api` (WP-33 integration run); not fixed here. Nothing is disclosed: the error happens before the controller runs.
+
+**Severity.** minor
+
+**Evidence.** `GET /extended_api/dcf_dependency_editor/values.json` and `/extended_api/dcf_config_audit.json` (this plugin's HTML-only routes) answer 500, and so do core paths such as `/extended_api/admin/projects.json` and `/extended_api/settings.json`: `ProxyApp#accepts_api_auth?` calls `accept_api_auth_actions.include?` on a controller class that never called `accept_api_auth`, where the class attribute is nil (`NoMethodError` in `lib/redmine_extended_api/proxy_app.rb:95`). This plugin's API (`/extended_api/depending_custom_fields.json`) works (admin 200, plain user 403).
+
+**Recommendation (in the Extended API).** `Array(controller.accept_api_auth_actions).include?(action.to_sym)`, so such a path gets the proxy's 404 'Not a REST API endpoint'.
+
+### SD-21: Extended API writes outside its attribute policy: create assigns every safe attribute, and the core custom field paths accept API keys
+
+**Status.** Open, cause in `redmine_extended_api` together with core's `before_action :build_new_custom_field` (WP-33 integration run); not fixed here. Administrators only (a plain user's key gets 403); this plugin's validations run on every path (cycle and MySQL size 422, `dependencies_json` parsed, pruned and never echoed).
+
+**Severity.** minor
+
+**Evidence.** (1) On create, core's `build_new_custom_field` assigns the unfiltered `params[:custom_field]` through `safe_attributes=` before the Extended API filters anything, so `POST /extended_api/custom_fields.json` applies `dependencies_json` (pruned: probe P10 stores `{"Belgium":["Antwerp"]}` of a payload that also named `Atlantis`), while `PUT` drops it with 200 (probe P8). (2) `accept_api_auth :index, :show, :create, :update, :destroy` applies to core's own paths too: `PUT /custom_fields/:id.json` with an administrator key saves the change and then answers 406 (core's `update` responds to HTML and JS only; probe C1, C2), `POST /custom_fields.json` creates the field and `DELETE /custom_fields/:id.json` deletes it, both answering 302. This plugin's request spec 'does not accept an administrator API key on the update (core accept_api_auth :index only)' pins core's behaviour and fails in a checkout with the Extended API installed (406 instead of 401 or 403); it is kept unchanged, so this plugin's suite is not green with the Extended API installed (1 failure on 5.1 and 7.0, recorded as a deviation in the WP-33 Delivered block; the owner accepts it or has the Extended API fixed).
+
+**Recommendation (in the Extended API).** Build the new record without the core assignment for extended requests (override `build_new_custom_field` to call `safe_attributes=` only with the policy-filtered params in `create`), and answer 404 for API-format requests to create, update and destroy that do not come through `/extended_api`.
 
 ## 2. Defects fixed inside the plan
 

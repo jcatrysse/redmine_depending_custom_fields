@@ -234,4 +234,35 @@ RSpec.describe 'Admin dependency editor in the browser (WP-25)', type: :system d
                                  { 'Belgium' => 'Brussels' }])
     expect(RedmineDependingCustomFields::ConfigAuditEvent.count).to eq(audits)
   end
+
+  # WP-33 (owner): a new List (depending) field is filled from a paste on the
+  # new field form: the import shows once the parent is chosen, with 'Add
+  # missing child values' ticked; one Save stores the values and the links.
+  it 'fills a new List (depending) field from pasted links on the new field form (WP-33)' do
+    parent
+    dcf_login
+    visit '/custom_fields/new?type=IssueCustomField&custom_field[field_format]=depending_list'
+    find('#custom_field_name').set('Ed new city')
+    find('#custom_field_parent_custom_field_id').find("option[value='#{parent.id}']").select_option
+    panel = find('details.dcf-dep-editor__import')
+    expect(page).to have_css('details.dcf-dep-editor__export', visible: :hidden)
+    expect(page).to have_css('.dcf-dep-editor__sections em.info', text: I18n.t(:text_dcf_editor_no_child_values))
+    panel.find('summary').click
+    expect(panel.find('input[type=checkbox][data-dcf-ed-import-add-missing]')).to be_checked
+    panel.find('textarea[data-dcf-ed-import-text]').set("Belgium,Ghent\nGermany,Berlin\nGermany,Ghent")
+    panel.find('button[data-dcf-ed-import-preview]').click
+    expect(panel).to have_css('li[data-dcf-ed-summary=new_values]', text: I18n.t(:text_dcf_import_new_values, count: 2))
+    shot('admin-empty-import-preview', 'wp-33', '.dcf-dep-editor__preview')
+    panel.find('button[data-dcf-ed-import-apply]').click
+    expect(page).to have_css('[data-dcf-ed-notice=import_applied]')
+    expect(find('#custom_field_possible_values').value).to eq("Ghent\nBerlin")
+    expect(page).to have_css('details.dcf-dep-editor__export')
+    shot('admin-empty-import-applied', 'wp-33')
+    save
+
+    expect(page).to have_css('#flash_notice')
+    created = CustomField.find_by(name: 'Ed new city')
+    expect(created.possible_values).to eq(%w[Ghent Berlin])
+    expect(stored(created)).to eq([{ 'Belgium' => %w[Ghent], 'Germany' => %w[Ghent Berlin] }, {}])
+  end
 end

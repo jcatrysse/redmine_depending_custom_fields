@@ -225,6 +225,119 @@ RSpec.describe 'DCF value operation services' do
     end
   end
 
+  # --- Exact value matching (SD-17, WP-33) -------------------------------
+  # MySQL and MariaDB compare TEXT with the column collation (case and
+  # accents ignored, trailing spaces padded); the services match the stored
+  # bytes on every database. Untagged, so PostgreSQL runs them too. Rows are
+  # read back by id and compared in Ruby (where(value:) would itself follow
+  # the collation).
+  describe 'exact value matching (SD-17, WP-33)' do
+    let(:other) { dcf_create_project(name: 'Other') }
+    let(:near) { ['a', "\u00c1", "A\u00a0", "\u{1F34E}", "\u{1F350}", 'B'] }
+
+    def stored(field)
+      CustomValue.where(custom_field_id: field.id).order(:id).pluck(:value)
+    end
+
+    def usage(field, value)
+      calc = RedmineDependingCustomFields::UsageCalculator
+      [calc.usage_here(field, value, project), calc.usage_other(field, value, project)]
+    end
+
+    def last_event(field)
+      RedmineDependingCustomFields::ConfigAuditEvent.where(custom_field_id: field.id).order(:id).last
+    end
+
+    # Stored 'A' x2 here and x1 elsewhere, every near miss once, and 'A '
+    # (trailing space, written directly: core strips possible values).
+    def near_miss_field(is_for_all: true, projects: nil)
+      field = dcf_list_field(values: ['A'] + near, is_for_all: is_for_all, projects: projects)
+      2.times { dcf_issue_with_value(project, field, 'A') }
+      dcf_issue_with_value(other, field, 'A')
+      (near + ['A ']).each_with_index { |value, i| dcf_issue_with_value(i.even? ? project : other, field, value) }
+      field
+    end
+
+    it 'renames only the rows stored exactly as the old value; the counts match the rewritten rows' do
+      field = near_miss_field
+      before = stored(field)
+      expect(usage(field, 'A')).to eq([2, 1])
+      outcome = rename(field, old_value: 'A', new_value: 'C', confirm: '1')
+      expect(stored(field)).to eq(before.map { |value| value == 'A' ? 'C' : value })
+      expect(stored(field).count('C')).to eq(3)
+      expect(outcome.affected_values_count).to eq(3)
+      expect(last_event(field).affected_values_count).to eq(3)
+      expect(field.reload.possible_values).to eq(['C'] + near)
+    end
+
+    it 'counts every near miss on its own and renames one emoji without the other' do
+      field = near_miss_field
+      expect(near.map { |value| usage(field, value) }).to eq([[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1]])
+      expect(usage(field, 'A ')).to eq([1, 0])
+      expect(RedmineDependingCustomFields::UsageCalculator.usage_total(field, 'A')).to eq(3)
+      before = stored(field)
+      rename(field, old_value: "\u{1F34E}", new_value: 'Apple', confirm: '1')
+      expect(stored(field)).to eq(before.map { |value| value == "\u{1F34E}" ? 'Apple' : value })
+    end
+
+    it 'leaves the near misses untouched on a rename to the same value' do
+      field = near_miss_field
+      before = stored(field)
+      outcome = rename(field, old_value: 'A', new_value: 'A', confirm: '1')
+      expect(stored(field)).to eq(before)
+      expect(outcome.affected_values_count).to eq(3)
+    end
+
+    it "renames 'A' to 'a' when 'a' is no possible value, rewriting only the 'A' rows" do
+      field = dcf_list_field(values: ['A', "\u00c1", 'B'], is_for_all: false, projects: [project])
+      %w[A a].each { |value| dcf_issue_with_value(project, field, value) }
+      dcf_issue_with_value(project, field, "\u00c1")
+      rename(field, old_value: 'A', new_value: 'a', confirm: '1')
+      expect(stored(field)).to eq(['a', 'a', "\u00c1"])
+      expect(field.reload.possible_values).to eq(['a', "\u00c1", 'B'])
+    end
+
+    it "still refuses renaming 'A' to 'a' while 'a' is a possible value" do
+      field = dcf_list_field(values: %w[A a], is_for_all: false, projects: [project])
+      dcf_issue_with_value(project, field, 'a')
+      expect { rename(field, old_value: 'A', new_value: 'a', confirm: '1') }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_duplicate) }
+      expect(stored(field)).to eq(%w[a])
+    end
+
+    it 'asks no confirmation when only a value differing in case is used in another project' do
+      field = dcf_list_field(values: %w[A a], is_for_all: false, projects: [project])
+      dcf_issue_with_value(project, field, 'A')
+      dcf_issue_with_value(other, field, 'a')
+      expect(usage(field, 'A')).to eq([1, 0])
+      outcome = rename(field, old_value: 'A', new_value: 'C')
+      expect(stored(field)).to eq(%w[C a])
+      expect(outcome.affected_values_count).to eq(1)
+    end
+
+    it 'removes a value with block_removal_when_used while only a value differing in accents is stored' do
+      allow(Setting).to receive(:plugin_redmine_depending_custom_fields)
+        .and_return('block_removal_when_used' => '1')
+      field = dcf_list_field(values: ['A', "\u00c1", 'B'], is_for_all: false, projects: [project])
+      dcf_issue_with_value(project, field, 'A')
+      outcome = remove(field, value: "\u00c1")
+      expect(field.reload.possible_values).to eq(%w[A B])
+      expect(outcome.affected_values_count).to eq(0)
+      expect { remove(field, value: 'A', confirm: '1') }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_value_in_use) }
+    end
+
+    it 'counts an enumeration id by its string, not a longer or padded one' do
+      field = dcf_enum_field(names: %w[X Y])
+      enum = field.enumerations.order(:position).first
+      [enum.id.to_s, "#{enum.id}0", "#{enum.id} "].each { |value| dcf_issue_with_value(project, field, value) }
+      expect(RedmineDependingCustomFields::UsageCalculator.usage_total(field, enum.id)).to eq(1)
+      outcome = remove(field, enumeration_id: enum.id, confirm: '1')
+      expect(outcome.affected_values_count).to eq(1)
+      expect(enum.reload.active).to be(false)
+    end
+  end
+
   # --- Reorder (T-ORD) ---------------------------------------------------
   describe 'ReorderValuesService' do
     it 'reorders list values (T-ORD-1)' do

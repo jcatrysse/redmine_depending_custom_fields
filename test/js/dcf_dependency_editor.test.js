@@ -1002,7 +1002,9 @@ test('panels are hidden without parent or child values, with a blank parent, whi
     return !!ui.imp && (ui.imp.hidden || !!ui.imp.closest('[hidden]')) && (ui.exp.hidden || !!ui.exp.closest('[hidden]'));
   };
   assert.equal(hidden(await E.load('admin_list', { tweak: (r) => r.setAttribute('data-dcf-editor-parent-values', '[]') })), true);
-  assert.equal(hidden(await E.load('admin_list', { form: { values: [] } })), true);
+  // Changed by WP-33: an admin List child without values shows the import (not the export).
+  const emptyList = panels(await E.load('admin_list', { form: { values: [] } }));
+  assert.deepEqual([emptyList.imp.hidden, !!emptyList.imp.closest('[hidden]'), emptyList.exp.hidden], [false, false, true]);
   assert.equal(hidden(await E.load('admin_new')), true);
   const p = await E.load('admin_list');
   assert.equal(hidden(p), false);
@@ -1017,6 +1019,197 @@ test('panels are hidden without parent or child values, with a blank parent, whi
   panels(p2).imp.open = true;
   p2.root.querySelector('button[data-dcf-ed-collapse-all]').click();
   assert.equal(panels(p2).imp.open, true, 'collapse all leaves the panels');
+});
+
+// WP-33 (owner): the admin form of a List (depending) field without values
+// yet offers the import with 'Add missing child values' preselected; the
+// export, project pages and Key/Value children are unchanged.
+const NO_LINKS = (r) => setJson(r, 'mapping', { value_dependencies: {}, default_value_dependencies: {} });
+const shown = (node) => !!node && !node.hidden && !node.closest('[hidden]');
+const emptyInfo = (p) => p.root.querySelector('.dcf-dep-editor__sections em.info').textContent;
+
+test('empty admin List child: import shown with Add missing preselected, two pairs fill the values, undo (WP-33)', async () => {
+  for (const variant of VARIANTS) {
+    const p = await E.load('admin_list', { variant, form: { values: [] }, tweak: NO_LINKS });
+    const textarea = p.document.querySelector('#custom_field_possible_values');
+    const ui = panels(p);
+    assert.equal(shown(ui.imp), true, `import ${variant}`);
+    assert.equal(ui.exp.hidden, true, `export ${variant}`);
+    ['toolbar', 'status', 'unlinked'].forEach((name) => {
+      assert.equal(p.root.querySelector(`.dcf-dep-editor__${name}`).hidden, true, name);
+    });
+    assert.equal(emptyInfo(p), p.t('no_child_values'));
+    assert.equal(ui.addMissing.checked, true);
+    assert.equal(p.alerts().length, 0);
+    const events = [];
+    ['input', 'change'].forEach((type) => textarea.addEventListener(type, () => events.push(type)));
+    preview(p, 'Belgium,Brussels\nGermany,Berlin', { header: 'no' });
+    assert.deepEqual(errorItems(ui), []);
+    assert.equal(summaryText(ui, 'new_values'), p.t('new_values', { count: '2' }));
+    assert.deepEqual(tableRows(ui), [['Belgium', 'Brussels', p.t('status_new')], ['Germany', 'Berlin', p.t('status_new')]]);
+    assert.equal(ui.apply.disabled, false);
+    assert.equal(textarea.value, '', 'a preview changes nothing');
+    ui.apply.click();
+    assert.equal(textarea.value, 'Brussels\nBerlin');
+    assert.deepEqual(events, ['input', 'change']);
+    assert.deepEqual(Array.from(p.editor().children.keys()), ['Brussels', 'Berlin']);
+    assert.deepEqual(p.sections().map((d) => d.getAttribute('data-dcf-ed-section')), ['Belgium', 'France', 'Germany']);
+    assert.deepEqual([shown(ui.imp), ui.imp.open, shown(ui.exp)], [true, false, true]);
+    assert.equal(p.root.querySelector('.dcf-dep-editor__toolbar').hidden, false);
+    assert.ok(p.notice('import_applied').textContent.startsWith(p.t('applied', { added: '2', removed: '0' })));
+    p.clock.tick(150);
+    assert.deepEqual(p.payload().value_dependencies, { Belgium: ['Brussels'], Germany: ['Berlin'] });
+    assert.deepEqual([p.payload().source, p.payload().import], ['import', { mode: 'merge', rows: 2 }]);
+    assert.equal(ui.addMissing.checked, true, 'a filled list keeps the choice');
+    p.notice('import_applied').querySelector('button[data-dcf-ed-import-undo]').click();
+    assert.equal(textarea.value, '');
+    assert.deepEqual(events, ['input', 'change', 'input', 'change']);
+    assert.equal(p.editor().dirty, false);
+    assert.equal(p.input.value, '', 'an untouched form posts nothing again');
+    assert.deepEqual([shown(ui.imp), ui.exp.hidden, ui.addMissing.checked], [true, true, true]);
+    assert.equal(emptyInfo(p), p.t('no_child_values'));
+    assert.equal(p.sections().length, 0);
+    assert.equal(p.fetchCalls.length, 0);
+    assert.deepEqual(Array.from(p.root.querySelectorAll('[name]')).map((e) => e.name), ['custom_field[dependencies_json]']);
+  }
+});
+
+test('empty admin List child: header row, markup cells as text, Add missing off gives unknown children (WP-33)', async () => {
+  const p = await E.load('admin_list', { form: { values: [] }, tweak: NO_LINKS });
+  const textarea = p.document.querySelector('#custom_field_possible_values');
+  const ui = preview(p, 'Country,City\nBelgium,"<img src=x onerror=alert(1)>"\nGermany,"""><script>alert(1)</script>"\nGermany,__proto__');
+  assert.equal(ui.preview.querySelector('.flash.warning').textContent, p.t('header_skipped', { cells: 'Country, City' }));
+  assert.equal(summaryText(ui, 'lines'), p.t('lines', { count: '3' }));
+  assert.equal(summaryText(ui, 'new_values'), p.t('new_values', { count: '3' }));
+  ui.apply.click();
+  assert.equal(textarea.value, '<img src=x onerror=alert(1)>\n"><script>alert(1)</script>\n__proto__');
+  assert.equal(p.root.querySelectorAll('script, img').length, 0);
+  p.clock.tick(150);
+  assert.deepEqual(p.payload().value_dependencies, { Belgium: ['<img src=x onerror=alert(1)>'],
+                                                     Germany: ['"><script>alert(1)</script>', '__proto__'] });
+
+  const q = await E.load('admin_list', { form: { values: [] }, tweak: NO_LINKS });
+  const off = preview(q, 'Belgium,Brussels', { header: 'no', addMissing: false });
+  assert.deepEqual(errorItems(off), [q.t('err_unknown_child', { line: '1', value: 'Brussels' })]);
+  assert.equal(off.apply.disabled, true);
+});
+
+test('empty admin List child: an untick survives re-renders; an untouched box is ticked when the list becomes empty (WP-33)', async () => {
+  const p = await E.load('admin_list', { form: { values: [] }, tweak: NO_LINKS });
+  const textarea = p.document.querySelector('#custom_field_possible_values');
+  const ui = panels(p);
+  ui.addMissing.checked = false;
+  p.fire(ui.addMissing, 'change');
+  textarea.value = 'X';
+  p.fire(textarea, 'input');
+  p.clock.tick(400);
+  assert.deepEqual([shown(ui.imp), shown(ui.exp), ui.addMissing.checked], [true, true, false]);
+  textarea.value = '';
+  p.fire(textarea, 'input');
+  p.clock.tick(400);
+  assert.deepEqual([shown(ui.imp), ui.exp.hidden, ui.addMissing.checked], [true, true, false], 'the user choice stays');
+  ui.clear.click();
+  assert.equal(ui.addMissing.checked, false, 'Clear leaves the box');
+
+  const q = await E.load('admin_list');
+  const qText = q.document.querySelector('#custom_field_possible_values');
+  const qui = panels(q);
+  assert.equal(qui.addMissing.checked, false, 'a list with values keeps the default');
+  const stale = preview(q, 'Germany,Lyon', { header: 'no' });
+  assert.equal(stale.apply.disabled, false);
+  qText.value = '';
+  q.fire(qText, 'input');
+  q.clock.tick(400);
+  assert.deepEqual([shown(qui.imp), qui.exp.hidden, qui.addMissing.checked], [true, true, true]);
+  assert.deepEqual([qui.apply.disabled, qui.preview.children.length], [true, 0], 'the earlier preview is gone');
+  qText.value = 'Lyon';
+  q.fire(qText, 'input');
+  q.clock.tick(400);
+  assert.equal(qui.addMissing.checked, true, 'typed values do not untick it');
+});
+
+test('empty lists elsewhere are unchanged: project pages, Key/Value children, missing attributes (WP-33)', async () => {
+  const hiddenBoth = (p) => {
+    const ui = panels(p);
+    return !shown(ui.imp) && !shown(ui.exp);
+  };
+  const emptyChildren = (r) => {
+    r.setAttribute('data-dcf-editor-child-values', '[]');
+    NO_LINKS(r);
+  };
+  for (const variant of VARIANTS) {
+    for (const name of ['project_list', 'project_enumeration', 'admin_enumeration']) {
+      const p = await E.load(name, { variant, tweak: emptyChildren });
+      assert.equal(hiddenBoth(p), true, `${name} ${variant}`);
+      assert.equal(p.root.querySelector('[data-dcf-ed-import-add-missing]'), null, `${name} ${variant}`);
+      assert.equal(emptyInfo(p), p.t('no_child_values'), `${name} ${variant}`);
+    }
+  }
+  const tampered = await E.load('project_list', { tweak: (r) => {
+    emptyChildren(r);
+    r.setAttribute('data-dcf-editor-allow-add-values', '1');
+  } });
+  assert.equal(hiddenBoth(tampered), true);
+  const noAttr = await E.load('admin_list', { form: { values: [] }, tweak: (r) => {
+    NO_LINKS(r);
+    r.removeAttribute('data-dcf-editor-allow-add-values');
+  } });
+  assert.deepEqual([hiddenBoth(noAttr), noAttr.root.querySelector('[data-dcf-ed-import-add-missing]')], [true, null]);
+  const childAttr = await E.load('admin_list', { form: { values: [] }, tweak: emptyChildren });
+  assert.equal(hiddenBoth(childAttr), true);
+  const noSource = await E.load('admin_list', { form: { values: [] }, tweak: (r) => {
+    NO_LINKS(r);
+    r.removeAttribute('data-dcf-editor-values-source');
+  } });
+  assert.deepEqual([hiddenBoth(noSource), noSource.root.querySelector('[data-dcf-ed-import-add-missing]')], [true, null]);
+  assert.equal(emptyInfo(noSource), noSource.t('no_child_values'));
+  const noParents = await E.load('admin_list', { form: { values: [] }, tweak: (r) => {
+    NO_LINKS(r);
+    r.setAttribute('data-dcf-editor-parent-values', '[]');
+  } });
+  assert.deepEqual([hiddenBoth(noParents), emptyInfo(noParents)], [true, noParents.t('no_parent_values')]);
+});
+
+test('new List (depending) field: choosing a parent with values shows the import, preselected (WP-33)', async () => {
+  const pending = new Map();
+  const p = await E.load('admin_new', {
+    form: { values: [] },
+    fetch: (url) => {
+      const d = E.deferred();
+      pending.set(new URL(url).searchParams.get('custom_field_id'), d);
+      return d.promise;
+    }
+  });
+  const ui = panels(p);
+  assert.deepEqual([shown(ui.imp), shown(ui.exp)], [false, false], 'blank parent');
+  const select = p.document.querySelector('#custom_field_parent_custom_field_id');
+  select.value = '9100050';
+  p.fire(select, 'change');
+  assert.deepEqual([shown(ui.imp), shown(ui.exp)], [false, false], 'while the values load');
+  pending.get('9100050').resolve(E.response(200, { id: 9100050, name: 'Other', kind: 'list', values: [] }));
+  await E.flush();
+  assert.deepEqual([shown(ui.imp), shown(ui.exp), emptyInfo(p)], [false, false, p.t('no_parent_values')]);
+  select.value = '9100001';
+  p.fire(select, 'change');
+  pending.get('9100001').resolve(E.response(200, { id: 9100001, name: 'Country', kind: 'list',
+                                                  values: [{ key: 'Belgium' }, { key: 'Spain' }] }));
+  await E.flush();
+  assert.deepEqual([shown(ui.imp), ui.exp.hidden, ui.addMissing.checked], [true, true, true]);
+  preview(p, 'Spain,Madrid', { header: 'no' }).apply.click();
+  assert.equal(p.document.querySelector('#custom_field_possible_values').value, 'Madrid');
+  p.clock.tick(150);
+  assert.deepEqual(p.payload().value_dependencies, { Spain: ['Madrid'] });
+});
+
+test('empty admin List child on the MySQL limit page: the storage estimate follows Apply and Undo (WP-33)', async () => {
+  const html = E.fixture('mysql_limit').replace('{{BYTES}}', '0');
+  const p = await E.load('mysql_limit', { html, form: { values: [] }, tweak: NO_LINKS });
+  assert.equal(p.notice('storage_values'), null);
+  const lines = Array.from({ length: 600 }, (_, i) => `Belgium,${String(i).padStart(4, '0')}${'v'.repeat(96)}`).join('\n');
+  preview(p, lines, { header: 'no' }).apply.click();
+  assert.ok(p.notice('storage_values'), 'warned after Apply');
+  p.notice('import_applied').querySelector('button[data-dcf-ed-import-undo]').click();
+  assert.equal(p.notice('storage_values'), null, 'gone after Undo');
 });
 
 test('preview: counts, header warning with its cells, separator name, first 20 rows with status, Apply enabled', async () => {

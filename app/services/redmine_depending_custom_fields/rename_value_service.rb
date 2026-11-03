@@ -38,7 +38,7 @@ module RedmineDependingCustomFields
 
       field.possible_values = possible_values.map { |x| x == old ? nv : x }
       field.default_value = nv if field.default_value.to_s == old
-      rows = CustomValue.where(custom_field_id: field.id, value: old).update_all(value: nv)
+      rows = UsageCalculator.value_rows(field, old).update_all(value: nv)
       rewrite_own_list_deps!(old, nv) if depending?
       save_field!(field)
 

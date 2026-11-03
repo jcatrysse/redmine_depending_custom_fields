@@ -603,6 +603,7 @@ Auto: row 1 is a header unless it is a valid pair, when cell 1 equals the parent
 - A value containing CR or LF is a line error `error_dcf_import_multiline_value`: core `possible_values=` would split it into several values and the link would be pruned (QA-11 b). Surrounding whitespace is not an error: the importer trims exactly as core strips, so the stored value equals the link key.
 - A value still containing U+0000 after that trim is a line error `error_dcf_import_nul_value` (WP-26 review): the HTML parser turns NUL into U+FFFD when the textarea and the issue form options are rendered again, so the stored value would not stay the link key either.
 - Apply appends to `#custom_field_possible_values` (newline-joined after trimming trailing whitespace), dispatches `input` and `change` (core `warnLeavingUnsaved` sees it), rebuilds children synchronously, links the pairs; the storage estimate re-evaluates. Not offered for enumeration children or on the project page: the checkbox is rendered only when `data-dcf-editor-allow-add-values="1"` (admin + list, 5.3). WP-26 jsdom test (gap 12): "Add missing child values" is not rendered on the project fixture nor for enumeration children (admin enumeration fixture).
+- Empty child list (WP-33, owner decision of 2026-11-02): when `canAddValues()` holds (admin, list kind, `data-dcf-editor-allow-add-values="1"`, no child-values attribute, values source found), the parent has values and the child list is empty, the import panel is shown and the box is ticked, unless the user changed it on this page (a later render, Clear, Apply or Undo never overrides that choice). The empty-state text stays (`no_child_values`, no new key). After Apply the list is no longer empty and the export panel and the sections appear; Undo restores the empty textarea and this state. Project pages and enumeration children are unchanged.
 
 ### 6.6 Files and encodings
 `input[type=file][accept=".csv,.txt,text/csv,text/plain"]`, no name, at most 10 MB, read with `file.arrayBuffer()`. `TextDecoder('utf-8', {fatal: true})`, then `TextDecoder(csv-encoding)` falling back to `windows-1252`, with the info line `text_dcf_import_decoded_as`. While a file is loaded, the paste area is disabled with `text_dcf_import_file_used` (UX-11); the reset button is labelled with core `button_clear` and clears paste, file and preview.
@@ -640,7 +641,7 @@ details.dcf-dep-editor__panel.dcf-dep-editor__export > summary "Export links (CS
     button[data-dcf-ed-export] "Export"
 ```
 
-Panels are hidden when there are no parent or child values.
+Panels are hidden when there are no parent or child values, except the import panel on the admin form of a List (depending) field without values whose parent has values (WP-33, 6.5).
 
 ## 7. Project-level integration contract (point 9 implements in WP-27, 0.1.0 (M3); editor owns the contract)
 

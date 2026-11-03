@@ -180,6 +180,12 @@ administration form and on the project dependency page alike:
 - 'Add missing child values to the possible values' is offered on the
   administration form for `List (depending)` fields only; it adds the child
   values the field does not have yet.
+- A `List (depending)` field without values yet, on the administration
+  form, shows the import as soon as its parent field has values (the export
+  follows once there are values), with 'Add missing child values' already
+  ticked, so a new field can be filled from a file: one Save stores the
+  values and the links. The project dependency page and Key/Value lists show
+  no import while the list is empty.
 - A file is read as UTF-8; a file that is not valid UTF-8 is read in the CSV
   encoding of the current language (`general_csv_encoding`), else as
   windows-1252. A file is at most 10,000,000 bytes, and an import at most
@@ -1142,10 +1148,12 @@ on the administration form.
   field's own dependency entries and the parent keys of every dependent field,
   all in one transaction. Removing a value never deletes issue data (list values
   are left orphaned; in-use enumeration values are deactivated rather than
-  destroyed). Known issue on MySQL and MariaDB: the rewrite of the issue values
-  also changes stored values that differ from the renamed value only in case
-  or accents (for example `a` when `A` is renamed), because the database
-  compares them that way.
+  destroyed). The rewrite and the usage counts of a rename or removal take only
+  the values stored exactly as that value on PostgreSQL, SQLite, MySQL and
+  MariaDB: a value that differs in case, accents or trailing spaces (`a` or
+  `A ` when `A` is renamed) is neither rewritten nor counted. On MySQL and
+  MariaDB the UTF-8 bytes are compared instead of the column collation; SQL
+  Server (not tested) compares with its column collation, as before.
 * Deactivating an enumeration value is reversible and destroys nothing: stored
   issue values keep resolving to the (inactive) name and the dependency mapping
   is left untouched, so reactivating restores the previous behaviour, including for

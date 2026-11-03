@@ -373,6 +373,7 @@
     this.fileToken = 0;
     this.undoSnapshot = null;
     this.applying = false;
+    this.addMissingTouched = false;
     this.input = root.querySelector('[data-dcf-editor-input]');
     this.app = root.querySelector('[data-dcf-editor-app]');
   }
@@ -547,11 +548,18 @@
     if (!this.ready()) return;
     var empty = this.parents.items.length === 0 ? 'no_parent_values'
       : (this.children.items.length === 0 ? 'no_child_values' : null);
+    // WP-33: an admin List child without values offers the import, with
+    // 'Add missing child values' ticked unless the user changed it.
+    var importOnly = empty === 'no_child_values' && this.canAddValues() && !!this.addMissingBox;
     this.toolbarEl.hidden = !!empty;
     this.statusEl.hidden = !!empty;
     this.unlinkedEl.hidden = !!empty;
-    this.importPanel.hidden = !!empty;
+    this.importPanel.hidden = !!empty && !importOnly;
     this.exportPanel.hidden = !!empty;
+    if (importOnly && !this.addMissingTouched && !this.addMissingBox.checked) {
+      this.addMissingBox.checked = true;
+      this.clearPreview();
+    }
     this.sectionsEl.textContent = '';
     this.moreSections.hidden = true;
     if (empty) {
@@ -1242,6 +1250,7 @@
     } else if (target.hasAttribute('data-dcf-ed-import-file')) {
       this.fileChosen();
     } else if (IMPORT_INPUTS.some(function (name) { return target.hasAttribute(name); })) {
+      if (target === this.addMissingBox) this.addMissingTouched = true;
       this.clearPreview();
     }
   };

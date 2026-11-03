@@ -16,12 +16,11 @@ module RedmineDependingCustomFields
     # value_key is the stored CustomValue.value: the option string for list
     # families, the enumeration id (string) for enum families.
     def usage_total(field, value_key)
-      CustomValue.where(custom_field_id: field.id, value: value_key.to_s).limit(USAGE_CAP + 1).count
+      value_rows(field, value_key).limit(USAGE_CAP + 1).count
     end
 
     def usage_here(field, value_key, project)
-      base = CustomValue.where(custom_field_id: field.id, value: value_key.to_s)
-      scope_to_project(field, base, project).limit(USAGE_CAP + 1).count
+      scope_to_project(field, value_rows(field, value_key), project).limit(USAGE_CAP + 1).count
     end
 
     def usage_other(field, value_key, project)
@@ -82,14 +81,14 @@ module RedmineDependingCustomFields
     # usage_here), own references from the field's stores in memory and
     # parent references from the children the FieldIndex lists, loaded in one
     # query. Equals usage_here, usage_other and own_dep_refs plus
-    # parent_key_refs per key, without USAGE_CAP; the counts are byte-exact
-    # also on MySQL and MariaDB, where the per-value methods count values
-    # that are equal under the column collation together. {key => PageUsage}.
+    # parent_key_refs per key, without USAGE_CAP; byte-exact on PostgreSQL,
+    # SQLite, MySQL and MariaDB, like the per-value methods (SD-17).
+    # {key => PageUsage}.
     def page_usage(field, keys, project, index: FieldIndex.load)
       keys = keys.map(&:to_s).uniq
       return {} if keys.empty?
 
-      base = CustomValue.where(custom_field_id: field.id, value: keys)
+      base = value_rows(field, keys)
       totals = grouped_value_counts(base)
       here = grouped_value_counts(scope_to_project(field, base, project))
       refs = own_refs_by_key(field, keys)
@@ -107,14 +106,34 @@ module RedmineDependingCustomFields
       end
     end
 
+    # The CustomValue rows of +field+ stored exactly as +values+ (one value or
+    # an Array; ids become strings), the one lookup of stored values by value
+    # (SD-17). MySQL and MariaDB compare TEXT with the column collation (case
+    # and accents ignored, trailing spaces padded), so the bytes are compared
+    # there as well; the plain predicate stays for any index on value.
+    # PostgreSQL and SQLite compare exactly already.
+    def value_rows(field, values)
+      values = values.is_a?(Array) ? values.map(&:to_s) : values.to_s
+      rows = CustomValue.where(custom_field_id: field.id, value: values)
+      return rows unless Redmine::Database.mysql?
+
+      rows.where("#{binary_value_sql} #{values.is_a?(Array) ? 'IN (?)' : '= ?'}", values)
+    end
+
+    # The UTF-8 bytes of the stored value on MySQL and MariaDB, whatever the
+    # column character set; bound values arrive in the UTF-8 connection
+    # encoding of database.yml.
+    def binary_value_sql
+      "CAST(CONVERT(#{CustomValue.table_name}.value USING utf8mb4) AS BINARY)"
+    end
+
     # {value => count} of a CustomValue scope, byte-exact. MySQL and MariaDB
-    # compare TEXT with the column collation (case- and accent-insensitive by
-    # default), so 'A' and 'a' would share one group: group by the bytes
-    # there and read the binary keys back as UTF-8.
+    # would put 'A' and 'a' in one group: group by the bytes there and read
+    # them back as UTF-8.
     def grouped_value_counts(scope)
       return scope.group(:value).count unless Redmine::Database.mysql?
 
-      scope.group(Arel.sql('CAST(custom_values.value AS BINARY)')).count.transform_keys do |key|
+      scope.group(Arel.sql(binary_value_sql)).count.transform_keys do |key|
         key.to_s.dup.force_encoding(Encoding::UTF_8)
       end
     end

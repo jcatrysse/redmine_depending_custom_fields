@@ -4227,4 +4227,66 @@ RSpec.describe 'Project custom field configuration', type: :request do
       end
     end
   end
+
+  # --- Exact value matching on MySQL and MariaDB (SD-17, WP-33) ----------
+  # The service examples run untagged on every database; this one goes
+  # through the project page where the collation used to merge values.
+  describe 'list value rename on MySQL and MariaDB (SD-17, WP-33)', :mysql do
+    let(:manager) { dcf_manager(project) }
+    let(:other) { dcf_create_project(name: "Other-#{SecureRandom.hex(3)}") }
+    let(:near) { ['a', "\u00c1", 'A '] }
+
+    before { as(manager) }
+
+    def doc
+      Nokogiri::HTML(response.body)
+    end
+
+    def stored(field)
+      CustomValue.where(custom_field_id: field.id).order(:id).pluck(:value)
+    end
+
+    def panel_counts
+      [I18n.t(:label_usage_this_project), I18n.t(:label_usage_other_projects)].map do |label|
+        doc.css('.dcf-confirm-panel li').map { |li| li.text.squish }.find { |text| text.start_with?("#{label}:") }
+      end
+    end
+
+    it 'shows the exact counts in the panel and on the values page and rewrites only those rows' do
+      field = dcf_list_field(values: ['A', 'a', "\u00c1", 'B'], is_for_all: true)
+      2.times { dcf_issue_with_value(project, field, 'A') }
+      dcf_issue_with_value(other, field, 'A')
+      near.each { |value| [project, other].each { |where| dcf_issue_with_value(where, field, value) } }
+      before = stored(field)
+
+      get custom_field_configuration_field_path(project, field, show_usage: 1)
+      row = doc.at_css('table.dcf-values tr[data-dcf-value="A"]')
+      expect(row.css('td').map { |td| td.text.strip }[1, 2]).to eq(%w[2 1])
+
+      patch custom_field_configuration_rename_value_path(project, field), params: { old_value: 'A', new_value: 'C' }
+      expect(response).to have_http_status(422)
+      expect(panel_counts).to eq(["#{I18n.t(:label_usage_this_project)}: 2", "#{I18n.t(:label_usage_other_projects)}: 1"])
+      expect(response.body).not_to include('CAST(')
+      expect(response.body).not_to include('SELECT')
+      expect(stored(field)).to eq(before)
+
+      patch custom_field_configuration_rename_value_path(project, field),
+            params: { old_value: 'A', new_value: 'C', confirm: '1' }
+      expect(response).to have_http_status(:redirect)
+      expect(stored(field)).to eq(before.map { |value| value == 'A' ? 'C' : value })
+      event = RedmineDependingCustomFields::ConfigAuditEvent.where(custom_field_id: field.id).order(:id).last
+      expect([event.status, event.changes_summary, event.affected_values_count]).to eq(['success', "Renamed 'A' to 'C'", 3])
+      expect(flash[:notice]).to eq(I18n.t(:notice_value_renamed))
+      expect(field.reload.possible_values).to eq(['C', 'a', "\u00c1", 'B'])
+    end
+
+    it 'renames a project-only value without a panel when only a value differing in case is used elsewhere' do
+      field = dcf_list_field(values: %w[A a], is_for_all: false, projects: [project])
+      dcf_issue_with_value(project, field, 'A')
+      dcf_issue_with_value(other, field, 'a')
+      patch custom_field_configuration_rename_value_path(project, field), params: { old_value: 'A', new_value: 'C' }
+      expect(response).to redirect_to(custom_field_configuration_field_path(project, field))
+      expect(stored(field)).to eq(%w[C a])
+    end
+  end
 end
