@@ -1,6 +1,6 @@
 # Large lists: work packages
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-36. Decisions: UD-01 to UD-39.
+> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-37. Decisions: UD-01 to UD-39.
 
 ## Purpose
 
@@ -54,6 +54,7 @@ This document cuts the plan into 32 small, reversible work packages (one pull re
 | WP-34 | 0.1.0 (M3) | M | 2, 9 | WP-33 | Core behaviour for required children in bulk edit (UD-10) and server-side confirmation for shared and global fields (UD-23) |
 | WP-35 | 0.1.0 (M3) | S | 8 | WP-34 | '#<id>' cells in the enumeration CSV import (UD-19) |
 | WP-36 | 0.1.0 (M2) | M | 4 | WP-35 | Load the context-menu wizard on demand (UD-13) |
+| WP-37 | 0.1.0 (M3) | M | 1 to 9 | WP-36 and the final reviews | Side-by-side comparison with main: behaviour, speed and server memory |
 
 **Release structure (UD-01, resolved by the owner): two releases.** 0.0.16 is a patch release with WP-01, WP-02, WP-03 and WP-07 (tooling, test hygiene, the two hotfixes). Everything else ships together in one release, 0.1.0, built in three milestones: M1 (WP-04 to WP-06 and WP-08 to WP-14: characterization, rules and format modules, server rules, storage safety), M2 (WP-15 to WP-20: issue-form runtime) and M3 (WP-21 to WP-32: editor, import/export, project pages). WP-14 and WP-20 are milestone checkpoints: full evidence run on one SHA, no version bump, no tag. Every work package stays one small pull request. Wherever a document says '0.1.0 (M1)', '0.1.0 (M2)' or '0.1.0 (M3)', the change ships in release 0.1.0 and lands on the main branch during that milestone.
 
@@ -2757,6 +2758,28 @@ UD-13 (owner): the context menu no longer carries the wizard template and field 
 **Open input from WP-34**: (1) Since WP-34 (UD-10 changed by the owner) `DependingFormatMethods#bulk_edit_tag` is core's `List#bulk_edit_tag` plus the bulk attributes for every field, so a required depending field of the wizard has no '(none)' option; `test/js/fixtures/markup/wizard_template.html` is unchanged by WP-34 (it has no required field) and `runtime_wizard.test.js` W2 removes the middle field's '(none)' in a tweak. The fetched body must keep this: no `__none__` and no `data-dcf-required-none` for required fields (the markup fixture contract refuses the attribute anywhere). (2) In the wizard the clearing cascade stops at a required field: it stays on '(No change)' with the empty hint and the fields below it read it as unchanged; the save then answers per issue (a kept disallowed value refused 'is invalid' with 422, a blank one saved), pinned in `spec/requests/bulk_update_dependencies_spec.rb` 'answers the wizard save of a required ... child on (No change) issue by issue'. (3) `ContextMenuWizardController`'s '__none__' to '' mapping is unchanged and still serves the optional fields' core '(none)'.
 
 **Related decisions and defects**: UD-11, UD-13, UD-37, SD-01
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### WP-37: Side-by-side comparison with main: behaviour, speed and server memory (owner, 2026-11-03)
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M3) | M | 1 to 9 | WP-36 and the final reviews |
+
+**Scope**
+
+Owner request: users must never get a slow Redmine because of this plugin. Compare the plugin from `origin/main` (0.0.15) with this branch side by side, on the same Redmine checkouts (5.1 and 7.0; 6.0 and 6.1 where main supports them) and the same data: a small field set, a medium one, and the large lists of the plan (S1 27 x 5,570 list links, S2 25,000 enumerations, the context-menu and bulk-edit cases).
+
+- Behaviour: the same scenarios in Chromium on both (issue new, edit, show; bulk edit; context menu and wizard; admin custom field form; project values and dependency pages; saves and refusals), screenshots side by side, every difference listed as intended (CHANGELOG line) or as a defect.
+- Server speed: response time per scenario (median and p95 of repeated warm requests, plus the first cold request), SQL query count and SQL time, view rendering time, HTML and JSON response size.
+- Server memory: Ruby object allocations and retained memory per request (GC stats, memory_profiler or an equivalent available on the checkout) and the worker RSS before and after a series of requests, to find leaks and per-request growth.
+- Browser: page load, script execution and long tasks, and the JS heap for the issue form and the editors with the large lists.
+- Report in `docs/perf/` with the method, the machine, the raw numbers and tables per scenario and version; any scenario where the branch is slower than main beyond measurement noise, or uses clearly more memory, is a defect to fix (or a recorded owner decision) before the release. The goal is equal or better everywhere and much faster for large lists.
+
+**Acceptance**
+
+- Report committed; every regression fixed or decided by the owner; no change to behaviour that is not a CHANGELOG line.
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
