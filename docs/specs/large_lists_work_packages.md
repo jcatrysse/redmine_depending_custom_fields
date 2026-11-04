@@ -1,6 +1,6 @@
 # Large lists: work packages
 > Status: plan (spec only, no production code). Spec set: large_lists (see large_lists_README.md).
-> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-37. Decisions: UD-01 to UD-39.
+> Points: 1 to 9. Owner area: delivery. Work packages: WP-01 to WP-38. Decisions: UD-01 to UD-39.
 
 ## Purpose
 
@@ -55,6 +55,7 @@ This document cuts the plan into 32 small, reversible work packages (one pull re
 | WP-35 | 0.1.0 (M3) | S | 8 | WP-34 | '#<id>' cells in the enumeration CSV import (UD-19) |
 | WP-36 | 0.1.0 (M2) | M | 4 | WP-35 | Load the context-menu wizard on demand (UD-13) |
 | WP-37 | 0.1.0 (M3) | M | 1 to 9 | WP-36 and the final reviews | Side-by-side comparison with main: behaviour, speed and server memory |
+| WP-38 | 0.1.0 (M3) | S | 3 | WP-34 | Time entries keep the hidden-child rule on current cores (SD-22) |
 
 **Release structure (UD-01, resolved by the owner): two releases.** 0.0.16 is a patch release with WP-01, WP-02, WP-03 and WP-07 (tooling, test hygiene, the two hotfixes). Everything else ships together in one release, 0.1.0, built in three milestones: M1 (WP-04 to WP-06 and WP-08 to WP-14: characterization, rules and format modules, server rules, storage safety), M2 (WP-15 to WP-20: issue-form runtime) and M3 (WP-21 to WP-32: editor, import/export, project pages). WP-14 and WP-20 are milestone checkpoints: full evidence run on one SHA, no version bump, no tag. Every work package stays one small pull request. Wherever a document says '0.1.0 (M1)', '0.1.0 (M2)' or '0.1.0 (M3)', the change ships in release 0.1.0 and lands on the main branch during that milestone.
 
@@ -2780,6 +2781,29 @@ Owner request: users must never get a slow Redmine because of this plugin. Compa
 **Acceptance**
 
 - Report committed; every regression fixed or decided by the owner; no change to behaviour that is not a CHANGELOG line.
+
+**Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
+
+### WP-38: Time entries keep the hidden-child rule on current cores (SD-22)
+
+| Release | Size | Points | Depends on |
+|---|---|---|---|
+| 0.1.0 (M3) | S | 3 | WP-34 |
+
+**Scope**
+
+Owner decision of 2026-11-03 (SD-22): the current 6.1-stable and 7.0-stable validate only the custom field values a user can see on a time entry (`TimeEntry#validate_custom_field_values` over `editable_custom_field_values(User.current)`), so the plugin's rule for a dependent field the user cannot see or edit (UD-07, WP-09b: a parent change is refused while such a child keeps a value the new parent value does not allow) no longer runs there. Extend the WP-09b check (`lib/redmine_depending_custom_fields/non_editable_dependencies.rb`, today wired for issues and projects through `patches/issue_validation_patch.rb` and `patches/project_validation_patch.rb`) to time entries, so the behaviour is the same on every supported Redmine version whether or not core skips hidden values: the error goes on the parent field with the existing message, a hidden child is never named and its value never disclosed, nothing is cleared, and no check runs twice on cores that still validate every value (no duplicate error). Bulk edit and the context-menu wizard of time entries follow the same rule. The failing example `spec/requests/dcf_issue_flows_spec.rb` (the time-entry UD-07 case) passes on 5.1, 6.0, 6.1 and 7.0 without changing its expectation. Mark SD-22 fixed; CHANGELOG Fixed line with its PC row.
+
+**Files**
+
+- `lib/redmine_depending_custom_fields/non_editable_dependencies.rb`, a time entry validation patch (new or extended) and its registration in `lib/redmine_depending_custom_fields.rb` / `init.rb`
+- specs (requests for time entries, bulk edit; models), `CHANGELOG.md`, docs/specs/*.md
+
+**Acceptance**
+
+- Standard gate green on 5.1, 6.0, 6.1 and 7.0 with the current stable checkouts (the SD-22 example included); npm test
+
+**Related decisions and defects**: UD-07, SD-22
 
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
