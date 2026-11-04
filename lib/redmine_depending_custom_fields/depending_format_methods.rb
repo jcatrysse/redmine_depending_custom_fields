@@ -84,7 +84,9 @@ module RedmineDependingCustomFields
     # allows nothing, a blank or rejected value skips the core check; values
     # the rule keeps still get it (core inclusion stays for copies).
     # Otherwise the core errors come first, plus one 'is invalid' not already
-    # among them.
+    # among them. WP-38: the D1 error of a time entry value the user cannot
+    # see is left to NonEditableDependencies (judged_by_record?), which never
+    # names it; only core 5.1 and 6.0 validate such a value here.
     def validate_custom_value(custom_value)
       cf = custom_value.custom_field
       sanitized = DependencyRules.normalize_values(custom_value.value)
@@ -94,7 +96,9 @@ module RedmineDependingCustomFields
       return super unless state
 
       allowed_empty, dep_errors = DependencyRules.dependency_check(custom_value, state)
-      return dep_errors if allowed_empty && (sanitized.empty? || dep_errors.any?)
+      skip_core = allowed_empty && (sanitized.empty? || dep_errors.any?)
+      dep_errors = [] if dep_errors.any? && NonEditableDependencies.judged_by_record?(custom_value)
+      return dep_errors if skip_core
 
       errors = super
       errors + (dep_errors - errors)

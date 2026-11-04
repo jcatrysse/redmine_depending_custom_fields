@@ -238,7 +238,9 @@ RSpec.describe 'RedmineDependingCustomFields::UsageCalculator exact values (WP-3
   # Every code line of app/ and lib/ that names CustomValue, custom_values or
   # a value key, listed exactly: a new lookup of stored values by value, in
   # any shape or file type, fails here until it goes through value_rows and
-  # a reviewer adds its line.
+  # a reviewer adds its line. Changed by WP-38: the line of
+  # time_entry_validation_patch.rb reads the rows the entry already loaded
+  # (no lookup by value).
   it 'is the only lookup of stored values by value in app/ and lib/ (static)' do
     root = File.expand_path('../..', __dir__)
     pattern = Regexp.union(/\bvalue:/, /\[:value\]/, /\(\s*:value\b/, /\bcustom_values\b/, /\bCustomValue\b/,
@@ -266,6 +268,7 @@ RSpec.describe 'RedmineDependingCustomFields::UsageCalculator exact values (WP-3
       dependency_rules.rb: stored = customized.custom_values.any? { |cv| cv.custom_field_id == field_id && cv.persisted? }
       non_editable_dependencies.rb: def id_set(custom_values)
       non_editable_dependencies.rb: Set.new(custom_values.map(&:custom_field_id))
+      time_entry_validation_patch.rb: saved = entry.custom_values.select(&:persisted?)
     LINES
     expect(hits).to eq(listed), "not listed:\n#{(hits - listed).join("\n")}\nno longer found:\n#{(listed - hits).join("\n")}"
   end

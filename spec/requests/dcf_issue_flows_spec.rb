@@ -419,8 +419,11 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
   # Core Issue validates only editable_custom_field_values of the journal
   # user, so WP-09b adds the check for the other children: a child the user
   # can see (read-only by workflow) gets 'is invalid' under its name, a child
-  # the user cannot see is never named and the error goes on the parent. A
-  # time entry validates every value in core (no plugin check there).
+  # the user cannot see is never named and the error goes on the parent.
+  # Changed by WP-38 (SD-22): a time entry gets the same rule on every
+  # supported core (6.1 and 7.0 skip the values the user cannot see, 5.1 and
+  # 6.0 validate every value); was 'A time entry validates every value in
+  # core (no plugin check there)'.
   # Stored: parent A with the allowed a1; the parent becomes B, which does
   # not allow a1.
   describe 'a child the user cannot edit while the parent changes (UD-07)' do
@@ -510,17 +513,27 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
         TimeEntry.find(entry.id)
       end
 
+      # Changed by WP-38 (SD-22, owner decision of 2026-11-03): the change is
+      # still refused, now with the message on the parent field and the
+      # hidden child never named, on every supported core; was 'is invalid'
+      # under the child name and nothing on the parent (core 5.1 and 6.0
+      # validate every value; 6.1 and 7.0 skip the hidden one, so there the
+      # change saved).
       it 'rejects the change for a child not visible for the user role, in en and de' do
         child.update!(visible: false, role_ids: [other_role.id])
-        messages.each do |locale, message|
+        hidden = { en: 'cannot be changed because a dependent field you cannot see has a value that does not ' \
+                       'match the new value',
+                   de: 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen ' \
+                       'Wert hat, der nicht zum neuen Wert passt' }
+        hidden.each do |locale, message|
           I18n.with_locale(locale) do
             entry = time_entry(parent => 'A', child => 'a1')
             expect(entry.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(child.id)
             entry.custom_field_values = { parent.id.to_s => 'B' }
             expect(entry.valid?).to be(false)
-            expect(entry.errors[child.name]).to eq([message]), locale.to_s
-            # Core validates every time entry value; WP-09b adds nothing here.
-            expect(entry.errors[parent.name]).to eq([]), locale.to_s
+            expect(entry.errors[parent.name]).to eq([message]), locale.to_s
+            expect(entry.errors[child.name]).to eq([]), locale.to_s
+            expect(entry.errors.full_messages.grep(/#{Regexp.escape(child.name)}/)).to eq([]), locale.to_s
           end
         end
       end

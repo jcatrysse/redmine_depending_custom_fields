@@ -5,6 +5,7 @@ require_relative 'lib/redmine_depending_custom_fields/patches/context_menus_cont
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/project_validation_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/time_entry_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/projects_helper_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 require_relative 'lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook'
@@ -73,10 +74,13 @@ context_menu_controller =
   end
 context_menu_controller.prepend RedmineDependingCustomFields::Patches::ContextMenusControllerPatch
 IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch
-# WP-09b (UD-07): Issue and Project are the only customizables that override
-# validate_custom_field_values to skip values the user cannot edit (Redmine
-# 5.1 to 7.0, same constants everywhere). The patches add the dependency
-# check for those values; the other customizables already validate every
-# value and are not patched. A repeated prepend is a no-op.
+# WP-09b (UD-07): Issue and Project override validate_custom_field_values to
+# skip values the user cannot edit (Redmine 5.1 to 7.0, same constants
+# everywhere). WP-38 (SD-22): TimeEntry does so on 6.1 and 7.0, and on 5.1
+# and 6.0 its safe_attributes= drops the values the user cannot see; its
+# patch gives the same result on all of them. The patches add the dependency
+# check for those values; the other customizables validate every value and
+# are not patched. A repeated prepend is a no-op.
 Issue.prepend RedmineDependingCustomFields::Patches::IssueValidationPatch
 Project.prepend RedmineDependingCustomFields::Patches::ProjectValidationPatch
+TimeEntry.prepend RedmineDependingCustomFields::Patches::TimeEntryValidationPatch

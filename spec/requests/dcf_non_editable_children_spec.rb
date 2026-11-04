@@ -10,9 +10,11 @@ require_relative '../rails_helper'
 # name. A child the user cannot see (role-invisible) is never named and its
 # value never shown: one dedicated message on the changed parent field, or
 # on base when the parent is not shown to the user either or its value did
-# not change (a stale default core gives on a copy or a move). Time entries
-# and versions validate every value in core and are not patched; there core
-# names even a hidden child (known exception, UD-07 refinements).
+# not change (a stale default core gives on a copy or a move). Versions and
+# the other customizables validate every value in core and are not patched;
+# there core names even a hidden child (known exception, UD-07 refinements).
+# Changed by WP-38: time entries get the rule too (SD-22,
+# dcf_time_entry_hidden_children_spec.rb); was 'Time entries and versions'.
 #
 # WP-09c (owner, UD-07 refinements): for these children a parent field that
 # is not available on the record does not count as changed (nobody changed
@@ -163,16 +165,19 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
   end
 
   describe 'patch registration' do
-    it 'prepends the check on Issue and Project only, before their own validate_custom_field_values' do
+    # Changed by WP-38 (SD-22): TimeEntry gets its own patch; was 'on Issue
+    # and Project only', with TimeEntry among the classes left to core.
+    it 'prepends the check on Issue, Project and TimeEntry only, before their own validate_custom_field_values' do
       issue_patch = RedmineDependingCustomFields::Patches::IssueValidationPatch
       project_patch = RedmineDependingCustomFields::Patches::ProjectValidationPatch
-      { Issue => issue_patch, Project => project_patch }.each do |klass, patch|
+      time_entry_patch = RedmineDependingCustomFields::Patches::TimeEntryValidationPatch
+      { Issue => issue_patch, Project => project_patch, TimeEntry => time_entry_patch }.each do |klass, patch|
         expect(klass.ancestors.index(patch)).to be < klass.ancestors.index(klass)
         expect(klass.instance_method(:validate_custom_field_values).owner).to eq(patch)
         expect(klass._validate_callbacks.count { |c| c.filter == :validate_custom_field_values }).to eq(1)
       end
-      [TimeEntry, Version, User, Group].each do |klass|
-        expect(klass.ancestors & [issue_patch, project_patch]).to eq([]), klass.name
+      [Version, User, Group].each do |klass|
+        expect(klass.ancestors & [issue_patch, project_patch, time_entry_patch]).to eq([]), klass.name
       end
     end
   end

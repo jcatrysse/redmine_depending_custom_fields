@@ -513,6 +513,31 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       expect([value(allowed, child), value(refused, child)]).to eq(%w[a1 b1])
     end
 
+    # WP-38 (SD-22): a member who sees the parent but not the child. Every
+    # supported core gives this result (5.1 and 6.0 drop the hidden value in
+    # safe_attributes=, 6.1 and 7.0 skip it in their validation). Core's bulk
+    # edit form lists every available time entry field, the hidden one too
+    # (TimeEntry.first.available_custom_fields), so only the errors are
+    # checked for its name.
+    it 'refuses an entry whose hidden child the new parent value does not allow, on the parent field (WP-38)' do
+      parent, child = kit(required: false, type: TimeEntryCustomField)
+      child.update!(visible: false, role_ids: [dcf_create_role(permissions: [:view_time_entries]).id])
+      member = dcf_create_user("te-#{SecureRandom.hex(3)}")
+      dcf_add_member(member, project, dcf_create_role(permissions: [:view_time_entries, :log_time, :edit_time_entries]))
+      as(member)
+      refused = time_entry(parent => 'A', child => 'a1')
+      saved = time_entry(parent => 'A', child => 'b1')
+      bulk_update_entries([refused, saved], parent => 'B')
+
+      expect(response).to have_http_status(200)
+      expect(failure_text).to eq(failed_entries([refused], 2))
+      conflict = I18n.t('activerecord.errors.messages.dcf_hidden_child_conflict')
+      expect(failure_items).to eq(["#{message(TimeEntry, parent, conflict)}: ##{refused.id}"])
+      expect(doc.css('#errorExplanation, .flash').text).not_to include(child.name)
+      expect([value(refused, parent), value(refused, child)]).to eq(%w[A a1])
+      expect(value(saved, parent)).to eq('B')
+    end
+
     it 'clears a required child through (none) only where the parent value allows nothing' do
       parent, child = kit(type: TimeEntryCustomField)
       cleared = time_entry(parent => 'C', child => 'a1')

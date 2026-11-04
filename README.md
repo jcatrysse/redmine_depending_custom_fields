@@ -333,12 +333,17 @@ The copy form in the browser keeps such values too, marked (see above).
 ### Dependent fields you cannot edit
 
 On issues and projects Redmine checks only the custom fields the user may
-edit. The plugin also checks the dependent fields you cannot edit (read-only
-by workflow or hidden for your role), with the same rule for stored values:
+edit, and on time entries Redmine 6.1 and 7.0 check only the fields the user
+can see. The plugin also checks the dependent fields you cannot edit
+(read-only by workflow or hidden for your role; on a time entry, the fields
+you cannot see), with the same rule for stored values and the same result on
+every supported Redmine version:
 
 - A parent change is refused while such a field holds a value the new parent
   value does not allow. This applies to the issue form, the project settings
-  form, bulk edit, the context menu wizard, email and REST updates (HTTP 422).
+  form, the time entry form, bulk edit of issues and time entries, the context
+  menu wizard, the context menu of time entries, email and REST updates
+  (HTTP 422).
 - A field you can see reports "is invalid" under its name. A field you cannot
   see is never named: the error is shown on the parent field, for example
   "Hardware cannot be changed because a dependent field you cannot see has a
@@ -373,10 +378,16 @@ To get such a save through, ask someone who may edit that field to change or
 clear it first, or an administrator to fix a default value the parent value
 does not allow.
 
-On time entries, versions and other objects the plugin adds no such check:
-Redmine itself validates every custom field value there, so such a parent
-change was already refused. Redmine's error there names the dependent field,
-also one that is hidden for your role.
+On versions and other objects the plugin adds no such check: Redmine itself
+validates every custom field value there, so such a parent change was already
+refused. Redmine's error there names the dependent field, also one that is
+hidden for your role.
+
+On Redmine 5.1 and 6.0, Redmine itself removes the values of time entry
+fields hidden for your role when you save a time entry from its form, from
+bulk edit, from its context menu or through REST; Redmine 6.1 and 7.0 keep
+them. The bulk edit form of time entries lists every time entry field, also
+one hidden for your role, as in Redmine.
 
 ### Required radio-style fields
 

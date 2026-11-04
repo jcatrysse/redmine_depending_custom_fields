@@ -69,7 +69,7 @@ In the other documents, "0.1.0 (M1)", "0.1.0 (M2)" and "0.1.0 (M3)" mean: ships 
 | 9 | [`large_lists_i18n_registry.md`](large_lists_i18n_registry.md) | Every new locale key with its owner WP and en/de/fr/nl text |
 | 10 | [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) | Repo-specific quality protocol: roles, gates G1 to G12, commands, `.codex` scripts, test strategy, definition of done |
 | 11 | [`large_lists_work_packages.md`](large_lists_work_packages.md) | WP-01 to WP-36: scope, files, tests, acceptance, rollback, dependency graph |
-| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research and integration: SD-01 to SD-22 tracked separately (SD-01 and SD-13 to SD-16 are security issues, all five fixed; SD-17 fixed by WP-33; SD-18 to SD-21 are in redmine_extended_api; SD-22, time entries skipping the validation of hidden custom fields on the current 6.1-stable and 7.0-stable core, is open for an owner decision), plus the defects fixed inside the plan |
+| 12 | [`large_lists_defects.md`](large_lists_defects.md) | Defects found during research and integration: SD-01 to SD-22 tracked separately (SD-01 and SD-13 to SD-16 are security issues, all five fixed; SD-17 fixed by WP-33; SD-18 to SD-21 are in redmine_extended_api; SD-22, time entries skipping the validation of hidden custom fields on the current 6.1-stable and 7.0-stable core, fixed by WP-38), plus the defects fixed inside the plan |
 | 13 | [`large_lists_review_log.md`](large_lists_review_log.md) | Review lenses, issues and resolutions, critic gaps, remaining risks |
 
 ## Hard rules carried over

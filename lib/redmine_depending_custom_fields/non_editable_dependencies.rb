@@ -27,13 +27,20 @@ module RedmineDependingCustomFields
   # project move, also under an unavailable parent). No state: the user sets
   # are computed at most once per call, and only when a depending value
   # fails.
+  #
+  # WP-38 (SD-22): time entries get the same check (TimeEntryValidationPatch,
+  # with User.current). There editable means visible, so only the hidden
+  # placements occur, and the formats leave the D1 error of a hidden value
+  # to this check on cores that still validate it (judged_by_record?).
   module NonEditableDependencies
     module_function
 
     # +user+ is the user core validates with; nil means User.current, as in
     # core's editable_custom_field_values and visible_custom_field_values.
-    def validate(record, user)
-      failing = failing_values(record)
+    # +values+ are the custom values to judge (WP-38: for a time entry also
+    # the values core dropped, TimeEntryValidationPatch.dropped_values).
+    def validate(record, user, values = record.custom_field_values)
+      failing = failing_values(record, values)
       return if failing.empty?
 
       editable = id_set(record.editable_custom_field_values(user))
@@ -52,14 +59,23 @@ module RedmineDependingCustomFields
       end
     end
 
-    # [custom value, parent state] of each depending value with a parent
-    # that D1 rejects, in custom_field_values order, an unavailable parent
-    # read as unchanged (unchanged_if_unavailable). Values of editable
-    # children are dropped by validate before any placement. The format
-    # check runs in memory; only an unavailable parent costs one memoized
-    # find_parent.
-    def failing_values(record)
-      record.custom_field_values.each_with_object([]) do |custom_value, out|
+    # WP-38: true for a value of a time entry that User.current cannot see.
+    # validate places its D1 error (TimeEntryValidationPatch), so the formats
+    # leave that error out where core still validates such a value (5.1 and
+    # 6.0): one error, never under the child's name. False for any other
+    # record: Issue and Project core validate only the editable values.
+    def judged_by_record?(custom_value)
+      record = custom_value.customized
+      record.is_a?(::TimeEntry) && !custom_value.custom_field.visible_by?(record.project, ::User.current)
+    end
+
+    # [custom value, parent state] of each depending value of +values+ with
+    # a parent that D1 rejects, in their order, an unavailable parent read as
+    # unchanged (unchanged_if_unavailable). Values of editable children are
+    # dropped by validate before any placement. The format check runs in
+    # memory; only an unavailable parent costs one memoized find_parent.
+    def failing_values(record, values)
+      values.each_with_object([]) do |custom_value, out|
         next unless DependencyRules.parent_id(custom_value.custom_field)
 
         state = DependencyRules.parent_state(custom_value.custom_field, record)
