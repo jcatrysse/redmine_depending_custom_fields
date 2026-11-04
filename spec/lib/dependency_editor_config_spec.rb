@@ -224,6 +224,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
         'err_ambiguous_child' => :error_dcf_import_ambiguous_child,
         'err_ambiguous_parent_id' => :error_dcf_import_ambiguous_parent_id,
         'err_ambiguous_child_id' => :error_dcf_import_ambiguous_child_id,
+        'err_unknown_parent_id' => :error_dcf_import_unknown_parent_id,
+        'err_unknown_child_id' => :error_dcf_import_unknown_child_id,
         'err_unterminated_quote' => :error_dcf_import_unterminated_quote,
         'err_bad_quote' => :error_dcf_import_bad_quote,
         'err_too_large' => :error_dcf_import_too_large,
@@ -244,7 +246,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
         'no' => :general_text_No,
         'status' => :field_status
       )
-      expect(config::I18N.size).to eq(102)
+      expect(config::I18N.size).to eq(104)
       expect(config::I18N.values).not_to include(:error_invalid_dependency_payload)
       expect(config::I18N).to be_frozen
       expect(RedmineDependingCustomFields::ClientConfig::I18N.size).to eq(11)

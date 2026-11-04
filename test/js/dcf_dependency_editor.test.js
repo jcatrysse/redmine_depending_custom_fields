@@ -1780,7 +1780,8 @@ test('project mode: import posts source import and import meta without base; no 
     assert.equal(p.fetchCalls.length, 0);
     const en = await E.load('project_enumeration', { variant });
     const eui = preview(en, 'North,Gamma\nSouth,Retired', { header: 'no' });
-    assert.deepEqual(errorItems(eui), [en.t('err_unknown_child', { line: '1', value: 'Gamma' })]);
+    // Changed by WP-35 (review round 1): the Key/Value list message names the '#<id>' form (err_unknown_child_id); was err_unknown_child.
+    assert.deepEqual(errorItems(eui), [en.t('err_unknown_child_id', { line: '1', value: 'Gamma' })]);
     const wui = preview(en, 'South,Retired', { header: 'no' });
     assert.equal(wui.preview.querySelector('.flash.warning li').textContent, en.t('warn_inactive', { line: '1', value: 'Retired' }));
     wui.apply.click();
@@ -1932,8 +1933,13 @@ test('WP-35 enumeration import: #<id> links, ambiguity message names the id way 
     const p = await E.load('admin_enumeration', { variant, tweak: DUP_CHILDREN });
     const ui = preview(p, 'South;#9200004\nSouth;#9200008\nSouth;Alpha\nSouth;#9200099\nSouth;#9200001', { header: 'no' });
     assert.deepEqual(errorItems(ui), [p.t('err_ambiguous_child_id', { line: '3', value: 'Alpha' }),
-      p.t('err_unknown_child', { line: '4', value: '#9200099' }), p.t('err_unknown_child', { line: '5', value: '#9200001' })]);
-    assert.ok(p.t('err_ambiguous_child_id').includes('#<id>'));
+      p.t('err_unknown_child_id', { line: '4', value: '#9200099' }), p.t('err_unknown_child_id', { line: '5', value: '#9200001' })]);
+    for (const key of ['err_ambiguous_parent_id', 'err_ambiguous_child_id', 'err_unknown_parent_id', 'err_unknown_child_id']) {
+      assert.ok(p.t(key).includes('#<id>'), key);
+    }
+    const bad = preview(p, '#9200099;Beta\n#007;Beta', { header: 'no' });
+    assert.deepEqual(errorItems(bad), [p.t('err_unknown_parent_id', { line: '1', value: '#9200099' }),
+      p.t('err_unknown_parent_id', { line: '2', value: '#007' })]);
     assert.ok(p.t('import_help').includes('#<id>'));
     const ok = preview(p, 'South;#9200004\nSouth;#9200008', { header: 'no' });
     assert.deepEqual(errorItems(ok), []);
@@ -1958,8 +1964,8 @@ test('WP-35 enumeration export writes #<id> for ambiguous names only; the list e
 test('WP-35: a cell with markup stays text in the error list; project mode links by #<id>', async () => {
   const p = await E.load('admin_enumeration');
   const ui = preview(p, 'North;#<b>x</b>\n"<img src=x onerror=alert(1)>";Alpha', { header: 'no' });
-  assert.deepEqual(errorItems(ui), [p.t('err_unknown_child', { line: '1', value: '#<b>x</b>' }),
-    p.t('err_unknown_parent', { line: '2', value: '<img src=x onerror=alert(1)>' })]);
+  assert.deepEqual(errorItems(ui), [p.t('err_unknown_child_id', { line: '1', value: '#<b>x</b>' }),
+    p.t('err_unknown_parent_id', { line: '2', value: '<img src=x onerror=alert(1)>' })]);
   assert.equal(p.root.querySelectorAll('b, img').length, 0);
   const q = await E.load('project_enumeration');
   const pui = preview(q, '#9200002;#9200006', { header: 'no' });
@@ -1970,4 +1976,18 @@ test('WP-35: a cell with markup stays text in the error list; project mode links
   assert.deepEqual([payload.source, payload.import, payload.base], ['import', { mode: 'merge', rows: 1 }, undefined]);
   assert.ok(payload.value_dependencies['9200002'].includes(9200006));
   assert.equal(q.fetchCalls.length, 0);
+});
+
+test('WP-35: List fields keep the plain unknown and ambiguity messages; #12 is a plain value there', async () => {
+  for (const variant of VARIANTS) {
+    const p = await E.load('admin_list', { variant });
+    const ui = preview(p, '#12;Paris\nBelgium;#12', { header: 'no', addMissing: false });
+    assert.deepEqual(errorItems(ui), [p.t('err_unknown_parent', { line: '1', value: '#12' }),
+      p.t('err_unknown_child', { line: '2', value: '#12' })]);
+    assert.ok(!p.t('err_unknown_parent').includes('#<id>'));
+    assert.ok(!p.t('err_unknown_child').includes('#<id>'));
+    const q = await E.load('project_list', { variant });
+    const qui = preview(q, 'Belgium;#12', { header: 'no' });
+    assert.deepEqual(errorItems(qui), [q.t('err_unknown_child', { line: '1', value: '#12' })]);
+  }
 });

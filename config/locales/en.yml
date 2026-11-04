@@ -183,6 +183,8 @@ en:
   error_dcf_import_ambiguous_child: "Line %{line}: \"%{value}\" matches several child values."
   error_dcf_import_ambiguous_parent_id: "Line %{line}: \"%{value}\" matches several parent values. Write #<id> instead to pick one."
   error_dcf_import_ambiguous_child_id: "Line %{line}: \"%{value}\" matches several child values. Write #<id> instead to pick one."
+  error_dcf_import_unknown_parent_id: "Line %{line}: unknown parent value \"%{value}\". Write the name or the #<id> of a parent value."
+  error_dcf_import_unknown_child_id: "Line %{line}: unknown child value \"%{value}\". Write the name or the #<id> of a child value."
   error_dcf_import_unterminated_quote: "Line %{line}: a quoted value is not closed."
   error_dcf_import_bad_quote: "Line %{line}: unexpected text after a closing quote."
   error_dcf_import_too_large: "The input is too large (maximum %{max})."

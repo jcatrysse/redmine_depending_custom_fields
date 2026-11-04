@@ -183,6 +183,8 @@ de:
   error_dcf_import_ambiguous_child: "Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten."
   error_dcf_import_ambiguous_parent_id: "Zeile %{line}: „%{value}“ passt zu mehreren übergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen."
   error_dcf_import_ambiguous_child_id: "Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen."
+  error_dcf_import_unknown_parent_id: "Zeile %{line}: unbekannter übergeordneter Wert „%{value}“. Geben Sie den Namen oder die #<id> eines übergeordneten Werts an."
+  error_dcf_import_unknown_child_id: "Zeile %{line}: unbekannter untergeordneter Wert „%{value}“. Geben Sie den Namen oder die #<id> eines untergeordneten Werts an."
   error_dcf_import_unterminated_quote: "Zeile %{line}: ein Wert in Anführungszeichen wird nicht geschlossen."
   error_dcf_import_bad_quote: "Zeile %{line}: unerwarteter Text nach einem schließenden Anführungszeichen."
   error_dcf_import_too_large: "Die Eingabe ist zu groß (höchstens %{max})."

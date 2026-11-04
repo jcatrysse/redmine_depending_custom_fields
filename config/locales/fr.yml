@@ -183,6 +183,8 @@ fr:
   error_dcf_import_ambiguous_child: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants."
   error_dcf_import_ambiguous_parent_id: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs parentes. Indiquez plutôt #<id> pour en choisir une."
   error_dcf_import_ambiguous_child_id: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants. Indiquez plutôt #<id> pour en choisir une."
+  error_dcf_import_unknown_parent_id: "Ligne %{line} : valeur parente inconnue « %{value} ». Indiquez le nom ou le #<id> d'une valeur parente."
+  error_dcf_import_unknown_child_id: "Ligne %{line} : valeur enfant inconnue « %{value} ». Indiquez le nom ou le #<id> d'une valeur enfant."
   error_dcf_import_unterminated_quote: "Ligne %{line} : une valeur entre guillemets n'est pas fermée."
   error_dcf_import_bad_quote: "Ligne %{line} : texte inattendu après un guillemet fermant."
   error_dcf_import_too_large: "Les données sont trop volumineuses (maximum %{max})."

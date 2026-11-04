@@ -1497,6 +1497,9 @@
     this.applyButton.disabled = !plan.ok;
   };
 
+  // The match errors whose Key/Value list text also names the '#<id>' form.
+  var ID_HINT_CODES = ['unknown_parent', 'unknown_child', 'ambiguous_parent', 'ambiguous_child'];
+
   // One line error or warning as text (%{name} replaced once).
   Editor.prototype.lineText = function (entry, key) {
     var vars = {};
@@ -1504,8 +1507,8 @@
     if (entry.count !== undefined) vars.count = this.n(entry.count);
     if (entry.max !== undefined) vars.max = this.n(entry.max);
     if (entry.value !== undefined) vars.value = shorten(entry.value);
-    if (!key && this.kind === 'enumeration' && (entry.code === 'ambiguous_parent' || entry.code === 'ambiguous_child')) {
-      key = 'err_' + entry.code + '_id'; // the '#<id>' way out exists for Key/Value lists only (UD-19)
+    if (!key && this.kind === 'enumeration' && ID_HINT_CODES.indexOf(entry.code) !== -1) {
+      key = 'err_' + entry.code + '_id'; // the '#<id>' form exists for Key/Value lists only (UD-19)
     }
     return this.t(key || 'err_' + entry.code, vars);
   };

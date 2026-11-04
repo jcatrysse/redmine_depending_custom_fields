@@ -84,9 +84,9 @@ This document is the single source of truth for every locale key that the large_
 | WP-29 | 0.1.0 (M3) | project | 4 | `notice_values_sorted`, `label_dcf_sort_az`, `label_dcf_sort_za`, `text_dcf_sort_confirm` |  |
 | WP-30 | 0.1.0 (M3) | project | 1 | `text_dcf_page_scope_save` |  |
 | WP-31 | 0.1.0 (M3) | project | 3 | `error_dcf_value_length`, `label_dcf_project_storage_ceiling`, `text_dcf_project_storage_ceiling_info` |  |
-| WP-35 | 0.1.0 (M3) | editor (import) | 2 | `error_dcf_import_ambiguous_parent_id`, `error_dcf_import_ambiguous_child_id` | also extends `DependencyEditorConfig::I18N` (100 to 102 keys); `text_dcf_import_help` text changed (section 10) |
+| WP-35 | 0.1.0 (M3) | editor (import) | 4 | `error_dcf_import_ambiguous_parent_id`, `error_dcf_import_ambiguous_child_id`, `error_dcf_import_unknown_parent_id`, `error_dcf_import_unknown_child_id` | also extends `DependencyEditorConfig::I18N` (100 to 104 keys); `text_dcf_import_help` text changed (section 10) |
 
-Totals: 12 new keys in 0.1.0 (M1), 10 in 0.1.0 (M2), 107 in 0.1.0 (M3) (129 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
+Totals: 12 new keys in 0.1.0 (M1), 10 in 0.1.0 (M2), 109 in 0.1.0 (M3) (131 in all); one existing key removed in 0.1.0 (M3) (section 9). WP-02 (0.0.16) adds no key: it owns the parity spec, the allowlist (section 6) and the `label_default_value` fix (section 8.1).
 
 ## 4. Registry table
 
@@ -215,6 +215,8 @@ One row per key. Keys under `activerecord.errors.messages.` are nested in YAML a
 | `error_dcf_import_ambiguous_child` | WP-26 | 0.1.0 (M3) | editor import/export panel (JS `err_ambiguous_child`) | Line %{line}: "%{value}" matches several child values. | Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten. | Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants. | Regel %{line}: "%{value}" komt overeen met meerdere onderliggende waarden. |
 | `error_dcf_import_ambiguous_parent_id` | WP-35 | 0.1.0 (M3) | editor import panel, Key/Value list fields only (JS `err_ambiguous_parent_id`) | Line %{line}: "%{value}" matches several parent values. Write #<id> instead to pick one. | Zeile %{line}: „%{value}“ passt zu mehreren übergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen. | Ligne %{line} : « %{value} » correspond à plusieurs valeurs parentes. Indiquez plutôt #<id> pour en choisir une. | Regel %{line}: "%{value}" komt overeen met meerdere bovenliggende waarden. Geef in plaats daarvan #<id> op om er een te kiezen. |
 | `error_dcf_import_ambiguous_child_id` | WP-35 | 0.1.0 (M3) | editor import panel, Key/Value list fields only (JS `err_ambiguous_child_id`) | Line %{line}: "%{value}" matches several child values. Write #<id> instead to pick one. | Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen. | Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants. Indiquez plutôt #<id> pour en choisir une. | Regel %{line}: "%{value}" komt overeen met meerdere onderliggende waarden. Geef in plaats daarvan #<id> op om er een te kiezen. |
+| `error_dcf_import_unknown_parent_id` | WP-35 | 0.1.0 (M3) | editor import panel, Key/Value list fields only (JS `err_unknown_parent_id`) | Line %{line}: unknown parent value "%{value}". Write the name or the #<id> of a parent value. | Zeile %{line}: unbekannter übergeordneter Wert „%{value}“. Geben Sie den Namen oder die #<id> eines übergeordneten Werts an. | Ligne %{line} : valeur parente inconnue « %{value} ». Indiquez le nom ou le #<id> d'une valeur parente. | Regel %{line}: onbekende bovenliggende waarde "%{value}". Geef de naam of de #<id> van een bovenliggende waarde op. |
+| `error_dcf_import_unknown_child_id` | WP-35 | 0.1.0 (M3) | editor import panel, Key/Value list fields only (JS `err_unknown_child_id`) | Line %{line}: unknown child value "%{value}". Write the name or the #<id> of a child value. | Zeile %{line}: unbekannter untergeordneter Wert „%{value}“. Geben Sie den Namen oder die #<id> eines untergeordneten Werts an. | Ligne %{line} : valeur enfant inconnue « %{value} ». Indiquez le nom ou le #<id> d'une valeur enfant. | Regel %{line}: onbekende onderliggende waarde "%{value}". Geef de naam of de #<id> van een onderliggende waarde op. |
 | `error_dcf_import_unterminated_quote` | WP-26 | 0.1.0 (M3) | editor import/export panel (JS `err_unterminated_quote`) | Line %{line}: a quoted value is not closed. | Zeile %{line}: ein Wert in Anführungszeichen wird nicht geschlossen. | Ligne %{line} : une valeur entre guillemets n'est pas fermée. | Regel %{line}: een waarde tussen aanhalingstekens wordt niet afgesloten. |
 | `error_dcf_import_bad_quote` | WP-26 | 0.1.0 (M3) | editor import/export panel (JS `err_bad_quote`) | Line %{line}: unexpected text after a closing quote. | Zeile %{line}: unerwarteter Text nach einem schließenden Anführungszeichen. | Ligne %{line} : texte inattendu après un guillemet fermant. | Regel %{line}: onverwachte tekst na een afsluitend aanhalingsteken. |
 | `error_dcf_import_too_large` | WP-26 | 0.1.0 (M3) | editor import/export panel (JS `err_too_large`) | The input is too large (maximum %{max}). | Die Eingabe ist zu groß (höchstens %{max}). | Les données sont trop volumineuses (maximum %{max}). | De invoer is te groot (maximaal %{max}). |
@@ -275,7 +277,7 @@ Values that are intentionally identical to `en` in a given locale. The WP-02 par
 | nl | `text_dcf_live_message` | %{field}: %{message} | placeholders and a colon only | WP-18 (pre-listed by WP-02) |
 | nl | `label_dcf_tab_char` | Tab | same word in Dutch | WP-26 (pre-listed by WP-02) |
 
-No other key of section 4 is identical to `en` in any locale (checked over all 129 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
+No other key of section 4 is identical to `en` in any locale (checked over all 131 rows). fr `text_dcf_live_message` differs from en (space before the colon) and needs no entry.
 
 ## 7. Keys that must NOT be added
 
@@ -342,7 +344,7 @@ None. No design of the plan changes the text of an existing plugin key. `field_p
 
 No other existing key is removed. `label_dcf_default` stays (`show.html.erb:157`). The admin matrix partials `_dependencies_matrix.html.erb` and `_default_dependencies.html.erb` (deleted by WP-25) use no plugin key other than the `label_default_value` call fixed in 8.1.
 
-Key count per locale (flattened, nested keys included): 74 in 0.0.16; 86 in 0.1.0 (M1) (+12); 96 in 0.1.0 (M2) (+10); 202 in 0.1.0 (M3) (+107, -1), in en, de, fr and nl (WP-32 measured the M1 and M2 checkpoints 2324ad9 and 63f8dcb and HEAD; WP-32 adds no key).
+Key count per locale (flattened, nested keys included): 74 in 0.0.16; 86 in 0.1.0 (M1) (+12); 96 in 0.1.0 (M2) (+10); 204 in 0.1.0 (M3) (+109, -1), in en, de, fr and nl (WP-32 measured the M1 and M2 checkpoints 2324ad9 and 63f8dcb and HEAD; WP-32 adds no key).
 
 ## 10. Text decisions taken in this registry
 

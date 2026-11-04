@@ -186,8 +186,10 @@ administration form and on the project dependency page alike:
   reported as ambiguous and are not linked until the file names one of them
   by `#<id>`; the export writes `#<id>` for such names, so an exported file
   imports again unchanged. Other forms (`# 12`, `#012`, `#12a`) and the ids
-  of other fields are reported as unknown values; List fields keep `#12` as
-  a plain value. A link to an inactive entry is imported with a warning.
+  of other fields are reported as unknown values; for Key/Value list fields
+  the unknown and ambiguous value messages name the `#<id>` form. List
+  fields keep `#12` as a plain value. A link to an inactive entry is
+  imported with a warning.
 - 'Add missing child values to the possible values' is offered on the
   administration form for `List (depending)` fields only; it adds the child
   values the field does not have yet.
