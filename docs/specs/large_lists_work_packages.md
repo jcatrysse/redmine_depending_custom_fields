@@ -2806,6 +2806,8 @@ Owner decision of 2026-11-03 (SD-22): the current 6.1-stable and 7.0-stable vali
 
 **Related decisions and defects**: UD-07, SD-22
 
+- Own verification of the orchestrator on b354bc8 (covers the OpenAI triage spec fixes of ce7dfdf as well): test_matrix.sh rspec, js, lint `2756 examples, 0 failures` on 5.1, 6.0, 6.1 and 7.0 (the SD-22 example green on the current 6.1-stable and 7.0-stable), JS 546/546, lint SYNTAX/COMPAT/RATCHET PASS, system specs 27/27 on 5.1 and 7.0.
+
 **Definition of done**: the per-WP report of [`large_lists_quality_protocol.md`](large_lists_quality_protocol.md) (sections 1 to 9) with observed evidence for every applicable gate.
 
 **Delivered (decisions taken during implementation)**
