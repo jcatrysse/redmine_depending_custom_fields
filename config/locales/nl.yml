@@ -145,7 +145,7 @@ nl:
 
   # CSV-import en -export (WP-26, DependencyEditorConfig::I18N)
   label_dcf_import_links: "Koppelingen importeren (CSV)"
-  text_dcf_import_help: "Eén koppeling per regel: eerst de bovenliggende waarde, dan de onderliggende waarde, gescheiden door een puntkomma, een komma of een tab. Hoofdletters worden bij het vergelijken genegeerd; sleutel/waarde-lijsten worden op naam vergeleken. Er wordt pas iets opgeslagen wanneer u het formulier opslaat."
+  text_dcf_import_help: "Eén koppeling per regel: eerst de bovenliggende waarde, dan de onderliggende waarde, gescheiden door een puntkomma, een komma of een tab. Hoofdletters worden bij het vergelijken genegeerd; sleutel/waarde-lijsten worden op naam of op #<id> vergeleken, bijvoorbeeld #12 (de export schrijft #<id> voor niet-unieke namen). Er wordt pas iets opgeslagen wanneer u het formulier opslaat."
   label_dcf_import_paste: "Regels plakken"
   label_dcf_import_file: "Of kies een bestand"
   text_dcf_import_file_used: "Het gekozen bestand wordt gebruikt in plaats van de geplakte regels."
@@ -181,6 +181,8 @@ nl:
   error_dcf_import_unknown_child: "Regel %{line}: onbekende onderliggende waarde \"%{value}\"."
   error_dcf_import_ambiguous_parent: "Regel %{line}: \"%{value}\" komt overeen met meerdere bovenliggende waarden."
   error_dcf_import_ambiguous_child: "Regel %{line}: \"%{value}\" komt overeen met meerdere onderliggende waarden."
+  error_dcf_import_ambiguous_parent_id: "Regel %{line}: \"%{value}\" komt overeen met meerdere bovenliggende waarden. Geef in plaats daarvan #<id> op om er een te kiezen."
+  error_dcf_import_ambiguous_child_id: "Regel %{line}: \"%{value}\" komt overeen met meerdere onderliggende waarden. Geef in plaats daarvan #<id> op om er een te kiezen."
   error_dcf_import_unterminated_quote: "Regel %{line}: een waarde tussen aanhalingstekens wordt niet afgesloten."
   error_dcf_import_bad_quote: "Regel %{line}: onverwachte tekst na een afsluitend aanhalingsteken."
   error_dcf_import_too_large: "De invoer is te groot (maximaal %{max})."

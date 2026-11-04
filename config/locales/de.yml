@@ -145,7 +145,7 @@ de:
 
   # CSV-Import und -Export (WP-26, DependencyEditorConfig::I18N)
   label_dcf_import_links: "Verknüpfungen importieren (CSV)"
-  text_dcf_import_help: "Eine Verknüpfung pro Zeile: zuerst der übergeordnete, dann der untergeordnete Wert, getrennt durch Semikolon, Komma oder Tabulator. Groß- und Kleinschreibung wird beim Abgleich ignoriert; Schlüssel/Wert-Listen werden über den Namen abgeglichen. Gespeichert wird erst, wenn Sie das Formular speichern."
+  text_dcf_import_help: "Eine Verknüpfung pro Zeile: zuerst der übergeordnete, dann der untergeordnete Wert, getrennt durch Semikolon, Komma oder Tabulator. Groß- und Kleinschreibung wird beim Abgleich ignoriert; Schlüssel/Wert-Listen werden über den Namen oder über #<id> abgeglichen, zum Beispiel #12 (der Export schreibt #<id> bei nicht eindeutigen Namen). Gespeichert wird erst, wenn Sie das Formular speichern."
   label_dcf_import_paste: "Zeilen einfügen"
   label_dcf_import_file: "Oder eine Datei wählen"
   text_dcf_import_file_used: "Die gewählte Datei wird anstelle der eingefügten Zeilen verwendet."
@@ -181,6 +181,8 @@ de:
   error_dcf_import_unknown_child: "Zeile %{line}: unbekannter untergeordneter Wert „%{value}“."
   error_dcf_import_ambiguous_parent: "Zeile %{line}: „%{value}“ passt zu mehreren übergeordneten Werten."
   error_dcf_import_ambiguous_child: "Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten."
+  error_dcf_import_ambiguous_parent_id: "Zeile %{line}: „%{value}“ passt zu mehreren übergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen."
+  error_dcf_import_ambiguous_child_id: "Zeile %{line}: „%{value}“ passt zu mehreren untergeordneten Werten. Geben Sie stattdessen #<id> an, um einen auszuwählen."
   error_dcf_import_unterminated_quote: "Zeile %{line}: ein Wert in Anführungszeichen wird nicht geschlossen."
   error_dcf_import_bad_quote: "Zeile %{line}: unerwarteter Text nach einem schließenden Anführungszeichen."
   error_dcf_import_too_large: "Die Eingabe ist zu groß (höchstens %{max})."

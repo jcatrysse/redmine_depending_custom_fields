@@ -51,7 +51,7 @@ Paths: `$S` = `<planning scratch space, not part of the repository>`. The plugin
 | UX-10 | G4 icon rule and screenshots |
 | SP-06 | 2.5 S4 escaped flash interpolations in `translate_error(error_or_key)`, called as `translate_error(e)` (gap 4), G5 spec |
 | SP-07 | section 11, reclassified as a security defect (SD-01, UD-03) with a schedule; G5 pinning spec |
-| BC-14 | section 9 upgrade-notes register UN-01..UN-70 (with final WP ids, releases and compat PC ids), G9 checks it; version targets |
+| BC-14 | section 9 upgrade-notes register UN-01..UN-71 (with final WP ids, releases and compat PC ids), G9 checks it; version targets |
 | Consolidation (critic gaps 1, 5, 8, 10, 12, 15; UD-32 resolved) | consolidation table at the top; 2.2 to 2.7, G3, G5, G7, G8, G11, 3.13, 7, 8, 10 |
 
 ## 1. Evidence collected for this design
@@ -931,6 +931,7 @@ Every change an existing 0.0.15 user can notice has one CHANGELOG line. G9 check
 | UN-68 | The admin form of a List (depending) field without values offers the CSV import with 'Add missing child values' ticked (part of the new import, UN-29) | C | WP-33 (0.1.0 (M3)) | PC-75 |
 | UN-69 | Required dependent fields in bulk edit and the context-menu wizard offer no "(none)", as core (UD-10 changed by the owner on 2026-11-02), and are not cleared when the parent is set to "(none)" or to a value that allows nothing; observed per issue: a kept disallowed value is refused 'is invalid', a blank one is saved | C | WP-34 (0.1.0 (M3)) | PC-76 |
 | UN-70 | A dependency save (editor save, replace import, deprecated nested params) and Sort A-Z / Z-A of a field shared with other projects or global need the server-side confirmation (UD-23 changed by the owner on 2026-11-02); scripts post confirm=1 | C | WP-34 (0.1.0 (M3)) | PC-77 |
+| UN-71 | The CSV import of Key/Value list fields accepts '#<id>' cells (UD-19 changed by the owner on 2026-11-02): an exact id of a value of that field first, then the name; other forms and ids of other fields are unknown values; the export writes '#<id>' for ambiguous names; List fields are unchanged | A | WP-35 (0.1.0 (M3)) | PC-79 |
 
 Security line (separately tracked as SD-01, section 11; UN-58, PC-44): the context-menu wizard save writes read-only and role-hidden fields. Recommended as its own pull request merged before tagging 0.0.16 (UD-03); it is merged before 0.0.16 is tagged (UD-03 resolved) and therefore long before 0.1.0, the release that ships point 1. The 0.1.0 Security line (UN-66, PC-73, owner K6 of 2026-11-02) documents the SD-16 fix of WP-28: the project confirmation panel names a dependent field only under the WP-12 rule and counts the others; WP-33 added it to section 3 and the CHANGELOG.
 

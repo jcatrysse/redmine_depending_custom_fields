@@ -13,7 +13,7 @@ require_relative '../rails_helper'
 RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
   fixtures :users
 
-  golden_names = %w[clear enumeration_save import_merge import_replace list_save tricky_values]
+  golden_names = %w[clear enumeration_save import_merge import_merge_ids import_replace list_save tricky_values]
 
   let(:payload) { RedmineDependingCustomFields::DependencyPayload }
   let(:rules) { RedmineDependingCustomFields::DependencyRules }
@@ -59,6 +59,7 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
   def contract_fields(name)
     parent, child = case name
                     when 'enumeration_save' then enumeration_fields
+                    when 'import_merge_ids' then enumeration_fields(duplicate: true)
                     when 'tricky_values' then list_fields(tricky_parents, tricky_children, false)
                     when 'import_replace' then list_fields(countries, cities, true)
                     else list_fields(countries, cities, false)
@@ -78,14 +79,15 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
 
   # Entries through dcf_fixture_record, parent first, so their ids are the
   # golden's (9_200_001 and up, creation order is position order).
-  def enumeration_fields
+  # duplicate: WP-35, the fourth product is a second, inactive Alpha (9_200_007).
+  def enumeration_fields(duplicate: false)
     parent = enum_field('enumeration', nil, false, [['North', true], ['South', true], ['Old region', false]])
     child = enum_field('depending_enumeration', parent, true,
-                       [['Alpha', true], ['Beta', true], ['Gamma', true], ['Retired', false]])
+                       [['Alpha', true], ['Beta', true], ['Gamma', true], [duplicate ? 'Alpha' : 'Retired', false]])
     expect(rules.value_options(parent)).to eq([['9200001', 'North', true], ['9200002', 'South', true],
                                                ['9200003', 'Old region', false]])
     expect(rules.value_options(child)).to eq([['9200004', 'Alpha', true], ['9200005', 'Beta', true],
-                                              ['9200006', 'Gamma', true], ['9200007', 'Retired', false]])
+                                              ['9200006', 'Gamma', true], ['9200007', duplicate ? 'Alpha' : 'Retired', false]])
     [parent, child]
   end
 
@@ -119,7 +121,7 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
     put "/custom_fields/#{field.id}", params: { custom_field: { dependencies_json: raw } }
   end
 
-  it 'finds exactly the six goldens' do
+  it 'finds exactly the seven goldens' do
     names = Dir[File.join(golden_dir, '*.json')].map { |path| File.basename(path, '.json') }.sort
     expect(names).to eq(golden_names)
   end
@@ -137,7 +139,7 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
       if name.start_with?('import_')
         expect(result.source).to eq('import')
         expect(result.import.keys).to eq(%w[mode rows])
-        expect(result.import['mode']).to eq(name.delete_prefix('import_'))
+        expect(result.import['mode']).to eq(name.delete_prefix('import_').delete_suffix('_ids'))
       else
         expect([result.source, result.import]).to eq(['editor', nil])
       end
@@ -188,6 +190,9 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
 
     it 'refuses each golden with a well-formed base that is not the stored digest (dcf_stale_dependencies)' do
       golden_names.each do |name|
+        # WP-35: two goldens use the fixed enumeration ids 9_200_001 and up in one example
+        CustomFieldEnumeration.delete_all
+        @dcf_fixture_counters = nil
         _parent, child = contract_fields(name)
         expect(payload.stored_digest(CustomField.find(child.id))).not_to eq(placeholder)
         raw_before = raw_store(child)
@@ -264,7 +269,7 @@ RSpec.describe 'Dependency payload contract (WP-23)', type: :request do
         if name.start_with?('import_')
           expect(after['source']).to eq('import')
           expect(after['import']).to eq(JSON.parse(raw)['import'])
-          expect(after['import']['mode']).to eq(name.delete_prefix('import_'))
+          expect(after['import']['mode']).to eq(name.delete_prefix('import_').delete_suffix('_ids'))
         else
           expect(after['source']).to eq('editor')
           expect(after).not_to have_key('import')

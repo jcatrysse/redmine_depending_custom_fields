@@ -866,7 +866,8 @@ const REGIONS = M.ValueList.fromWire([{ key: '9200001', label: 'North' }, { key:
 const PRODUCTS = (extra) => M.ValueList.fromWire([{ key: '9200004', label: 'Alpha' }, { key: '9200005', label: 'Beta' },
   { key: '9200006', label: 'Gamma' }, { key: '9200007', label: 'Retired', active: false }].concat(extra || []));
 
-test('planImport: enumerations by name only, inactive included, duplicates ambiguous, no #id syntax (UD-19)', () => {
+// Changed by WP-35 (UD-19 changed 2026-11-02): '#<id>' resolves for enumerations; was 'by name only, no #id syntax'.
+test('planImport: enumerations by name, inactive included, duplicates ambiguous, #<id> resolves (UD-19)', () => {
   const C = PRODUCTS([{ key: '9200008', label: 'Alpha', active: false }, { key: '9200009', label: 'Beta' },
     { key: '9200010', label: '12' }, { key: '12', label: 'Twelve' }]);
   const opts = { kind: 'enumeration', parentName: 'Region', childName: 'Product', header: 'no' };
@@ -882,9 +883,9 @@ test('planImport: enumerations by name only, inactive included, duplicates ambig
   assert.deepEqual(p.pairs.map((x) => [x.parent, x.child]), [['9200001', '9200007'], ['9200003', '9200006']]);
   assert.equal(p.ok, true);
   p = run('North;#9200004\nNorth;9200004\nnorth;GAMMA');
-  assert.deepEqual(p.errors, [{ line: 1, code: 'unknown_child', value: '#9200004' },
-    { line: 2, code: 'unknown_child', value: '9200004' }]);
+  assert.deepEqual(p.errors, [{ line: 2, code: 'unknown_child', value: '9200004' }]);
   assert.deepEqual(Object.keys(p.errors[0]).sort(), ['code', 'line', 'value']);
+  assert.deepEqual(p.pairs.map((x) => [x.parent, x.child]), [['9200001', '9200004'], ['9200001', '9200006']]);
   p = run('North;12');
   assert.deepEqual(p.pairs.map((x) => x.child), ['9200010']);
   p = run('North;Zeta', { addMissing: true });
@@ -1303,4 +1304,190 @@ test('scale: parse + plan + apply + serialize for 27 x 5,570 under 500 ms, S1-fu
   assert.ok(s1Ms < 500, `S1 ${s1Ms} ms`);
   assert.ok(fullMs < 4500, `S1-full ${fullMs} ms`);
   assert.ok(csvMs < 2000, `buildCsv ${csvMs} ms`);
+});
+
+// ---------------------------------------------------------------- WP-35 '#<id>' cells
+// UD-19 (changed 2026-11-02): Key/Value list cells '#<id>' resolve by id first
+// (own field only, active or inactive), then by name; export writes '#<id>'
+// only for ambiguous names. List fields keep '#12' as a plain value.
+
+const ENUM = { kind: 'enumeration', header: 'no' };
+const idPlan = (text, P, C, extra) => plan(text, null, P || REGIONS, C || PRODUCTS(), Object.assign({}, ENUM, extra || {}));
+const DUP = () => PRODUCTS([{ key: '9200008', label: 'Alpha', active: false }]);
+
+test('WP-35: id forms are exactly #[1-9][0-9]* on the cell; everything else falls to name matching and is unknown', () => {
+  const C = M.ValueList.fromWire([{ key: '7', label: 'Seven' }, { key: '12', label: 'Twelve' },
+    { key: '9223372036854775807', label: 'Max' }]);
+  const P = list(['p']);
+  const resolved = (cell) => idPlan('p;' + cell, P, C).pairs.map((x) => x.child);
+  assert.deepEqual(resolved('#7'), ['7']);
+  assert.deepEqual(resolved('#12'), ['12']);
+  assert.deepEqual(resolved('#9223372036854775807'), ['9223372036854775807']);
+  ['#007', '#0', '#', '# 12', '#12a', '#-1', '#+1', '#12.0', '#１２', '#٣', '#9223372036854775808',
+    '#99999999999999999999', '#1 2', '12', '##12'].forEach((cell) => {
+    const p = idPlan('p;"' + cell + '"', P, C);
+    assert.deepEqual(p.errors, [{ line: 1, code: 'unknown_child', value: cell }], cell);
+    assert.deepEqual(p.pairs, [], cell);
+  });
+  // a trimmed unquoted cell and a quoted one are the same id
+  assert.deepEqual(idPlan('p; #12 \np;"#12"', P, C).pairs.map((x) => x.child), ['12']);
+  assert.equal(idPlan('p; #12 \np;"#12"', P, C).duplicates, 1);
+  assert.deepEqual(codes(idPlan('p;"#12 "', P, C).errors), [[1, 'unknown_child']]);
+  // a value literally named like a malformed form still matches by name
+  const named = M.ValueList.fromWire([{ key: '5', label: '#007' }, { key: '6', label: '# 12' }]);
+  assert.deepEqual(idPlan('p;#007\np;"# 12"', P, named).pairs.map((x) => x.child), ['5', '6']);
+});
+
+test('WP-35: matching order, id first then name; the scope is the enumeration kind (UD-19)', () => {
+  const both = M.ValueList.fromWire([{ key: '12', label: 'Twelve' }, { key: '9', label: '#12' }]);
+  const nameOnly = M.ValueList.fromWire([{ key: '9', label: '#12' }, { key: '3', label: 'Three' }]);
+  const neither = M.ValueList.fromWire([{ key: '3', label: 'Three' }]);
+  const P = list(['p']);
+  assert.deepEqual(idPlan('p;#12', P, both).pairs.map((x) => x.child), ['12']);
+  assert.deepEqual(idPlan('p;#12', P, nameOnly).pairs.map((x) => x.child), ['9']);
+  assert.deepEqual(codes(idPlan('p;#12', P, neither).errors), [[1, 'unknown_child']]);
+  // ValueList.match: one item for an id hit, [] for unknown; no kind, no ids
+  assert.deepEqual(both.match('#12', 'enumeration').map((i) => i.key), ['12']);
+  assert.deepEqual(both.match('#12').map((i) => i.key), ['9']);
+  assert.deepEqual(neither.match('#12', 'enumeration'), []);
+  // kind list: '#12' is a plain value, also with addMissing; a key '12' is no id
+  const keys = list(['12', 'x']);
+  let p = plan('p;#12', null, P, keys, { kind: 'list', header: 'no' });
+  assert.deepEqual(codes(p.errors), [[1, 'unknown_child']]);
+  p = plan('p;#12', null, P, keys, { kind: 'list', header: 'no', addMissing: true });
+  assert.deepEqual([p.errors, p.newValues, p.pairs.map((x) => x.child)], [[], ['#12'], ['#12']]);
+  p = plan('p;#12', null, P, list(['#12', '12']), { kind: 'list', header: 'no' });
+  assert.deepEqual(p.pairs.map((x) => x.child), ['#12']);
+  p = plan('p;#12', null, P, list(['#12', '12']), { header: 'no' });
+  assert.deepEqual(p.pairs.map((x) => x.child), ['#12']);
+  // the parent side: id first, name second, list parents unchanged
+  const parents = M.ValueList.fromWire([{ key: '12', label: 'Twelve' }, { key: '9', label: '#12' }]);
+  assert.deepEqual(idPlan('#12;Alpha', parents).pairs.map((x) => x.parent), ['12']);
+  assert.deepEqual(plan('#12;a', null, parents, list(['a']), { kind: 'list', header: 'no' }).pairs.map((x) => x.parent), ['9']);
+});
+
+test('WP-35: ids of other fields, unknown ids and malformed forms are plain unknown values on both sides', () => {
+  const p = idPlan('North;#9200001\n#9200004;Alpha\n#9200099;Beta\nNorth;#9200099');
+  assert.deepEqual(p.errors, [{ line: 1, code: 'unknown_child', value: '#9200001' },
+    { line: 2, code: 'unknown_parent', value: '#9200004' }, { line: 3, code: 'unknown_parent', value: '#9200099' },
+    { line: 4, code: 'unknown_child', value: '#9200099' }]);
+  p.errors.forEach((e) => assert.deepEqual(Object.keys(e).sort(), ['code', 'line', 'value']));
+  assert.equal(p.ok, false);
+  assert.deepEqual(codes(idPlan('#0;Alpha\n#007;Alpha\n# 1;Alpha').errors),
+    [[1, 'unknown_parent'], [2, 'unknown_parent'], [3, 'unknown_parent']]);
+});
+
+test('WP-35: inactive ids link with the inactive warning on parent and child side', () => {
+  const p = idPlan('North;#9200007\n#9200003;Gamma');
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.warnings, [{ line: 1, code: 'inactive', value: '#9200007' }, { line: 2, code: 'inactive', value: '#9200003' }]);
+  assert.deepEqual(p.pairs.map((x) => [x.parent, x.child]), [['9200001', '9200007'], ['9200003', '9200006']]);
+  assert.equal(p.ok, true);
+});
+
+test('WP-35: an id resolves what a duplicate name leaves ambiguous; name and id for one pair are a duplicate', () => {
+  const C = DUP();
+  let p = idPlan('North;Alpha', REGIONS, C);
+  assert.deepEqual(p.errors, [{ line: 1, code: 'ambiguous_child', value: 'Alpha' }]);
+  p = idPlan('North;#9200004\nNorth;#9200008\nnorth;beta\nNorth;#9200005', REGIONS, C);
+  assert.deepEqual(p.errors, []);
+  assert.deepEqual(p.pairs.map((x) => x.child), ['9200004', '9200008', '9200005']);
+  assert.equal(p.duplicates, 1);
+  assert.deepEqual(p.warnings, [{ line: 2, code: 'inactive', value: '#9200008' }]);
+  const twins = M.ValueList.fromWire([{ key: '9200001', label: 'North' }, { key: '9200011', label: 'North', active: false },
+    { key: '9200002', label: 'South' }]);
+  p = idPlan('North;Alpha\n#9200001;Alpha\n#9200011;Alpha\nSouth;Alpha', twins);
+  assert.deepEqual(p.errors, [{ line: 1, code: 'ambiguous_parent', value: 'North' }]);
+  assert.deepEqual(p.pairs.map((x) => x.parent), ['9200001', '9200011', '9200002']);
+  p = idPlan('#9200002;Alpha\nSouth;#9200004', twins);
+  assert.deepEqual([p.errors, p.duplicates, p.pairs.length], [[], 1, 1]);
+});
+
+test('WP-35: formula protection treats # as no trigger; an apostrophe before #<id> is part of the cell', () => {
+  const C = DUP();
+  const state = new M.State({ value_dependencies: { 9200001: ['9200004', '9200008', '9200005'] } });
+  const csv = M.buildCsv(state, REGIONS, C, { separator: ';', parentName: 'Region', childName: 'Product', protect: true,
+    kind: 'enumeration' });
+  assert.ok(csv.includes('North;#9200004\r\n'));
+  assert.ok(csv.includes('North;#9200008\r\n'));
+  assert.equal(csv.includes("'#"), false);
+  assert.ok(csv.includes('North;Beta\r\n'));
+  assert.deepEqual(codes(idPlan("North;'#9200004", REGIONS, C, { unprotect: true }).errors), [[1, 'unknown_child']]);
+  assert.deepEqual(idPlan('North;#9200004', REGIONS, C, { unprotect: true }).pairs.map((x) => x.child), ['9200004']);
+  const quoted = M.ValueList.fromWire([{ key: '1', label: "'#12" }, { key: '12', label: 'Twelve' }]);
+  assert.deepEqual(idPlan("p;'#12", list(['p']), quoted).pairs.map((x) => x.child), ['1']);
+  assert.deepEqual(idPlan("p;'#12", list(['p']), quoted, { unprotect: true }).pairs.map((x) => x.child), ['1']);
+});
+
+test('WP-35: buildCsv writes #<id> only for enumeration values with an ambiguous name; list kind is unchanged', () => {
+  const P = M.ValueList.fromWire([{ key: '1', label: 'North' }, { key: '2', label: 'north' }, { key: '3', label: 'Café' },
+    { key: '4', label: 'Café' }, { key: '5', label: 'Solo' }]);
+  const C = M.ValueList.fromWire([{ key: '10', label: 'Alpha' }, { key: '11', label: 'Alpha', active: false },
+    { key: '12', label: 'Beta' }, { key: '13', label: '#10' }, { key: '14', label: '#99' }]);
+  const state = new M.State({ value_dependencies: { 1: ['10', '11', '12', '13', '14'], 2: ['12'], 3: ['10'], 4: ['11'],
+                                                     5: ['13'] } });
+  const base = { separator: ';', parentName: 'P', childName: 'C' };
+  const text = M.buildCsv(state, P, C, Object.assign({ kind: 'enumeration' }, base));
+  assert.equal(text, '﻿P;C\r\n' + ['#1;#10', '#1;#11', '#1;Beta', '#1;#13', '#1;#99', '#2;Beta', '#3;#10', '#4;#11',
+    'Solo;#13'].join('\r\n') + '\r\n');
+  const labels = M.buildCsv(state, P, C, base);
+  assert.equal(labels.includes('#1;'), false);
+  assert.equal(M.buildCsv(state, P, C, Object.assign({ kind: 'list' }, base)), labels);
+});
+
+test('WP-35: export then import reproduces the links for enumerations (duplicates, inactive, tricky names, both sides)', () => {
+  const P = M.ValueList.fromWire([{ key: '1', label: 'North' }, { key: '2', label: 'north' }, { key: '3', label: 'Old', active: false },
+    { key: '4', label: 'Old', active: false }, { key: '5', label: '=Formula' }, { key: '6', label: '#1' }, { key: '7', label: 'x;y' }]);
+  const C = M.ValueList.fromWire([{ key: '20', label: 'Alpha' }, { key: '21', label: 'Alpha', active: false },
+    { key: '22', label: 'Beta' }, { key: '23', label: '#20' }, { key: '24', label: '+1' }, { key: '25', label: '#25' },
+    { key: '26', label: 'café' }, { key: '27', label: 'café' }]);
+  const links = { 1: ['20', '21', '22'], 2: ['23', '24'], 3: ['25', '26'], 4: ['27', '20'], 5: ['22'], 6: ['23', '20'], 7: ['21'] };
+  const state = new M.State({ value_dependencies: links });
+  const extra = { kind: 'enumeration' };
+  const expected = JSON.stringify(J(M.serialize(state, P, C, extra)).value_dependencies);
+  [',', ';', '\t'].forEach((sep) => {
+    [false, true].forEach((protect) => {
+      ['replace', 'merge'].forEach((mode) => {
+        const label = `${JSON.stringify(sep)} protect=${protect} ${mode}`;
+        const csv = M.buildCsv(state, P, C, Object.assign({ separator: sep, parentName: 'Region', childName: 'Product', protect }, extra));
+        const p = M.planImport(csv, new M.State(null), P, C, Object.assign({ separator: 'auto', header: 'auto', mode,
+          unprotect: protect, parentName: 'Region', childName: 'Product' }, extra));
+        assert.deepEqual(p.errors, [], label);
+        assert.equal(p.headerSkipped, true, label);
+        const fresh = new M.State(null);
+        M.applyImport(fresh, p);
+        assert.equal(JSON.stringify(J(M.serialize(fresh, P, C, extra)).value_dependencies), expected, label);
+      });
+    });
+  });
+});
+
+test('WP-35: header detection with id cells: a data row of ids is data; a name header is skipped; unknown ids are both unknown', () => {
+  const run = (text) => idPlan(text, REGIONS, PRODUCTS(), { header: 'auto' });
+  let p = run('#9200001;#9200004\n#9200002;#9200005');
+  assert.deepEqual([p.headerSkipped, p.errors, p.pairs.length], [false, [], 2]);
+  p = run('Region;Product\n#9200001;#9200004');
+  assert.deepEqual([p.headerSkipped, p.errors, p.pairs.length], [true, [], 1]);
+  p = run('#999;#998\n#9200001;#9200004');
+  assert.deepEqual([p.headerSkipped, p.errors, p.pairs.length], [true, [], 1]);
+  p = run('#9200001;#998\n#9200001;#9200004');
+  assert.deepEqual([p.headerSkipped, codes(p.errors)], [false, [[1, 'unknown_child']]]);
+});
+
+test('WP-35: 25,000 enumeration values, 25,000 #<id> rows and a 25,000 link export stay linear and skip the label index', () => {
+  const n = 25000;
+  const C = M.ValueList.fromWire(L.names(n, { prefix: 'V' }).map((label, i) => ({ key: String(9300000 + i), label })));
+  const P = M.ValueList.fromWire([{ key: '9200001', label: 'North' }]);
+  const text = C.items.map((item) => '#9200001;#' + item.key).join('\n');
+  const [ms, p] = warmMinimum(() => M.planImport(text, new M.State(null), P, C, { separator: ';', header: 'no', kind: 'enumeration' }));
+  assert.equal(p.errorCount, 0);
+  assert.equal(p.pairs.length, n);
+  assert.equal(C.labelIndex, null);
+  assert.equal(P.labelIndex, null);
+  assert.ok(ms < 2000, `${ms} ms`);
+  const state = new M.State(null);
+  M.applyImport(state, p);
+  const [csvMs, csv] = warmMinimum(() => M.buildCsv(state, P, C, { separator: ';', kind: 'enumeration' }));
+  assert.equal(csv.split('\r\n').length, n + 2);
+  assert.ok(csvMs < 2000, `${csvMs} ms`);
 });

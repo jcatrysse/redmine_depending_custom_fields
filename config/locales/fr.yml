@@ -145,7 +145,7 @@ fr:
 
   # Import et export CSV (WP-26, DependencyEditorConfig::I18N)
   label_dcf_import_links: "Importer des liens (CSV)"
-  text_dcf_import_help: "Un lien par ligne : la valeur parente, puis la valeur enfant, séparées par un point-virgule, une virgule ou une tabulation. La casse est ignorée lors de la correspondance ; les listes clé/valeur sont mises en correspondance par nom. Rien n'est enregistré avant l'enregistrement du formulaire."
+  text_dcf_import_help: "Un lien par ligne : la valeur parente, puis la valeur enfant, séparées par un point-virgule, une virgule ou une tabulation. La casse est ignorée lors de la correspondance ; les listes clé/valeur sont mises en correspondance par nom ou par #<id>, par exemple #12 (l'export écrit #<id> pour les noms non uniques). Rien n'est enregistré avant l'enregistrement du formulaire."
   label_dcf_import_paste: "Coller des lignes"
   label_dcf_import_file: "Ou choisir un fichier"
   text_dcf_import_file_used: "Le fichier choisi est utilisé à la place des lignes collées."
@@ -181,6 +181,8 @@ fr:
   error_dcf_import_unknown_child: "Ligne %{line} : valeur enfant inconnue « %{value} »."
   error_dcf_import_ambiguous_parent: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs parentes."
   error_dcf_import_ambiguous_child: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants."
+  error_dcf_import_ambiguous_parent_id: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs parentes. Indiquez plutôt #<id> pour en choisir une."
+  error_dcf_import_ambiguous_child_id: "Ligne %{line} : « %{value} » correspond à plusieurs valeurs enfants. Indiquez plutôt #<id> pour en choisir une."
   error_dcf_import_unterminated_quote: "Ligne %{line} : une valeur entre guillemets n'est pas fermée."
   error_dcf_import_bad_quote: "Ligne %{line} : texte inattendu après un guillemet fermant."
   error_dcf_import_too_large: "Les données sont trop volumineuses (maximum %{max})."

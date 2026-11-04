@@ -1288,7 +1288,8 @@ test('preview errors: role=alert box with line errors, 200 shown and the rest co
   const twins = await E.load('admin_enumeration', { tweak: (r) => setJson(r, 'parent-values', [{ key: '9200001', label: 'North' },
     { key: '9200011', label: 'North', active: false }, { key: '9200002', label: 'South' }]) });
   const twinUi = preview(twins, 'North,Alpha\nSouth,Alpha', { header: 'no' });
-  assert.deepEqual(errorItems(twinUi), [twins.t('err_ambiguous_parent', { line: '1', value: 'North' })]);
+  // Changed by WP-35: the enumeration message names the '#<id>' way out (err_ambiguous_parent_id); was err_ambiguous_parent.
+  assert.deepEqual(errorItems(twinUi), [twins.t('err_ambiguous_parent_id', { line: '1', value: 'North' })]);
   assert.equal(twinUi.apply.disabled, true);
 });
 
@@ -1920,4 +1921,53 @@ test('project conflict panel: use my version, keep the current version and expor
     assert.deepEqual(q.payload().value_dependencies, { Belgium: ['Antwerp', 'Brussels'], France: ['Paris'] });
     assert.equal(q.payload().source, 'editor');
   }
+});
+
+// WP-35 (UD-19 changed 2026-11-02): '#<id>' cells for Key/Value list fields in the editor.
+const DUP_CHILDREN = (r) => setJson(r, 'child-values', [{ key: '9200004', label: 'Alpha' }, { key: '9200005', label: 'Beta' },
+  { key: '9200006', label: 'Retired', active: false }, { key: '9200008', label: 'Alpha', active: false }]);
+
+test('WP-35 enumeration import: #<id> links, ambiguity message names the id way out, unknown ids stay plain', async () => {
+  for (const variant of VARIANTS) {
+    const p = await E.load('admin_enumeration', { variant, tweak: DUP_CHILDREN });
+    const ui = preview(p, 'South;#9200004\nSouth;#9200008\nSouth;Alpha\nSouth;#9200099\nSouth;#9200001', { header: 'no' });
+    assert.deepEqual(errorItems(ui), [p.t('err_ambiguous_child_id', { line: '3', value: 'Alpha' }),
+      p.t('err_unknown_child', { line: '4', value: '#9200099' }), p.t('err_unknown_child', { line: '5', value: '#9200001' })]);
+    assert.ok(p.t('err_ambiguous_child_id').includes('#<id>'));
+    assert.ok(p.t('import_help').includes('#<id>'));
+    const ok = preview(p, 'South;#9200004\nSouth;#9200008', { header: 'no' });
+    assert.deepEqual(errorItems(ok), []);
+    assert.equal(ok.preview.querySelector('.flash.warning li').textContent, p.t('warn_inactive', { line: '2', value: '#9200008' }));
+    ok.apply.click();
+    p.clock.tick(150);
+    assert.deepEqual(p.payload().value_dependencies['9200002'], [9200004, 9200008]);
+  }
+});
+
+test('WP-35 enumeration export writes #<id> for ambiguous names only; the list export is unchanged', async () => {
+  const p = await E.load('admin_enumeration', { tweak: DUP_CHILDREN });
+  const out = { blob: null };
+  p.window.URL.createObjectURL = (b) => { out.blob = b; return 'blob:x'; };
+  p.window.URL.revokeObjectURL = () => {};
+  const ui = panels(p);
+  ui.exportButton.click();
+  assert.equal(Buffer.from(await out.blob.arrayBuffer()).subarray(3).toString('utf8'),
+    'Region,Product\r\nNorth,#9200004\r\nNorth,Beta\r\nOld,Retired\r\n');
+});
+
+test('WP-35: a cell with markup stays text in the error list; project mode links by #<id>', async () => {
+  const p = await E.load('admin_enumeration');
+  const ui = preview(p, 'North;#<b>x</b>\n"<img src=x onerror=alert(1)>";Alpha', { header: 'no' });
+  assert.deepEqual(errorItems(ui), [p.t('err_unknown_child', { line: '1', value: '#<b>x</b>' }),
+    p.t('err_unknown_parent', { line: '2', value: '<img src=x onerror=alert(1)>' })]);
+  assert.equal(p.root.querySelectorAll('b, img').length, 0);
+  const q = await E.load('project_enumeration');
+  const pui = preview(q, '#9200002;#9200006', { header: 'no' });
+  assert.deepEqual(errorItems(pui), []);
+  pui.apply.click();
+  q.clock.tick(150);
+  const payload = q.payload();
+  assert.deepEqual([payload.source, payload.import, payload.base], ['import', { mode: 'merge', rows: 1 }, undefined]);
+  assert.ok(payload.value_dependencies['9200002'].includes(9200006));
+  assert.equal(q.fetchCalls.length, 0);
 });

@@ -177,6 +177,7 @@
 * Added: The value you last picked for each parent value comes back when you switch the parent back, also after the form refreshes.
 * Added: A dependency editor replaces the checkbox matrix on the admin custom field form and on the project dependency page: collapsible sections per parent value, search, check or uncheck all shown, filters for values without links, counters, per-parent defaults inside each section and inactive values shown and kept.
 * Added: CSV import of links (paste or file, preview with per-line errors, merge or replace, undo) and CSV export from the editor, with optional spreadsheet formula protection; 'Add missing child values' for List (depending) fields on the admin form.
+* Added: The CSV import of Key/Value list fields also accepts #<id> cells (the number of a value, shown by the export); the export writes #<id> for values whose name is ambiguous, so the file imports again unchanged.
 * Added: A save is refused when someone else changed the dependency mapping after the page was opened; the editor then shows the current version and your version (use, keep or export yours).
 * Added: Search on the project values page for fields with more than 25 values, and pagination for fields with more than 500 values.
 * Added: Sort A-Z / Sort Z-A buttons on the project values page; members with 'Manage custom fields' get the new action automatically.

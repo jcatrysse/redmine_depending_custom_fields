@@ -145,7 +145,7 @@ en:
 
   # CSV import and export (WP-26; JS keys in DependencyEditorConfig::I18N)
   label_dcf_import_links: "Import links (CSV)"
-  text_dcf_import_help: "One link per line: the parent value, then the child value, separated by a semicolon, a comma or a tab. Values are matched without regard to case; key/value lists are matched by name. Nothing is saved until you save the form."
+  text_dcf_import_help: "One link per line: the parent value, then the child value, separated by a semicolon, a comma or a tab. Values are matched without regard to case; key/value lists are matched by name or by #<id>, for example #12 (the export writes #<id> for names that are not unique). Nothing is saved until you save the form."
   label_dcf_import_paste: "Paste lines"
   label_dcf_import_file: "Or choose a file"
   text_dcf_import_file_used: "The selected file is used instead of the pasted lines."
@@ -181,6 +181,8 @@ en:
   error_dcf_import_unknown_child: "Line %{line}: unknown child value \"%{value}\"."
   error_dcf_import_ambiguous_parent: "Line %{line}: \"%{value}\" matches several parent values."
   error_dcf_import_ambiguous_child: "Line %{line}: \"%{value}\" matches several child values."
+  error_dcf_import_ambiguous_parent_id: "Line %{line}: \"%{value}\" matches several parent values. Write #<id> instead to pick one."
+  error_dcf_import_ambiguous_child_id: "Line %{line}: \"%{value}\" matches several child values. Write #<id> instead to pick one."
   error_dcf_import_unterminated_quote: "Line %{line}: a quoted value is not closed."
   error_dcf_import_bad_quote: "Line %{line}: unexpected text after a closing quote."
   error_dcf_import_too_large: "The input is too large (maximum %{max})."

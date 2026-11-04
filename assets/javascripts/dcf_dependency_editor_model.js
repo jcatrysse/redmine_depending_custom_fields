@@ -711,11 +711,33 @@
     else map.set(key, [item]);
   }
 
-  // The items a cell matches (editor design 6.3): every item with that exact
-  // label, else with that NFC label, else with that NFC lowercase label;
-  // [] when none. Labels can repeat (enumerations), so each step keeps every
-  // candidate. The index is built once per list, on the list.
-  function candidates(list, cell) {
+  // '#<id>' (UD-19, changed 2026-11-02): # and a positive decimal number of
+  // at most 63 bits, ASCII digits only, no leading zero. The cell is compared
+  // as text with the item keys, never as a number.
+  var ID_CELL_RE = /^#[1-9][0-9]*$/;
+  var MAX_ID = '9223372036854775807';
+
+  // The key of an id cell, or null (any other cell, including '#007').
+  function idKey(cell) {
+    if (!ID_CELL_RE.test(cell)) return null;
+    var digits = cell.slice(1);
+    if (digits.length > MAX_ID.length || (digits.length === MAX_ID.length && digits > MAX_ID)) return null;
+    return digits;
+  }
+
+  // The items a cell matches (editor design 6.3): with +ids+ (enumerations)
+  // the one item whose key an '#<id>' cell names, active or inactive; else
+  // every item with that exact label, else with that NFC label, else with
+  // that NFC lowercase label; [] when none. Labels can repeat (enumerations),
+  // so each step keeps every candidate. The index is built once per list, on
+  // the list, and not at all for an id hit.
+  function candidates(list, cell, ids) {
+    var s = String(cell);
+    if (ids === true) {
+      var key = idKey(s);
+      var hit = key === null ? undefined : list.byKey.get(key);
+      if (hit) return [hit];
+    }
     var index = list.labelIndex;
     if (!index) {
       index = { exact: new Map(), nfc: new Map(), lower: new Map() };
@@ -727,13 +749,13 @@
       });
       list.labelIndex = index;
     }
-    var s = String(cell);
-    var nfc = s.normalize('NFC');
-    return index.exact.get(s) || index.nfc.get(nfc) || index.lower.get(nfc.toLowerCase()) || [];
+    var nfcCell = s.normalize('NFC');
+    return index.exact.get(s) || index.nfc.get(nfcCell) || index.lower.get(nfcCell.toLowerCase()) || [];
   }
 
-  ValueList.prototype.match = function (cell) {
-    return candidates(this, cell).slice();
+  // kind 'enumeration' turns the '#<id>' step on; any other kind is names only.
+  ValueList.prototype.match = function (cell, kind) {
+    return candidates(this, cell, kind === 'enumeration').slice();
   };
 
   // A formula trigger (= + - @ TAB CR) after any leading apostrophes
@@ -814,6 +836,7 @@
     var header = o.header === 'yes' || o.header === 'no' ? o.header : 'auto';
     var addMissing = o.addMissing === true && o.kind === 'list';
     var unprotect = o.unprotect === true;
+    var ids = o.kind === 'enumeration';
     var parsed = parse(text, o.separator, o.defaultSeparator, MAX_LINE_ERRORS + 1);
     var plan = { ok: false, mode: mode, errors: [], errorCount: 0, warnings: [], warningCount: 0, pairs: [], added: 0,
                  existing: 0, removed: 0, duplicates: 0, newValues: [], headerSkipped: false, headerCells: [],
@@ -843,13 +866,13 @@
       var parent = null;
       var child = null;
       var created = null;
-      var found = candidates(parents, pc);
+      var found = candidates(parents, pc, ids);
       if (found.length === 1) parent = found[0];
       else {
         bad = true;
         if (out) out.error(line, found.length ? 'ambiguous_parent' : 'unknown_parent', cells[0]);
       }
-      found = candidates(children, cc);
+      found = candidates(children, cc, ids);
       if (found.length === 1) child = found[0];
       else if (found.length > 1 || !addMissing) {
         bad = true;
@@ -901,7 +924,7 @@
         skip = k0 === 'parent' || k1 === 'child' || (!!o.parentName && k0 === caseKey(o.parentName)) ||
           (!!o.childName && k1 === caseKey(o.childName)) ||
           (first.count >= 2 && !isBlank(c0) && !isBlank(c1) &&
-            candidates(parents, c0).length === 0 && candidates(children, c1).length === 0);
+            candidates(parents, c0, ids).length === 0 && candidates(children, c1, ids).length === 0);
       }
       if (skip) {
         plan.headerSkipped = true;
@@ -992,11 +1015,33 @@
     return state;
   }
 
+  // The cell text of an item for the export: its label, or '#<key>' when the
+  // import would not read that label back as exactly this item (another item
+  // of the list has the same NFC lowercase name, or the label is the id form
+  // of another item). The count index is built once per list. A null list
+  // (kind list) writes labels.
+  function cellWriter(list) {
+    if (list === null) return function (item) { return item.label; };
+    var counts = new Map();
+    list.items.forEach(function (item) {
+      var k = caseKey(item.label);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    return function (item) {
+      if (counts.get(caseKey(item.label)) > 1) return '#' + item.key;
+      var other = idKey(item.label);
+      if (other !== null && other !== item.key && list.byKey.has(other)) return '#' + item.key;
+      return item.label;
+    };
+  }
+
   // The links of +state+ on the current lists as CSV (editor design 6.7):
   // one BOM, a header of the field names, one row per link in parent then
   // child order with labels (orphans and defaults left out), CRLF after
   // every row. opts: separator (';', ',', TAB, else ','), parentName,
-  // childName, protect (UD-18). parents null: the header only.
+  // childName, protect (UD-18), kind. With kind 'enumeration' a value whose
+  // name is ambiguous in its field is written as '#<id>' (UD-19), so the
+  // import reads the same link back. parents null: the header only.
   function buildCsv(state, parents, children, opts) {
     if (!(state instanceof State)) throw new TypeError('DcfDependencyEditorModel: state must be a State');
     if (parents !== null && !(parents instanceof ValueList)) {
@@ -1007,6 +1052,8 @@
     var sep = isSeparator(o.separator) ? o.separator : ',';
     var guard = o.protect === true ? protectCell : function (s) { return s; };
     var row = function (a, b) { return csvField(guard(a)) + sep + csvField(guard(b)); };
+    var parentCell = cellWriter(o.kind === 'enumeration' ? parents : null);
+    var childCell = cellWriter(o.kind === 'enumeration' ? children : null);
     var lines = [row(o.parentName ? String(o.parentName) : 'parent', o.childName ? String(o.childName) : 'child')];
     if (parents !== null) {
       parents.items.forEach(function (p) {
@@ -1017,7 +1064,7 @@
           var item = children.byKey.get(ck);
           if (item) kept.push(item);
         });
-        kept.sort(byIndex).forEach(function (c) { lines.push(row(p.label, c.label)); });
+        kept.sort(byIndex).forEach(function (c) { lines.push(row(parentCell(p), childCell(c))); });
       });
     }
     return '\ufeff' + lines.join('\r\n') + '\r\n';

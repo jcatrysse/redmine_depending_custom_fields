@@ -22,7 +22,7 @@ const HINT = 'run DCF_WRITE_JS_FIXTURES=1 node --test test/js/payload_golden.tes
 const BASE = '0123456789abcdef'.repeat(4);
 // DependencyPayload.digest({}, {}): a placeholder equal to it would pass the stale guard.
 const EMPTY_DIGEST = '643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726';
-const NAMES = ['clear', 'enumeration_save', 'import_merge', 'import_replace', 'list_save', 'tricky_values'];
+const NAMES = ['clear', 'enumeration_save', 'import_merge', 'import_merge_ids', 'import_replace', 'list_save', 'tricky_values'];
 
 const wire = (keys) => keys.map((key) => ({ key }));
 const COUNTRIES = ['Belgium', 'France', 'Germany', 'Netherlands'];
@@ -31,6 +31,8 @@ const REGIONS = [{ key: '9200001', label: 'North' }, { key: '9200002', label: 'S
   { key: '9200003', label: 'Old region', active: false }];
 const PRODUCTS = [{ key: '9200004', label: 'Alpha' }, { key: '9200005', label: 'Beta' }, { key: '9200006', label: 'Gamma' },
   { key: '9200007', label: 'Retired', active: false }];
+// WP-35: PRODUCTS with the duplicate name Alpha (an inactive twin), for the '#<id>' import.
+const PRODUCTS_DUP = PRODUCTS.slice(0, 3).concat([{ key: '9200007', label: 'Alpha', active: false }]);
 const NAMED = ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf', 'toJSON'];
 const TRICKY_PARENTS = L.TRICKY.concat(NAMED, ['Foo [x]', '[b', '"><script>alert(1)</script>', '</script>', '&',
   'a/b', '12345678901234567890', '007', '10', '2', '\u00e9', 'e\u0301', 'line\u2028sep', 'back\\slash',
@@ -88,6 +90,18 @@ const BUILDERS = {
     const C = M.ValueList.fromWire(wire(CITIES));
     applyPairs(state, reversed ? pairs.slice().reverse() : pairs, 'merge', P, C);
     return M.serialize(state, P, C, { multiple: false, base: BASE });
+  },
+  // WP-35 (UD-19 changed 2026-11-02): the import of '#<id>' cells on a Key/Value list pair with a duplicate name.
+  import_merge_ids(reversed) {
+    const state = new M.State({ value_dependencies: { 9200001: ['9200005'] }, default_value_dependencies: { 9200001: ['9200005'] } });
+    const rows = ['#9200001;#9200004', 'North;Beta', '#9200002;#9200007', 'South;Gamma', 'Old region;#9200004'];
+    const P = M.ValueList.fromWire(REGIONS);
+    const C = M.ValueList.fromWire(PRODUCTS_DUP);
+    const text = (reversed ? rows.slice().reverse() : rows).join('\n');
+    const plan = M.planImport(text, state, P, C, { separator: ';', header: 'no', mode: 'merge', kind: 'enumeration' });
+    assert.deepEqual(plan.errors, []);
+    M.applyImport(state, plan);
+    return M.serialize(state, P, C, { kind: 'enumeration', multiple: true, base: BASE });
   },
   import_replace(reversed) {
     const state = new M.State({ value_dependencies: { Belgium: ['Brussels', 'Ghent'], France: ['Paris'] },
@@ -187,7 +201,7 @@ NAMES.forEach((name) => {
     if (name.startsWith('import_')) {
       assert.equal(data.source, 'import');
       assert.deepEqual(Object.keys(data.import), ['mode', 'rows']);
-      assert.equal(data.import.mode, name === 'import_merge' ? 'merge' : 'replace');
+      assert.equal(data.import.mode, name === 'import_replace' ? 'replace' : 'merge');
     } else {
       assert.equal(data.source, 'editor');
       assert.equal('import' in data, false);
@@ -208,10 +222,11 @@ NAMES.forEach((name) => {
       numbers.filter(([k]) => k !== 'version').forEach(([, n]) => assert.ok(n >= 9200001 && n <= 9299999, String(n)));
       Object.keys(vd).forEach((p) => assert.ok(/^92[0-9]{5}$/.test(p)));
     }
+    if (name === 'import_merge_ids') Object.keys(vd).forEach((p) => assert.ok(/^92[0-9]{5}$/.test(p)));
   });
 });
 
-test('the payload directory holds exactly the six goldens', () => {
+test('the payload directory holds exactly the seven goldens', () => {
   assert.deepEqual(fs.readdirSync(DIR).sort(), NAMES.map((n) => n + '.json'));
 });
 
@@ -236,4 +251,6 @@ test('the goldens cover both default shapes, an inactive link, the clear case an
   assert.equal(keys.length, TRICKY_PARENTS.length);
   assert.equal(data.import_merge.import.rows, 4);
   assert.equal(data.import_replace.import.rows, 5);
+  assert.equal(data.import_merge_ids.import.rows, 5);
+  assert.deepEqual(data.import_merge_ids.value_dependencies['9200001'], [9200004, 9200005]);
 });

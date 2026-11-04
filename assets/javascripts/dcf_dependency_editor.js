@@ -995,7 +995,7 @@
     if (!mine) return false;
     var text = this.model.buildCsv(mine, this.parents, this.children, {
       separator: separatorChar(separatorToken(this.config.separator)), parentName: this.parentLabel,
-      childName: this.config.fieldName, protect: false });
+      childName: this.config.fieldName, protect: false, kind: this.kind });
     return download(text, 'dependency-mapping.csv');
   };
 
@@ -1504,6 +1504,9 @@
     if (entry.count !== undefined) vars.count = this.n(entry.count);
     if (entry.max !== undefined) vars.max = this.n(entry.max);
     if (entry.value !== undefined) vars.value = shorten(entry.value);
+    if (!key && this.kind === 'enumeration' && (entry.code === 'ambiguous_parent' || entry.code === 'ambiguous_child')) {
+      key = 'err_' + entry.code + '_id'; // the '#<id>' way out exists for Key/Value lists only (UD-19)
+    }
     return this.t(key || 'err_' + entry.code, vars);
   };
 
@@ -1715,7 +1718,7 @@
     if (!this.ready()) return false;
     var text = this.model.buildCsv(this.state, this.parents, this.children, {
       separator: separatorChar(this.exportSeparator.value), parentName: this.parentLabel,
-      childName: this.config.fieldName, protect: this.protectBox.checked === true });
+      childName: this.config.fieldName, protect: this.protectBox.checked === true, kind: this.kind });
     return download(text, exportName(this.model, this.config.fieldName));
   };
 

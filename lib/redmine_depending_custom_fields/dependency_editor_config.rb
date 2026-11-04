@@ -101,6 +101,8 @@ module RedmineDependingCustomFields
       'err_unknown_child' => :error_dcf_import_unknown_child,
       'err_ambiguous_parent' => :error_dcf_import_ambiguous_parent,
       'err_ambiguous_child' => :error_dcf_import_ambiguous_child,
+      'err_ambiguous_parent_id' => :error_dcf_import_ambiguous_parent_id,
+      'err_ambiguous_child_id' => :error_dcf_import_ambiguous_child_id,
       'err_unterminated_quote' => :error_dcf_import_unterminated_quote,
       'err_bad_quote' => :error_dcf_import_bad_quote,
       'err_too_large' => :error_dcf_import_too_large,

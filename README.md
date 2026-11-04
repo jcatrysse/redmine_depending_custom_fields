@@ -180,9 +180,14 @@ administration form and on the project dependency page alike:
   back (one level). Nothing is stored until the form or page is saved.
 - Values are matched by their text: exactly, then after Unicode
   normalization, then ignoring case. Key/Value list entries are matched by
-  name only; entries with the same name, active and inactive ones included,
-  are reported as ambiguous and are not linked. A link to an inactive entry
-  is imported with a warning.
+  name or by `#<id>` (for example `#12`, the number of the entry in that
+  field): an exact `#<id>` of an entry of the field is tried first, then the
+  name. Entries with the same name, active and inactive ones included, are
+  reported as ambiguous and are not linked until the file names one of them
+  by `#<id>`; the export writes `#<id>` for such names, so an exported file
+  imports again unchanged. Other forms (`# 12`, `#012`, `#12a`) and the ids
+  of other fields are reported as unknown values; List fields keep `#12` as
+  a plain value. A link to an inactive entry is imported with a warning.
 - 'Add missing child values to the possible values' is offered on the
   administration form for `List (depending)` fields only; it adds the child
   values the field does not have yet.

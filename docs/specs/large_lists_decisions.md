@@ -35,7 +35,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-16 | Resolved | 0.1.0 (M3) | WP-25, WP-27 | Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active? |
 | UD-17 | Resolved | 0.1.0 (M3) | WP-22, WP-25, WP-27 | Keep the admin lost-update guard with the conflict panel (use mine, keep current, export mine) and defer a three-way merge? |
 | UD-18 | Resolved | 0.1.0 (M3) | WP-26 | Spreadsheet formula protection on CSV export? |
-| UD-19 | Changed (owner) | 0.1.0 (M3) | WP-26 | Enumeration import matches by name only (D7) in this release? |
+| UD-19 | Changed (owner), implemented by WP-35 | 0.1.0 (M3) | WP-26, WP-35 | Enumeration import matches by name only (D7) in this release? |
 | UD-20 | Resolved | 0.1.0 (M3) | WP-25 | Editor page sizes: 100 parent sections and 200 child rows per 'Show more'? |
 | UD-21 | Resolved | 0.1.0 (M3) | WP-28 | Values page: paginate only above 500 values; drag-and-drop only for unfiltered lists of at most 500 values? |
 | UD-22 | Resolved | 0.1.0 (M3) | WP-31 | Project storage ceiling (SP-03): plugin setting project_storage_ceiling_kib default 2,048, minimum 64, applied to all project-page writes, never blocking writes that do not grow a field; plus a 255-character cap for list values added or renamed in project settings? |
@@ -326,7 +326,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-19
 
-**Changed by the owner on 2026-11-02: '#<id>' accepted now.** The enumeration import also accepts a cell '#<id>' naming a value of that field by id; the export writes '#<id>' for a value whose name is ambiguous, so the file round-trips. Implemented by WP-35. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. Enumeration import matches by name only (D7) in this release; ambiguous names are reported; no '#<id>' cell syntax yet.
+**Changed by the owner on 2026-11-02: '#<id>' accepted now.** The enumeration import also accepts a cell '#<id>' naming a value of that field by id; the export writes '#<id>' for a value whose name is ambiguous, so the file round-trips. Implemented by WP-35 (see the Delivered block there). Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. Enumeration import matches by name only (D7) in this release; ambiguous names are reported; no '#<id>' cell syntax yet.
 
 **Question.** Enumeration import matches by name only (D7) in this release?
 
@@ -634,7 +634,7 @@ The area designs started from ten default decisions. This table shows where the 
 | D4 | Context menu without cache, per selection; wizard otherwise unchanged | Refined: wizard opens on '(no change)' (UD-11); wizard body stays inline with a size budget (UD-13); wizard save security is SD-01 | Saving the wizard untouched used to write the root default onto every selected issue |
 | D5 | Keep JS shims one minor version; drop globals; MappingBuilder uncached or removed; legacy nested params one minor version | Refined: MappingBuilder, ParentMenuBuilder and the after_save dispatch are deleted (UD-14); admin safe attributes are permanent (UD-15); deprecation targets per UD-01 | No users of the builders found; removing the safe attributes would silently break jc-redmine_extended_api |
 | D6 | Admin transport prunes unknown keys except inactive enumerations | Follows; pruning only on the JSON path | |
-| D7 | Two-column import, separator auto, merge or replace, preview, all or nothing | Follows; enumerations matched by name only (UD-19); optional spreadsheet formula protection, default off (UD-18) | |
+| D7 | Two-column import, separator auto, merge or replace, preview, all or nothing | Follows; enumerations matched by name or '#<id>' (UD-19 changed, WP-35); optional spreadsheet formula protection, default off (UD-18) | |
 | D8 | Values page search and pagination, sort service, page-scoped enumeration batch | Refined: paginate only above 500 values, drag-and-drop for unfiltered lists up to 500 (UD-21); inactive enumerations sorted with the others (UD-24) | Lists of 500 or fewer keep today's UX |
 | D9 | Cycle validation whenever a parent is present | Refined: only when a persisted field's parent id changes; stored cycle members are unconstrained until fixed (UD-08) | Avoids blocking unrelated saves of fields that are already in a stored cycle |
 | D10 | Tooling: jsdom, opt-in system specs, manual 6.1 and JS workflows, .codex scripts, parity spec, RuboCop ratchet, delete test/spec | Refined: RuboCop overlay for Ruby 2.7 / Rails 6.1 (UD-29); devDependencies jquery and acorn added (UD-30); rspec-61 from upstream with Ruby 3.3.9 (UD-31); dispatch policy resolved (UD-32) | The raw core 7.0 config suggests constructs that break on Rack 2.2 and Ruby 2.7 |

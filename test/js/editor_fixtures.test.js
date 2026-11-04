@@ -35,7 +35,8 @@ const I18N_KEYS = ['storageEstimate', 'too_large_to_send', 'form_too_large', 'un
   'mode_merge', 'mode_replace', 'add_missing', 'unprotect', 'apply', 'undo', 'applied', 'lines', 'to_add', 'existing',
   'to_remove', 'new_values', 'duplicates', 'header_skipped', 'separator_used', 'decoded_as', 'preview_rows', 'status_new',
   'status_existing', 'errors_intro', 'more_errors', 'nothing', 'err_columns', 'err_blank_value', 'err_unknown_parent',
-  'err_unknown_child', 'err_ambiguous_parent', 'err_ambiguous_child', 'err_unterminated_quote', 'err_bad_quote',
+  'err_unknown_child', 'err_ambiguous_parent', 'err_ambiguous_child', 'err_ambiguous_parent_id',
+  'err_ambiguous_child_id', 'err_unterminated_quote', 'err_bad_quote',
   'err_too_large', 'err_too_many_lines', 'err_multiline_value', 'err_nul_value', 'err_unreadable', 'warn_inactive',
   'export_title', 'export_help', 'protect', 'export', 'preview', 'separator', 'comma', 'semicolon', 'yes', 'no', 'status'];
 
