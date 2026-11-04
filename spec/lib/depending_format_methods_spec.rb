@@ -798,7 +798,9 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         expect(mine).to eq(dcf_count_queries { core.possible_custom_value_options(value) })
         mine
       end
-      expect(counts).to eq([1, 1, 2])
+      # G6: no absolute counts; the lookup of the inactive stored id adds to the first two.
+      expect(counts[1]).to eq(counts[0])
+      expect(counts[2]).to be > counts[0]
     end
 
     it 'keeps no state on a fresh format object' do
@@ -1643,16 +1645,20 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     # Changed by WP-34: WP-19 pinned the SHA-256 of core's List#bulk_edit_tag
     # body (399c63f4...) because the module reimplemented it for required
     # children. bulk_edit_tag calls super for every field again, so only the
-    # line UD-10 relies on is pinned: core omits (none) for a required field
-    # (the same line on 5.1, 6.0, 6.1 and 7.0).
+    # behaviour UD-10 relies on is pinned: core omits (none) for a required
+    # field (5.1, 6.0, 6.1 and 7.0), rendered for a core list and a core
+    # enumeration field (was: the source line of core's method).
     it 'relies on core List#bulk_edit_tag omitting (none) for a required field' do
-      file, line = Redmine::FieldFormat::List.instance_method(:bulk_edit_tag).source_location
-      lines = File.readlines(file)[(line - 1)..]
-      indent = lines.first[/\A */]
-      body = lines.take_while.with_index { |text, i| i.zero? || !text.start_with?("#{indent}end") }
-      source = (body + [lines[body.size]]).map(&:strip).join("\n")
-
-      expect(source).to include("opts << [l(:label_none), '__none__'] unless custom_field.is_required?")
+      fields = [dcf_list_field(values: %w[A B]), dcf_enum_field(names: %w[A B])]
+      fields.each do |field|
+        expect(field.format.method(:bulk_edit_tag).owner).to eq(Redmine::FieldFormat::List)
+        [false, true].each do |required|
+          field.is_required = required
+          html = view.custom_field_tag_for_bulk_edit('issue', field, [], '').to_str
+          values = Nokogiri::HTML.fragment(html).css('option').map { |o| o['value'] }
+          expect(values.include?('__none__')).to eq(!required), "#{field.field_format} required=#{required}"
+        end
+      end
       source_file = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/depending_format_methods.rb', __dir__))
       expect(source_file).not_to include('label_none')
       expect(source_file).not_to include('required-none')

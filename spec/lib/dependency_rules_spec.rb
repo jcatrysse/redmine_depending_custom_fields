@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative '../rails_helper'
+require 'ripper'
 
 # WP-05: DependencyRules, the central rules module (server design section 3).
 # Nothing but FieldRelevance.children_of calls it yet.
@@ -52,9 +53,12 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
     # WP-09 adds dependency_check, no_options?, baseline_source and
     # child_baseline; editable_by? is withdrawn (UD-07). WP-10: was
     # "effective_parent_id, parent_errors and parent_changed? are not
-    # defined"; WP-10 adds them.
+    # defined"; WP-10 adds them. The source scan leaves comments out, so a
+    # comment may name what the code must not use.
     it 'uses format literals, keeps no state and defines no withdrawn function' do
-      source = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/dependency_rules.rb', __dir__))
+      file = File.expand_path('../../lib/redmine_depending_custom_fields/dependency_rules.rb', __dir__)
+      tokens = Ripper.lex(File.read(file))
+      source = tokens.map { |token| token[1] == :on_comment ? token[2][/\n\z/].to_s : token[2] }.join
       expect(source).not_to include('FIELD_FORMAT')
       expect(source).not_to match(/@[a-z_]+ *(\|\|)?=|@@|Rails\.cache|CurrentAttributes|instance_variable_set/)
       expect(described_class.respond_to?(:editable_by?)).to be(false)
@@ -1113,7 +1117,8 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(cases.keys).to eq(%w[version description allowed defaults d1])
       expect(cases['version']).to eq(1)
       expect(cases['description']).to be_a(String)
-      expect(cases['description']).to match(/\A[\x20-\x7e]+\z/)
+      expect(cases['description']).to match(/\A[\x20-\x7e]+\z/),
+                                      'the description is one line of printable ASCII (no dashes or typographic quotes)'
       ids = []
       sections.each do |section, keys|
         rows = cases[section]

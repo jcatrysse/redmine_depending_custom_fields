@@ -1036,13 +1036,15 @@ RSpec.describe 'DCF value operation services' do
         expect(rest.call(large_sqls)).to eq(rest.call(small_sqls))
       end
 
+      # Changed by WP-34 (UD-23), missed then as the example is opt-in: confirm '1' on the global
+      # (dcf_enum_field) sort; was no confirm.
       it 'sorts 25,000 enumerations with 50 UPDATE statements; the sort itself under 1 s', :perf do
         field = reversed_enums(25_000)
         labels = CustomFieldEnumeration.where(custom_field_id: field.id).pluck(:name)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         RedmineDependingCustomFields::ValueCollation.sort(labels)
         elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
-        sqls = statements { sort(field, direction: 'asc') }
+        sqls = statements { sort(field, direction: 'asc', confirm: '1') }
         puts format('DCF PERF sort 25000 labels %.3f s', elapsed)
         expect(updates_of(sqls, 'custom_field_enumerations').size).to eq(25_000 / 500)
         expect(elapsed).to be < 1.0

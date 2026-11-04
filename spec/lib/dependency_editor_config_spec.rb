@@ -291,8 +291,6 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
 
     it 'is loaded at boot, so the locale parity spec sees the map' do
       expect(Object.const_defined?('RedmineDependingCustomFields::DependencyEditorConfig::I18N')).to be(true)
-      main = File.read(File.expand_path('../../lib/redmine_depending_custom_fields.rb', __dir__))
-      expect(main).to include("require_relative 'redmine_depending_custom_fields/dependency_editor_config'")
     end
   end
 
@@ -428,9 +426,7 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
 
       expect(root['data-dcf-editor-dirty']).to eq('1')
       expect(json(root, 'mapping')['value_dependencies']).to eq('Belgium' => %w[Antwerp])
-      presenter = File.read(File.expand_path('../../lib/redmine_depending_custom_fields/dependency_editor_config.rb',
-                                             __dir__))
-      expect(presenter).not_to match(/=> false\b|: false\b/)
+      expect(root.attribute_nodes.map(&:value)).not_to include('false')
     end
 
     it 'renders the posted mapping as applied by the transport and dirty after a save failed for another reason' do

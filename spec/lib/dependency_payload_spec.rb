@@ -402,7 +402,7 @@ RSpec.describe 'RedmineDependingCustomFields::DependencyPayload' do
         JSON.generate('value_dependencies' => { 'a/b' => ["#{' ' * 100_000}x", ' ' * 100_000] }) => nil
       }.each do |raw, code|
         result = nil
-        elapsed = seconds { result = payload.parse(raw) }
+        elapsed = fastest { result = payload.parse(raw) }
         expect(result.error).to eq(code)
         expect(elapsed).to be < 0.1
       end
@@ -841,39 +841,63 @@ RSpec.describe 'RedmineDependingCustomFields::DependencyPayload' do
     end
   end
 
+  # The 2.5 s bounds are the WP budget for a 4 MiB payload. The measured
+  # times (0.5 to 0.7 s, 2.1 to 2.4 s with the slash) leave less than the G6
+  # 10x headroom, so the default run checks the results and the budgets are
+  # opt-in :perf examples (DCF_PERF_SPECS=1).
   describe 'performance budget' do
-    it 'parses the worst-case 4 MiB payload with 100,000 keys in under 2.5 s' do
+    let(:keys_raw) do
       mapping = {}
       (1..100_000).each { |i| mapping["parent #{i} \"q\"/\u00e9"] = ["c#{i}", i] }
       mapping['k'] = ["x#{'1' * 25}"]
-      raw = JSON.generate('version' => 1, 'source' => 'editor', 'value_dependencies' => mapping)
-      expect(raw.bytesize).to be_between(4_000_000, max_bytes)
-      result = nil
-      elapsed = fastest { result = payload.parse(raw) }
+      JSON.generate('version' => 1, 'source' => 'editor', 'value_dependencies' => mapping)
+    end
+    # The slash opens the pre-scan gate, so the scan steps through every
+    # token in Ruby: the slowest accepted 4 MiB shape found.
+    let(:slash_prefix) { '{"value_dependencies":{"a/b":[' }
+    let(:slash_count) { (max_bytes - slash_prefix.bytesize - 2) / 2 }
+    let(:slash_raw) { "#{slash_prefix}#{Array.new(slash_count, '1').join(',')}]}}" }
+
+    def expect_keys(result)
       expect(result).to be_ok
       expect(result.value_dependencies.size).to eq(100_001)
       expect(result.value_dependencies["parent 7 \"q\"/\u00e9"]).to eq(%w[c7 7])
+    end
+
+    def expect_slash(result)
+      expect(result).to be_ok
+      expect(result.value_dependencies).to eq('a/b' => ['1'])
+    end
+
+    it 'parses the worst-case 4 MiB payload with 100,000 keys' do
+      expect(keys_raw.bytesize).to be_between(4_000_000, max_bytes)
+      expect_keys(payload.parse(keys_raw))
+    end
+
+    it 'parses the worst-case 4 MiB payload with 100,000 keys in under 2.5 s', :perf do
+      result = nil
+      elapsed = fastest { result = payload.parse(keys_raw) }
+      expect_keys(result)
       digest_elapsed = fastest { payload.digest(result.value_dependencies, result.default_value_dependencies) }
       report(format('100,000-key payload of %d bytes parsed in %.1f ms, digest in %.1f ms',
-                    raw.bytesize, elapsed * 1000, digest_elapsed * 1000))
+                    keys_raw.bytesize, elapsed * 1000, digest_elapsed * 1000))
       expect(elapsed).to be < 2.5
       expect(digest_elapsed).to be < 2.5
     end
 
-    # The slash opens the pre-scan gate, so the scan steps through every
-    # token in Ruby: the slowest accepted 4 MiB shape found.
-    it 'parses 4 MiB of one-digit integers under a key with a slash in under 2.5 s' do
-      prefix = '{"value_dependencies":{"a/b":['
-      count = (max_bytes - prefix.bytesize - 2) / 2
-      raw = "#{prefix}#{Array.new(count, '1').join(',')}]}}"
-      expect(raw.bytesize).to be_between(max_bytes - 1, max_bytes)
+    it 'parses 4 MiB of one-digit integers under a key with a slash' do
+      expect(slash_raw.bytesize).to be_between(max_bytes - 1, max_bytes)
+      expect_slash(payload.parse(slash_raw))
+      expect(payload.send(:prescan, slash_raw)).to be_nil
+    end
+
+    it 'parses 4 MiB of one-digit integers under a key with a slash in under 2.5 s', :perf do
       result = nil
-      elapsed = fastest { result = payload.parse(raw) }
-      expect(result).to be_ok
-      expect(result.value_dependencies).to eq('a/b' => ['1'])
-      scan_elapsed = fastest { expect(payload.send(:prescan, raw)).to be_nil }
+      elapsed = fastest { result = payload.parse(slash_raw) }
+      expect_slash(result)
+      scan_elapsed = fastest { expect(payload.send(:prescan, slash_raw)).to be_nil }
       report(format('%d one-digit integers under a key with a slash (%d bytes) parsed in %.1f ms, pre-scan %.1f ms',
-                    count, raw.bytesize, elapsed * 1000, scan_elapsed * 1000))
+                    slash_count, slash_raw.bytesize, elapsed * 1000, scan_elapsed * 1000))
       expect(elapsed).to be < 2.5
     end
   end

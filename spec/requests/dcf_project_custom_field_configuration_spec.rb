@@ -1,4 +1,5 @@
 require_relative '../rails_helper'
+require 'ripper'
 
 RSpec.describe 'Project custom field configuration', type: :request do
   fixtures :users
@@ -924,15 +925,23 @@ RSpec.describe 'Project custom field configuration', type: :request do
       end
     end
 
+    # A static scan without the comments; an assignment or a call may span
+    # lines, and l( may appear only in translate_error itself.
     it 'sends every flash and error page message through translate_error (S4)' do
-      source = File.read(File.expand_path('../../app/controllers/project_custom_field_configuration_controller.rb',
-                                          __dir__))
-      flash_lines = source.lines.grep(/flash(\.now)?\[/)
-      expect(flash_lines.size).to be >= 5
-      flash_lines.each { |line| expect(line).to match(/=\s*translate_error\(/) }
-      source.lines.grep(/render_error\(/).each { |line| expect(line).to match(/message: translate_error\(/) }
+      file = File.expand_path('../../app/controllers/project_custom_field_configuration_controller.rb', __dir__)
+      tokens = Ripper.lex(File.read(file))
+      source = tokens.map { |token| token[1] == :on_comment ? token[2][/\n\z/].to_s : token[2] }.join
+      flashes = source.scan(/\bflash(?:\.now)?\[[^\]]*\]\s*=\s*(\w+)/).flatten
+      expect(flashes.size).to be >= 5
+      expect(flashes.size).to eq(source.scan(/\bflash(?:\.now)?\[/).size)
+      expect(flashes.uniq).to eq(['translate_error'])
+      errors = source.scan(/\brender_error\(\s*message:\s*(\w+)/).flatten
+      expect(errors.size).to eq(source.scan(/\brender_error\(/).size)
+      expect(errors.uniq).to eq(['translate_error'])
       expect(source).not_to match(/translate_error\(e\.key/)
-      expect(source.scan(/\bl\(/).size).to eq(1)
+      helper = source[/^  def translate_error\b.*?^  end$/m]
+      expect(helper).to match(/\bl\(/)
+      expect(source.sub(helper, '')).not_to match(/\bl\(/)
     end
   end
 
@@ -1382,14 +1391,16 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(stored(child)).to eq(original)
       end
 
-      it 'refuses 1,000,000-digit and 20-digit integers before JSON.parse, each in under 1 s (T-DEPJ-20, SP-01)' do
+      # T-DEPJ-20: the refusals and their request times. The 1 s bound times a
+      # request, a DB-backed path, so it is an opt-in :perf example (G6).
+      def refuse_long_integers
         child
         # untimed warm-up: the first render of the process loads the locales,
         # the layout and the editor partial
         save(child, '{"value_dependencies":{"Belgium":[12345678901234567890]}}')
         expect(response).to have_http_status(422)
         allow(JSON).to receive(:parse).and_call_original
-        ['9' * 1_000_000, '-12345678901234567890', '12345678901234567890'].each do |number|
+        times = ['9' * 1_000_000, '-12345678901234567890', '12345678901234567890'].map do |number|
           raw = %({"value_dependencies":{"Belgium":[#{number}]}})
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           save(child, raw)
@@ -1399,10 +1410,19 @@ RSpec.describe 'Project custom field configuration', type: :request do
           expect(rows(child).last.changes_summary)
             .to eq("dependencies_json rejected: number_too_long (#{raw.bytesize} bytes)")
           puts format('DCF PERF project PATCH with a %d-digit integer: %.0f ms', number.delete('-').size, elapsed * 1000)
-          expect(elapsed).to be < 1.0
+          elapsed
         end
         expect(JSON).not_to have_received(:parse).with(a_string_including('Belgium'), any_args)
         expect(stored(child)).to eq(original)
+        times
+      end
+
+      it 'refuses 1,000,000-digit and 20-digit integers before JSON.parse (T-DEPJ-20, SP-01)' do
+        expect(refuse_long_integers.size).to eq(3)
+      end
+
+      it 'refuses 1,000,000-digit and 20-digit integers each in under 1 s (T-DEPJ-20, SP-01)', :perf do
+        expect(refuse_long_integers).to all(be < 1.0)
       end
 
       it 'refuses a short negative integer after JSON.parse as invalid_links (WP-22 open input)' do

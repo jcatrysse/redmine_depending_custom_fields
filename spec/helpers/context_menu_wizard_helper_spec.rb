@@ -8,9 +8,10 @@ RSpec.describe ContextMenuWizardHelper do
   end
 
   # WP-15: intersect_allowed_values is deleted (no caller since the SD-14
-  # fix); its two examples are removed.
+  # fix); its two examples are removed. Public, protected and private alike.
   it 'no longer offers intersect_allowed_values' do
-    expect(ContextMenuWizardHelper.instance_methods).not_to include(:intersect_allowed_values)
+    expect(ContextMenuWizardHelper.method_defined?(:intersect_allowed_values)).to be(false)
+    expect(ContextMenuWizardHelper.private_method_defined?(:intersect_allowed_values)).to be(false)
   end
 
   describe '#render_custom_field' do
