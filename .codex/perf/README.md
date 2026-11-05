@@ -46,7 +46,7 @@ Environment of `measure.sh`: `HEAVY_TIMEOUT_S` (45), `HEAVY_ROUNDS` (3), `HEAVY_
 | `verify_mapping.js` | checks that both variants show the same options on the migrated data |
 | `server_bench.js`, `browser_bench.js` | the two benches (options in the file headers) |
 | `heavy_once.js` | one request of a heavy page with a long timeout (what main really needs when the bench stops at 45 s) |
-| `compose_diag.js` | diagnostic, no timing: splits the response bytes of three pages (head, select, mapping attribute) per variant; writes HTML to `results/` |
+| `compose_diag.js` | diagnostic, no timing: splits the response bytes of three pages (head, select, mapping: the `data-dcf-map` attribute before WP-39, the JSON script the select names in `data-dcf-map-ref` from WP-39 on) per variant; writes HTML to `results/` |
 | `summarize.js` | `results/raw` to `summary.json` and `summary.md` |
 | `report_tables.js` | `summary.json` to the markdown tables of the report with the verdicts, so the report holds no hand typed numbers |
 | `lib/zz_perf_probe.rb` | initializer installed in every checkout: SQL count, view and database time, allocations, CPU and GC heap per request as `X-Perf-*` headers and `log/perf.log` |

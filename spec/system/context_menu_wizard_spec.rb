@@ -153,46 +153,111 @@ RSpec.describe 'Context menu wizard', type: :system do
   # WP-39 (R5a): the entry starts loading the body when the pointer rests on
   # it (about 150 ms) or the link gets the keyboard focus; the click then
   # opens with that body (no second request); a pass-over sends nothing.
-  # Counts the wizard GETs in the page (fetch wrapped).
-  def count_wizard_gets
+  # Changed by WP-39 review round 1: no fixed sleeps (polling, and waits on a
+  # page timer, which fires after any prefetch timer set before it), the
+  # pass-over is timed in the page and retried on a fresh menu when the
+  # driver rested 100 ms or more on the entry, and the adoption is shown by
+  # the one GET starting before the click.
+  # Records the wizard GETs (start time), their answers, the entry clicks and
+  # the pointer crossings of an entry, all in page time (performance.now()).
+  def instrument_wizard
     page.execute_script(<<~JS)
-      window.dcfGets = 0;
+      window.dcfGets = []; window.dcfDone = 0; window.dcfClicks = []; window.dcfDwell = [];
       var realFetch = window.fetch;
       window.fetch = function (url, init) {
-        if ((!init || init.method === 'GET') && String(url).indexOf('/depending_custom_fields/wizard') !== -1) window.dcfGets += 1;
-        return realFetch(url, init);
+        var answer = realFetch.apply(this, arguments);
+        if ((!init || init.method === 'GET') && String(url).indexOf('/depending_custom_fields/wizard') !== -1) {
+          window.dcfGets.push(performance.now());
+          answer.then(function () { window.dcfDone += 1; }, function () { window.dcfDone += 1; });
+        }
+        return answer;
       };
+      var entry = function (e) {
+        var li = e.target.closest ? e.target.closest('li.cf-parent') : null;
+        return li && !(e.relatedTarget && li.contains(e.relatedTarget)) ? li : null;
+      };
+      document.addEventListener('mouseover', function (e) { if (entry(e)) window.dcfDwell.push(['in', performance.now()]); }, true);
+      document.addEventListener('mouseout', function (e) { if (entry(e)) window.dcfDwell.push(['out', performance.now()]); }, true);
+      document.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('li.cf-parent > a.submenu')) window.dcfClicks.push(performance.now());
+      }, true);
     JS
   end
 
   def wizard_gets
-    page.evaluate_script('window.dcfGets')
+    page.evaluate_script('window.dcfGets.length')
+  end
+
+  def wait_until(seconds = Capybara.default_max_wait_time)
+    Timeout.timeout(seconds) { sleep 0.05 until yield }
+  end
+
+  # Waits for a page timer of ms: every timer the page set before it with a
+  # shorter delay (the 150 ms prefetch delay) has fired by then.
+  def wait_page_timer(ms)
+    page.execute_script("window.dcfTick = false; setTimeout(function () { window.dcfTick = true; }, #{Integer(ms)});")
+    wait_until { page.evaluate_script('window.dcfTick') }
+  end
+
+  # Opens the menu, moves away and passes over the entry in one action chain.
+  # The time between entering and leaving the entry, or nil when the driver
+  # dispatched no crossing; nil too when the open itself started a prefetch.
+  def pass_over(issue, link_css, away)
+    find("tr#issue-#{issue.id} td.subject").right_click
+    link = find(link_css)
+    page.driver.browser.action.move_to(away.native).perform
+    wait_page_timer(400)
+    return nil unless wizard_gets.zero?
+
+    page.execute_script('window.dcfDwell = [];')
+    # duration 0: Selenium's default move takes 250 ms and passes the entry slowly.
+    page.driver.browser.action.move_to(link.native, duration: 0).move_to(away.native, duration: 0).perform
+    wait_page_timer(400)
+    page.evaluate_script(<<~JS)
+      (function () {
+        var d = window.dcfDwell;
+        var into = d.filter(function (x) { return x[0] === 'in'; })[0];
+        var out = d.filter(function (x) { return x[0] === 'out'; }).pop();
+        return into && out ? out[1] - into[1] : null;
+      })()
+    JS
   end
 
   it 'prefetches the body on hover and on focus, opens it with that one request and saves (WP-39)' do
     project, parent, child, issue = wizard_world('WizPrefetch')
     dcf_login
     visit "/projects/#{project.identifier}/issues"
-    count_wizard_gets
-    find("tr#issue-#{issue.id} td.subject").right_click
-    link = find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu")
+    instrument_wizard
+    link_css = "#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu"
     heading = find('#content h2', match: :first)
-    # The menu opens under the pointer: move away first, then count. A
-    # pass-over: in and out within one action chain.
-    page.driver.browser.action.move_to(heading.native).perform
-    sleep 0.6
-    page.execute_script('window.dcfGets = 0;')
-    # duration 0: Selenium's default move takes 250 ms and passes the entry slowly.
-    page.driver.browser.action.move_to(link.native, duration: 0).move_to(heading.native, duration: 0).perform
-    sleep 0.6
+    dwell = nil
+    attempts = 0
+    3.times do
+      attempts += 1
+      dwell = pass_over(issue, link_css, heading)
+      break if dwell && dwell < 100
+
+      # A slow chain (or a prefetch on open): close the menu (core hides it,
+      # the wizard drops the prefetch) and try again on a rebuilt menu.
+      heading.click
+      page.execute_script('window.dcfGets = []; window.dcfDone = 0;')
+    end
+    puts "DCF PASS-OVER dwell #{dwell.inspect} ms, attempts #{attempts}"
+    expect(dwell).to be < 100
     expect(wizard_gets).to eq(0)
+
+    link = find(link_css)
     link.hover
-    Timeout.timeout(Capybara.default_max_wait_time) { sleep 0.05 until wizard_gets == 1 }
-    sleep 0.5
+    wait_until { wizard_gets == 1 }
+    wait_until { page.evaluate_script('window.dcfDone') == 1 }
     link.click
-    expect(wizard_gets).to eq(1)
     within('#cf-wizard-container') do
       expect(page).to have_css("select[name='issue[custom_field_values][#{child.id}]'][data-dcf-map-ref]")
+    end
+    expect(wizard_gets).to eq(1)
+    started, clicked = page.evaluate_script('[window.dcfGets[0], window.dcfClicks[window.dcfClicks.length - 1]]')
+    expect(started).to be < clicked
+    within('#cf-wizard-container') do
       expect(page).to have_css('script[type="application/json"]', visible: :all, count: 1)
       find("select[name='issue[custom_field_values][#{parent.id}]'] option[value='B']").select_option
       selectable = dcf_selectable_options("issue_custom_field_values_#{child.id}")
@@ -208,14 +273,14 @@ RSpec.describe 'Context menu wizard', type: :system do
     expect(issue.reload.custom_field_value(child)).to eq('b1')
 
     visit "/projects/#{project.identifier}/issues"
-    count_wizard_gets
+    instrument_wizard
     find("tr#issue-#{issue.id} td.subject").right_click
     find("#context-menu li.cf-parent[data-parent-id='#{parent.id}']")
     page.execute_script(<<~JS, parent.id)
       document.querySelector('#context-menu li.cf-parent[data-parent-id="' + arguments[0] + '"] > a.submenu').focus();
     JS
-    Timeout.timeout(Capybara.default_max_wait_time) { sleep 0.05 until wizard_gets == 1 }
-    sleep 0.3
+    wait_until { wizard_gets == 1 }
+    wait_page_timer(300)
     expect(wizard_gets).to eq(1)
   end
 

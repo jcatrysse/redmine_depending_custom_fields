@@ -272,8 +272,11 @@ its fields when the pointer rests on its entry (about 150 ms) or when the
 entry has the keyboard focus for as long, so it usually opens at once; a
 choice while that loading runs waits for it instead of asking again, and
 nothing is loaded when the pointer only passes over an entry. Loaded fields
-are used for one opening of that menu only: every other opening loads them
-again, and closing or reopening the context menu drops them. **Escape**, the **Cancel**
+are used for one opening of that menu only and for 30 seconds at most:
+every other opening, or a choice more than 30 seconds after they finished
+loading, loads them again, and closing or reopening the context menu drops
+them. When the pointer or the focus moves on to another entry and that one
+starts loading, a loading the wizard no longer needs stops. **Escape**, the **Cancel**
 button, a click outside the wizard or moving to another menu entry closes it
 without saving. The wizard shows the top-level field and the dependent fields
 below it, one column per level, each labelled with its field name, and a
@@ -854,8 +857,11 @@ along. The context menu wizard (`assets/javascripts/context_menu_wizard.js`)
 loads the body of an entry ahead when the pointer rests on it for about 150
 ms or its link has the focus for as long; a click while that request runs
 waits for it, a click after it opens with its body, and a body is used for
-one opening only. Nothing is stored outside that entry: closing the menu,
-another right-click or another selection drops it.
+one opening only and only within 30 seconds after it arrived (an older one
+is fetched again). A new prefetch aborts a running one of an entry that
+neither the pointer nor the focus holds and no open wizard waits for; that
+entry then loads on its click. Nothing is stored outside that entry: closing
+the menu, another right-click or another selection drops it.
 
 Known limits:
 

@@ -688,7 +688,9 @@ test('L6 a second click while loading or after the body is shown gives one form 
   const container = click(pg);
   click(pg);
   assert.equal(c.calls.length, 2, 'the second click asks again');
-  if (c.calls[0].init.signal) assert.equal(c.calls[0].init.signal.aborted, true, 'the first request is aborted');
+  // Changed by WP-39 (review round 1): the signal must exist; was skipped without one.
+  assert.ok(c.calls[0].init.signal, 'the request has a signal');
+  assert.equal(c.calls[0].init.signal.aborted, true, 'the first request is aborted');
   c.calls[1].resolve(htmlResponse(F.read('wizard_body')));
   c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
   await settle();
@@ -961,8 +963,7 @@ test('P3 hover then click: one request; a click while it runs waits for it; a cl
   done.clock.tick(150);
   await settle();
   const box = click(done);
-  await D.microtask();
-  await D.microtask();
+  await settle();
   assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1, 'shown without a new request');
   assert.equal(gets(done).length, 1);
 });
@@ -1052,7 +1053,8 @@ test('P7 a rebuilt menu or another selection drops the prefetch: aborted, never 
     .replace('data-issue-ids="9300001"', 'data-issue-ids="9300002"');
   menu.textContent = '';
   await D.microtask();
-  if (first.init.signal) assert.equal(first.init.signal.aborted, true, 'the in-flight prefetch is aborted');
+  assert.ok(first.init.signal, 'the prefetch has a signal');
+  assert.equal(first.init.signal.aborted, true, 'the in-flight prefetch is aborted');
   menu.innerHTML = inner;
   await D.microtask();
   first.resolve(htmlResponse(F.tweak('wizard_body', (doc) => doc.querySelector('form').setAttribute('data-old', '1'))));
@@ -1086,7 +1088,8 @@ test('P8 core hiding the menu (a click outside it) drops the prefetch; the next 
   hover(pg);
   pg.clock.tick(150);
   pg.document.body.dispatchEvent(new pg.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-  if (c.calls[0].init.signal) assert.equal(c.calls[0].init.signal.aborted, true);
+  assert.ok(c.calls[0].init.signal, 'the prefetch has a signal');
+  assert.equal(c.calls[0].init.signal.aborted, true);
   c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
   await settle();
   hover(pg);
@@ -1119,7 +1122,8 @@ test('P9 an adopted body is used once: Escape, Cancel or a save need a new reque
   waiting.clock.tick(150);
   click(waiting);
   keydown(waiting, 'Escape');
-  if (c.calls[0].init.signal) assert.equal(c.calls[0].init.signal.aborted, false, 'not aborted by the close');
+  assert.ok(c.calls[0].init.signal, 'the prefetch has a signal');
+  assert.equal(c.calls[0].init.signal.aborted, false, 'not aborted by the close');
   const box = click(waiting);
   c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
   await settle();
@@ -1156,4 +1160,124 @@ test('P10 nothing is stored: no Web Storage, Cache API or module cache; an entry
   await open(ok);
   assert.deepEqual(writes, []);
   assert.doesNotMatch(D.WIZARD, /localStorage|sessionStorage|caches\.|serviceWorker/);
+});
+
+// ---- WP-39 review round 1 ---------------------------------------------------
+
+const focusIn = (pg, parentId) => entryLink(pg, parentId).dispatchEvent(new pg.window.FocusEvent('focusin', { bubbles: true, relatedTarget: pg.document.body }));
+const focusOut = (pg, parentId) => entryLink(pg, parentId).dispatchEvent(new pg.window.FocusEvent('focusout', { bubbles: true, relatedTarget: pg.document.body }));
+
+test('P11 a click before the hover delay ends opens with its own request; the delay never sends a second one', async () => {
+  const pg = await wizardPage();
+  hover(pg);
+  pg.clock.tick(100);
+  const container = click(pg);
+  pg.clock.tick(1000);
+  await settle();
+  assert.equal(gets(pg).length, 1);
+  assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1);
+});
+
+test('P12 the delay runs while either the pointer or the focus stays on the entry; leaving both cancels it', async () => {
+  // Focus stays, the pointer passes over: the delay still fires.
+  const kept = await wizardPage();
+  focusIn(kept);
+  hover(kept);
+  kept.clock.tick(50);
+  leave(kept);
+  kept.clock.tick(100);
+  assert.equal(gets(kept).length, 1, 'focus kept');
+  // The pointer stays, the focus leaves: the delay still fires.
+  const rest = await wizardPage();
+  hover(rest);
+  focusIn(rest);
+  rest.clock.tick(50);
+  focusOut(rest);
+  rest.clock.tick(100);
+  assert.equal(gets(rest).length, 1, 'pointer kept');
+  // Both leave before the delay: nothing.
+  const gone = await wizardPage();
+  hover(gone);
+  focusIn(gone);
+  gone.clock.tick(50);
+  leave(gone);
+  focusOut(gone);
+  gone.clock.tick(1000);
+  assert.equal(gets(gone).length, 0, 'both left');
+});
+
+test('P13 a prefetched body older than 30 s is not used: the click fetches again', async () => {
+  const at = { now: 1000000 };
+  const before = (w) => { w.Date.now = () => at.now; };
+  const fresh = await wizardPage({ before });
+  hover(fresh);
+  fresh.clock.tick(150);
+  await settle();
+  at.now += 30000;
+  const box = await open(fresh);
+  assert.equal(gets(fresh).length, 1, 'a body of 30 s is used');
+  assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1);
+
+  const c = controlled();
+  const old = await wizardPage({ before, load: c.load });
+  hover(old);
+  old.clock.tick(150);
+  c.calls[0].resolve(htmlResponse(F.tweak('wizard_body', (doc) => doc.querySelector('form').setAttribute('data-old', '1'))));
+  await settle();
+  at.now += 30001;
+  const container = click(old);
+  assert.equal(c.calls.length, 2, 'an older body is not used');
+  c.calls[1].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1);
+  assert.equal(container.querySelector('form[data-old]'), null);
+});
+
+test('P14 a new prefetch aborts a running one of an entry that neither pointer nor focus holds', async () => {
+  const c = controlled();
+  const pg = await wizardPage({ body: ENTRY_ABC, load: c.load });
+  hover(pg, '9100001');
+  pg.clock.tick(150);
+  leave(pg, '9100001');
+  hover(pg, '9100004');
+  pg.clock.tick(150);
+  assert.equal(c.calls.length, 2);
+  assert.ok(c.calls[0].init.signal, 'the prefetch has a signal');
+  assert.equal(c.calls[0].init.signal.aborted, true, 'the left entry is aborted');
+  assert.equal(c.calls[1].init.signal.aborted, false);
+  // The aborted entry prefetches no more in this menu; its click asks again.
+  leave(pg, '9100004');
+  hover(pg, '9100001');
+  pg.clock.tick(500);
+  assert.equal(c.calls.length, 2, 'at most one prefetch per entry');
+  const container = click(pg, '9100001');
+  assert.equal(c.calls.length, 3);
+  assert.ok(c.calls[2].url.includes('parent_id=9100001'));
+  c.calls[2].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1);
+
+  // An entry that keeps the focus, or whose open wizard waits for it, goes on.
+  const d = controlled();
+  const kb = await wizardPage({ body: ENTRY_ABC, load: d.load });
+  focusIn(kb, '9100001');
+  kb.clock.tick(150);
+  hover(kb, '9100004');
+  kb.clock.tick(150);
+  assert.equal(d.calls.length, 2);
+  assert.equal(d.calls[0].init.signal.aborted, false, 'the focused entry goes on');
+  const e = controlled();
+  const waits = await wizardPage({ body: ENTRY_ABC, load: e.load });
+  focusIn(waits, '9100001');
+  waits.clock.tick(150);
+  const box = click(waits, '9100001');
+  focusOut(waits, '9100001');
+  focusIn(waits, '9100004');
+  waits.clock.tick(150);
+  assert.equal(e.calls.length, 2);
+  assert.equal(e.calls[0].init.signal.aborted, false, 'the open wizard waits for it');
+  e.calls[0].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(e.calls.length, 2, 'no own request');
+  assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1);
 });

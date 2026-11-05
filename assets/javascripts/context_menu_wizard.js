@@ -21,6 +21,9 @@
 // body is used once (a later open fetches again). A failed prefetch shows
 // nothing and the click asks again. A rebuilt menu (the li removed) or core
 // hiding it (a click outside an a.submenu, core contextMenuClick) drops it.
+// A body that finished more than PREFETCH_MAX_AGE ms ago is not used (the
+// click fetches again). A new prefetch aborts a running one of an entry that
+// neither the pointer nor the focus holds and no open wizard waits for.
 (function () {
   'use strict';
   var FALLBACK = {
@@ -33,8 +36,10 @@
   var STOPPED = ['mousedown', 'mouseup', 'click', 'contextmenu'];
   var JSON_TYPE = 'application/json';
   var PREFETCH_DELAY = 150;
+  var PREFETCH_MAX_AGE = 30000;
   // li.cf-parent => {url, status: 'timer'|'loading'|'done'|'failed'|'used',
-  //  timer, abort, promise, hover, focus}; dropped with the li or the menu.
+  //  timer, abort, promise, hover, focus, at (Date.now() when done)};
+  //  dropped with the li or the menu.
   var prefetches = new Map();
   // {container, item, menu, outside, onKey, onMenuHover, stopProp, form,
   //  onSubmit, onCancel, cancel, abort}
@@ -109,7 +114,7 @@
     if (on) {
       if (kind === 'focus' && !e.target.closest('a.submenu')) return;
       if (!p) {
-        p = { url: null, status: 'timer', timer: null, abort: null, promise: null, hover: false, focus: false };
+        p = { url: null, status: 'timer', timer: null, abort: null, promise: null, hover: false, focus: false, at: 0 };
         p.timer = window.setTimeout(() => startPrefetch(menu, item, p), PREFETCH_DELAY);
         prefetches.set(item, p);
       }
@@ -127,22 +132,39 @@
 
   function startPrefetch(menu, item, p) {
     p.timer = null;
-    if (prefetches.get(item) !== p) return;
+    if (prefetches.get(item) !== p || p.status !== 'timer') return;
     const url = item.isConnected && !hidden(menu) ? wizardUrl(item) : null;
     if (!url) {
       dropPrefetch(item);
       return;
     }
+    abortLeft(item);
     const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
     p.url = url;
     p.status = 'loading';
     p.abort = controller;
     p.promise = loadForm(url, controller);
     p.promise.then(() => {
-      if (p.status === 'loading') p.status = 'done';
+      if (p.status !== 'loading') return;
+      p.status = 'done';
+      p.at = Date.now();
     }, () => {
       p.status = 'failed';
       p.promise = null;
+    });
+  }
+
+  // At most one running prefetch for entries the user has left: a running
+  // prefetch of another entry that neither the pointer nor the focus holds
+  // and that no open wizard waits for is aborted; its entry prefetches no
+  // more in this menu (a click fetches with its own request).
+  function abortLeft(item) {
+    prefetches.forEach((q, other) => {
+      if (other === item || q.status !== 'loading' || q.hover || q.focus) return;
+      if (current && current.item === other) return;
+      if (q.abort) q.abort.abort();
+      q.status = 'used';
+      q.promise = null;
     });
   }
 
@@ -165,18 +187,20 @@
 
   // The prefetched form promise for an open of +item+ at +url+, or null.
   // Every open ends the entry's prefetching (no later prefetch); a body of
-  // another URL is dropped.
+  // another URL, or one that finished more than PREFETCH_MAX_AGE ms ago, is
+  // dropped.
   function adoptPrefetch(item, url) {
     const p = prefetches.get(item);
     if (!p) {
-      prefetches.set(item, { url: url, status: 'used', timer: null, abort: null, promise: null, hover: false, focus: false });
+      prefetches.set(item, { url: url, status: 'used', timer: null, abort: null, promise: null, hover: false, focus: false, at: 0 });
       return null;
     }
     if (p.timer !== null) {
       window.clearTimeout(p.timer);
       p.timer = null;
     }
-    if ((p.status === 'loading' || p.status === 'done') && p.url === url && p.promise) return p.promise;
+    const fresh = p.status === 'loading' || (p.status === 'done' && Math.abs(Date.now() - p.at) <= PREFETCH_MAX_AGE);
+    if (fresh && p.url === url && p.promise) return p.promise;
     if (p.status === 'loading' && p.abort) p.abort.abort();
     p.status = 'used';
     p.promise = null;
