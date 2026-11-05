@@ -7,12 +7,12 @@
 #   REDMINE_DIR     checkout to work in (default: redmine, relative to the plugin root)
 #   MISE_BIN        mise executable, used only when it is present
 #   RMP_RUBY        pin the Ruby version instead of deriving it from the Gemfile
-#   RMP_RUBY_MAX    newest Ruby that actually exists (default: 3.4)
+#   RMP_RUBY_MAX    newest Ruby that actually exists (default: 4.0)
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REDMINE_DIR="${REDMINE_DIR:-$PLUGIN_ROOT/redmine}"
 MISE_BIN="${MISE_BIN:-mise}"
-RMP_RUBY_MAX="${RMP_RUBY_MAX:-3.4}"
+RMP_RUBY_MAX="${RMP_RUBY_MAX:-4.0}"
 
 # Redmine loads a plugin from plugins/<id>, where <id> is the name passed to
 # Redmine::Plugin.register. That is not always the repository name
