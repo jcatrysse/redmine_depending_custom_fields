@@ -97,7 +97,6 @@ fr:
   text_dcf_hint_bulk_cleared: "Vidé, car le choix actuel pour %{parent} n'autorise aucune valeur pour ce champ."
   text_dcf_live_message: "%{field} : %{message}"
   text_dcf_hint_locked_refused: "Un champ dépendant que vous ne pouvez pas modifier a une valeur que ce choix n'autorise pas ; l'enregistrement sera refusé."
-  text_dcf_wizard_loading: "Chargement..."
   text_dcf_wizard_load_failed: "L'assistant n'a pas pu être chargé."
 
   # Éditeur de dépendances (partiel partagé, DependencyEditorConfig::I18N)

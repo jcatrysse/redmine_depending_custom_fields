@@ -11,8 +11,12 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
   let(:locales) { %w[de en fr nl] }
   let(:root) { File.expand_path('../..', __dir__) }
 
+  # The plugin's own locale table, over core's for the core keys the map
+  # reuses (error_save_failed is the plugin's; label_loading is core's).
   def raw_table(locale)
-    YAML.safe_load(File.read(File.join(root, 'config/locales', "#{locale}.yml"))).fetch(locale)
+    core = YAML.safe_load(File.read(Rails.root.join('config', 'locales', "#{locale}.yml")),
+                         permitted_classes: [Symbol], aliases: true).fetch(locale)
+    core.merge(YAML.safe_load(File.read(File.join(root, 'config/locales', "#{locale}.yml"))).fetch(locale))
   end
 
   it 'names the meta tag dcf-i18n' do
@@ -33,11 +37,13 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       'liveMessage' => :text_dcf_live_message,
       'saveFailed' => :error_save_failed,
       'lockedRefused' => :text_dcf_hint_locked_refused,
-      'wizardLoading' => :text_dcf_wizard_loading,
+      'wizardLoading' => :label_loading,
       'wizardLoadFailed' => :text_dcf_wizard_load_failed
     )
     # Changed by WP-36: the wizard's loading and load failure texts follow
-    # lockedRefused; was lockedRefused last.
+    # lockedRefused; was lockedRefused last. Changed by review round 1: the
+    # loading text is core's label_loading (present in 5.1, 6.0, 6.1 and 7.0
+    # in all four locales); was the plugin key text_dcf_wizard_loading.
     expect(described_class::I18N.keys.last(3)).to eq(%w[lockedRefused wizardLoading wizardLoadFailed])
     expect(described_class::I18N).to be_frozen
   end
@@ -58,6 +64,16 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
     end
     expect(payloads['de']['saveFailed']).not_to eq(payloads['fr']['saveFailed'])
     expect(described_class.payload).not_to equal(described_class.payload)
+  end
+
+  # Review round 1: the loading text reuses core label_loading; the plugin
+  # defines no key of its own for it.
+  it 'defines no plugin key for the wizard loading text' do
+    locales.each do |locale|
+      own = YAML.safe_load(File.read(File.join(root, 'config/locales', "#{locale}.yml"))).fetch(locale)
+      expect(own).not_to have_key('text_dcf_wizard_loading'), locale
+      expect(own).not_to have_key('label_loading'), locale
+    end
   end
 
   it 'keeps no state on the module and defines no I18N_KEYS' do

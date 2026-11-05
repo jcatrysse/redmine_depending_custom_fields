@@ -32,6 +32,10 @@ class ContextMenuWizardController < ApplicationController
 
     issues = Issue.where(id: ids).preload(:project, :tracker, :status).to_a
     return render_404 if issues.empty?
+
+    # The requested order (the menu entry's data-issue-ids), not the database's.
+    position = ids.each_with_index.to_h
+    issues.sort_by! { |issue| position[issue.id] }
     return deny_access unless issues.all?(&:visible?)
 
     user = User.current

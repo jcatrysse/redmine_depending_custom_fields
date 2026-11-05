@@ -115,13 +115,16 @@ RSpec.describe 'Context menu wizard body (WP-36)', type: :request do
       expect(response.headers['Last-Modified']).to be_nil
     end
 
-    it 'lists the resolved issue ids in ids[], issue_ids and the data attribute, consistent with each other' do
-      issues = [issue_on(tracker), issue_on(tracker)]
-      dcf_get_wizard(parent.id, issues.map(&:id))
+    # Changed by review round 1: the ids keep the requested order (the order
+    # of the menu entry's data-issue-ids); was compared with match_array.
+    it 'lists the resolved issue ids in ids[], issue_ids and the data attribute, in the requested order' do
+      first, second, third = Array.new(3) { issue_on(tracker) }
+      requested = [third, first, second].map(&:id)
+      dcf_get_wizard(parent.id, requested)
       form = body_form
       inputs = form.css("input[type=hidden][name='ids[]']").map { |input| input['value'] }
 
-      expect(inputs).to match_array(issues.map { |i| i.id.to_s })
+      expect(inputs).to eq(requested.map(&:to_s))
       expect(form.at_css("input[type=hidden][name='issue_ids']")['value']).to eq(inputs.join(','))
       expect(form['data-issue-ids']).to eq(inputs.join(','))
       expect(form['data-parent-id']).to eq(parent.id.to_s)
@@ -187,6 +190,24 @@ RSpec.describe 'Context menu wizard body (WP-36)', type: :request do
 
       dcf_get_wizard(parent.id, issues.map(&:id))
       expect(response).to have_http_status(:ok)
+    end
+
+    # Review round 1: no per-issue query (visibility, the edit permission and
+    # the editable fields of each selected issue are checked without one).
+    it 'runs the same number of queries for 2 and for 20 selected issues of one project and tracker' do
+      user = member([:view_issues, :edit_issues])
+      issues = Array.new(20) { issue_on(tracker) }
+      as(user)
+      dcf_get_wizard(parent.id, issues.first(2).map(&:id))
+      expect(response).to have_http_status(:ok)
+
+      counts = [2, 20].map do |size|
+        count = dcf_count_queries { dcf_get_wizard(parent.id, issues.first(size).map(&:id)) }
+        expect(response).to have_http_status(:ok)
+        expect(body_form.css("input[name='ids[]']").size).to eq(size)
+        count
+      end
+      expect(counts[1]).to eq(counts[0]), counts.inspect
     end
 
     it 'calls neither Rails.cache nor FieldIndex.load' do
@@ -288,9 +309,10 @@ RSpec.describe 'Context menu wizard body (WP-36)', type: :request do
       allow(Rails.logger).to receive(:error).and_call_original
 
       dcf_get_wizard(parent.id, [issue.id])
-      expect(response.status).to be >= 400
-      expect(response.body).not_to include('secret value')
-      expect(response.body).not_to include('RuntimeError')
+      # Changed by review round 1: exactly a 500 without a body; was any
+      # status from 400 on.
+      expect(response).to have_http_status(:internal_server_error)
+      expect(response.body).to be_blank
       expect(Rails.logger).to have_received(:warn).with('[DCF] context menu wizard failed: RuntimeError').once
       expect(Rails.logger).not_to have_received(:error).with(/secret value/)
       no_store

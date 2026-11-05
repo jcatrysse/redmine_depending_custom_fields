@@ -97,7 +97,6 @@ nl:
   text_dcf_hint_bulk_cleared: "Leeggemaakt omdat de huidige keuze voor %{parent} geen waarden voor dit veld toestaat."
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "Een afhankelijk veld dat u niet kunt bewerken, heeft een waarde die deze keuze niet toestaat; opslaan wordt geweigerd."
-  text_dcf_wizard_loading: "Bezig met laden..."
   text_dcf_wizard_load_failed: "De wizard kon niet worden geladen."
 
   # Afhankelijkheidseditor (gedeelde partial, DependencyEditorConfig::I18N)

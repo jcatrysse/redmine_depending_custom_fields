@@ -8,7 +8,8 @@ module RedmineDependingCustomFields
   # is the warning for a parent change the server will refuse because of a
   # visible read-only dependent field (UD-37). wizardLoading and
   # wizardLoadFailed are the loading and load failure texts of the context
-  # menu wizard, which fetches its body when it opens (WP-36).
+  # menu wizard, which fetches its body when it opens (WP-36); the loading
+  # text reuses core label_loading (all four locales on every supported core).
   #
   # module_function and stateless: the payload is built per call.
   module ClientConfig
@@ -25,7 +26,7 @@ module RedmineDependingCustomFields
       'liveMessage' => :text_dcf_live_message,
       'saveFailed' => :error_save_failed,
       'lockedRefused' => :text_dcf_hint_locked_refused,
-      'wizardLoading' => :text_dcf_wizard_loading,
+      'wizardLoading' => :label_loading,
       'wizardLoadFailed' => :text_dcf_wizard_load_failed
     }.freeze
     # Compared with controller.class.name; nothing is constantized.

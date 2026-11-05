@@ -385,7 +385,8 @@
       saveFailed: 'The change could not be saved.',
       lockedRefused: 'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.',
       // WP-36: read by context_menu_wizard.js (its own copy), kept here so the
-      // key set equals the meta tag's.
+      // key set equals the meta tag's. wizardLoading is the en text of core
+      // label_loading.
       wizardLoading: 'Loading...',
       wizardLoadFailed: 'The wizard could not be loaded.'
     };

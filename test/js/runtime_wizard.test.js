@@ -571,7 +571,7 @@ test('L2 the container shows an announced loading text at once, without a form o
 });
 
 test('L2 the loading and failure texts come from the dcf-i18n meta tag, else English', async () => {
-  const meta = { wizardLoading: 'Wird geladen...', wizardLoadFailed: 'Der Assistent konnte nicht geladen werden.' };
+  const meta = { wizardLoading: 'Lade...', wizardLoadFailed: 'Der Assistent konnte nicht geladen werden.' };
   const c = controlled();
   const pg = await wizardPage({ meta, load: c.load });
   const container = click(pg);

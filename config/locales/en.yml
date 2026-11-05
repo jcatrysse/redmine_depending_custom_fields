@@ -97,7 +97,6 @@ en:
   text_dcf_hint_bulk_cleared: "Cleared because the current choice for %{parent} allows no values for this field."
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused."
-  text_dcf_wizard_loading: "Loading..."
   text_dcf_wizard_load_failed: "The wizard could not be loaded."
 
   # Dependency editor (shared partial, DependencyEditorConfig::I18N)
