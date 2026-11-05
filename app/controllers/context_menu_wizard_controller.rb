@@ -68,20 +68,24 @@ class ContextMenuWizardController < ApplicationController
       return deny_access
     end
 
-    errors = []
+    failed = Hash.new { |hash, message| hash[message] = [] }
     @issues.find_each do |issue|
       # As core bulk_update does: a journal for the history and the
       # notifications (full review of 2026-11-05, context-menu-2), then
       # safe_attributes=, which keeps only the custom fields the current user
       # may edit on this issue (visible for the user's roles and not
-      # read-only by workflow). Each error names its issue (context-menu-4).
+      # read-only by workflow).
       issue.init_journal(User.current)
       issue.safe_attributes = { 'custom_field_values' => values }
       issue.save
-      errors.concat(issue.errors.full_messages.map { |message| "##{issue.id}: #{message}" }) if issue.errors.any?
+      issue.errors.full_messages.uniq.each { |message| failed[message] << issue.id }
     end
 
-    if errors.any?
+    if failed.any?
+      # One line per message with its issues, as core's bulk edit
+      # (bulk_edit_error_messages): 'City is invalid: #41, #42' (context-menu-4,
+      # Chromium walkthrough of 2026-11-05, issue-1).
+      errors = failed.map { |message, ids| "#{message}: #{ids.sort.map { |id| "##{id}" }.join(', ')}" }
       render json: { errors: errors }, status: :unprocessable_entity
     else
       head :ok

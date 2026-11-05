@@ -29,9 +29,9 @@
           <td><%= format_time(event.created_at) %></td>
           <td><%= h(event.acting_user_name) %></td>
           <td><%= h(event.custom_field_name) %></td>
-          <td><%= h(event.action) %></td>
-          <td class="<%= dcf_audit_status_class(event.status) %>"><%= h(event.status) %></td>
-          <td><%= h(event.changes_summary.presence || event.error_message) %></td>
+          <td><%= dcf_audit_action_label(event.action) %></td>
+          <td class="<%= dcf_audit_status_class(event.status) %>"><%= dcf_audit_status_label(event.status) %></td>
+          <td><%= dcf_audit_summary(event) %></td>
         </tr>
       <% end %>
     </tbody>

@@ -1878,6 +1878,9 @@ RSpec.describe 'DCF value operation services' do
   # The ceiling is stubbed through ProjectStoragePolicy.ceiling_bytes (the
   # spec seam). Stubbed ceilings are far below MySQL TEXT, so the examples
   # behave the same on PostgreSQL and MariaDB.
+  # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): a refusal by
+  # the ceiling raises and audits error_dcf_*_over_ceiling (with the setting
+  # in KiB); was error_dcf_*_too_large, which a column limit keeps.
   describe 'project storage ceiling (WP-31)' do
     let(:policy) { RedmineDependingCustomFields::ProjectStoragePolicy }
     let(:limits) { RedmineDependingCustomFields::StorageLimits }
@@ -1959,12 +1962,13 @@ RSpec.describe 'DCF value operation services' do
         stub_ceiling(ceiling)
         error = nil
         expect { error = refusal { add(CustomField.find(field.id), value: 'D') } }.to change(events, :count).by(1)
-        expect(error.key).to eq(:error_dcf_values_too_large)
+        expect(error.key).to eq(:error_dcf_values_over_ceiling)
         expect(error.interpolations)
-          .to eq(field: field.name, size: limits.delimited(bytes), limit: limits.delimited(ceiling))
+          .to eq(field: field.name, size: limits.delimited(bytes), limit: limits.delimited(ceiling),
+                 ceiling: limits.delimited(ceiling / 1024))
         row = rows(field).last
         expect([row.action, row.status, row.error_message])
-          .to eq(%w[validation_failed validation_failed error_dcf_values_too_large])
+          .to eq(%w[validation_failed validation_failed error_dcf_values_over_ceiling])
         expect(row.changes_summary)
           .to eq("possible_values: #{bytes} bytes exceeds #{ceiling} (custom field ##{field.id})")
         expect(field.reload.possible_values).to eq(%w[A B CC])
@@ -1977,7 +1981,7 @@ RSpec.describe 'DCF value operation services' do
         stub_ceiling(10)
 
         error = refusal { add(CustomField.find(field.id), value: 'Echo') }
-        expect(error.key).to eq(:error_dcf_values_too_large)
+        expect(error.key).to eq(:error_dcf_values_over_ceiling)
         expect(error.interpolations[:limit]).to eq(limits.delimited(stored))
         expect(rows(field).last.changes_summary)
           .to eq("possible_values: #{yaml_bytes(%w[Alpha Bravo Charlie Delta Echo])} bytes exceeds #{stored} " \
@@ -1990,7 +1994,8 @@ RSpec.describe 'DCF value operation services' do
         expect(CustomField.find(field.id).possible_values).to eq(%w[Bravo Charlie Delta Omega])
 
         grow = refusal { rename(CustomField.find(field.id), old_value: 'Omega', new_value: 'Omega2', confirm: '1') }
-        expect([grow.key, grow.interpolations[:limit]]).to eq([:error_dcf_values_too_large, limits.delimited(stored)])
+        expect([grow.key, grow.interpolations[:limit]])
+          .to eq([:error_dcf_values_over_ceiling, limits.delimited(stored)])
 
         remove(CustomField.find(field.id), value: 'Delta', confirm: '1')
         expect(CustomField.find(field.id).possible_values).to eq(%w[Bravo Charlie Omega])
@@ -2076,7 +2081,7 @@ RSpec.describe 'DCF value operation services' do
         expect(raw(child, 'format_store').bytesize).to be > values_bytes + 20
         grow = refusal { rename(CustomField.find(child.id), old_value: 'c', new_value: 'c-longer', confirm: '1') }
         expect([grow.key, grow.interpolations[:limit]])
-          .to eq([:error_dcf_mapping_too_large, limits.delimited(normalized_bytes(stale))])
+          .to eq([:error_dcf_mapping_over_ceiling, limits.delimited(normalized_bytes(stale))])
         expect(normalized_bytes(stale)).to be > raw(child, 'format_store').bytesize
         expect(CustomField.find(child.id).possible_values).to eq(%w[e c x])
       end
@@ -2195,7 +2200,7 @@ RSpec.describe 'DCF value operation services' do
         expect(raw(child, 'format_store').bytesize).to eq(child_stored)
 
         error = refusal { rename(CustomField.find(parent.id), old_value: 'Z', new_value: 'Z-longer', confirm: '1') }
-        expect([error.key, error.interpolations[:field]]).to eq([:error_dcf_mapping_too_large, child.name])
+        expect([error.key, error.interpolations[:field]]).to eq([:error_dcf_mapping_over_ceiling, child.name])
         expect(error.interpolations[:limit]).to eq(limits.delimited(child_stored))
         expect(error.summary).to end_with("(custom field ##{child.id})")
         expect(CustomField.find(parent.id).possible_values).to eq(%w[Z B])
@@ -2329,7 +2334,7 @@ RSpec.describe 'DCF value operation services' do
         stub_ceiling(raw(child, 'format_store').bytesize)
 
         error = refusal { map(CustomField.find(child.id), value_dependencies: { 'P' => %w[a b], 'Q' => %w[a b] }) }
-        expect(error.key).to eq(:error_dcf_mapping_too_large)
+        expect(error.key).to eq(:error_dcf_mapping_over_ceiling)
         expect(error.interpolations[:limit]).to eq(limits.delimited(raw(child, 'format_store').bytesize))
 
         map(CustomField.find(child.id), value_dependencies: { 'P' => %w[a] })
@@ -2403,7 +2408,7 @@ RSpec.describe 'DCF value operation services' do
         expect(error.key).to eq(:error_save_failed)
         expect(error.interpolations).to eq({})
         row = events.order(:id).last
-        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_over_ceiling])
         # Changed by the full review of 2026-11-05 (project-pages-7): no id of
         # the hidden field; was '... (custom field #<id>)'.
         expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds #{raw_child.bytesize}\z/)

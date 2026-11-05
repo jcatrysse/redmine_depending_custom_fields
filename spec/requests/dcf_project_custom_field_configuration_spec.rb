@@ -717,6 +717,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         .to eq(I18n.t(:error_dcf_values_too_large, locale: :de, field: markup, size: size, limit: limit))
     end
 
+    # Changed by the Chromium walkthrough of 2026-11-05 (ux-3): the summary
+    # is the translated refusal with both sizes, read from the stored row;
+    # was the stored developer text 'possible_values: N bytes exceeds M
+    # (custom field #id)'.
     it 'shows the storage failure escaped on the project audit page' do
       field = dcf_list_field(name: markup, values: %w[A B], is_for_all: false, projects: [project])
       stub_limit_at_stored('possible_values', field)
@@ -729,7 +733,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
       table = Nokogiri::HTML(response.body).at_css('table')
       expect(table.css('img')).to be_empty
       expect(table.text).to include(markup)
-      expect(table.text).to match(/possible_values: \d+ bytes exceeds \d+ \(custom field #\d+\)/)
+      size = limits.delimited(limits.serialized_bytesize(CustomField, 'possible_values', %w[A B C]))
+      limit = limits.delimited(limits.column_limit('possible_values'))
+      expect(table.text).to include(I18n.t(:text_dcf_audit_values_too_large, size: size, limit: limit))
+      expect(table.text).not_to include('bytes exceeds')
     end
 
     # Changed by WP-34 (UD-23): confirm '1' (global child; the storage error
@@ -913,8 +920,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         I18n.with_locale(locale) do
           keys.each do |key|
             # Changed by WP-31: error_dcf_value_length interpolates max.
+            # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): the
+            # ceiling keys interpolate ceiling.
             error = RedmineDependingCustomFields::OperationError.new(
-              key.to_sym, interpolations: { field: 'F', size: '1', limit: '2', max: '255' }
+              key.to_sym, interpolations: { field: 'F', size: '1', limit: '2', max: '255', ceiling: '64' }
             )
             out = translate(error)
             expect(out).to be_a(String)
@@ -1473,8 +1482,12 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(stored(child)).to eq(original)
         expect(rendered_state_hash).to eq(state_hash(child))
 
+        # Changed by the Chromium walkthrough of 2026-11-05 (ux-3): the audit
+        # page shows the translated refusal, the offenders stay in the stored
+        # row; was the stored summary, escaped.
         get custom_field_configuration_audit_path(project)
-        expect(response.body).to include('&lt;img src=x onerror=alert(1)&gt;MARK')
+        summary = doc.css('table.dcf-audit-list tbody tr').first.css('td').last.text.strip
+        expect(summary).to eq(I18n.t(:error_invalid_dependency))
         expect(response.body).not_to include('<img src=x')
       end
 
@@ -2558,8 +2571,13 @@ RSpec.describe 'Project custom field configuration', type: :request do
     describe 'audit page (project design 4)' do
       it 'selects only the listed columns, counts every row and renders the rows unchanged' do
         events = RedmineDependingCustomFields::ConfigAuditEvent
+        # Changed by the Chromium walkthrough of 2026-11-05 (admin-1, ux-3):
+        # the rows name a field the manager may see (rows of other fields
+        # are left out) and action and status are translated; were rows
+        # without a field and the stored keys.
+        field = own_list(2)
         30.times do |i|
-          events.create!(project_id: project.id, action: 'rename_value', status: 'success',
+          events.create!(project_id: project.id, action: 'rename_value', status: 'success', custom_field_id: field.id,
                          custom_field_name: "F#{i}", acting_user_name: 'M', changes_summary: "<b>S#{i}</b>",
                          before_value: 'x' * 16_384, after_value: 'y' * 16_384, created_at: Time.now - i)
         end
@@ -2579,7 +2597,9 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(audit.grep(/COUNT\(\*\)/i)).not_to be_empty
         rows = doc.css('table.dcf-audit-list tbody tr')
         expect(rows.size).to eq(25)
-        expect(rows.first.css('td').map { |td| td.text.strip }[1..]).to eq(['M', 'F0', 'rename_value', 'success', '<b>S0</b>'])
+        expect(rows.first.css('td').map { |td| td.text.strip }[1..])
+          .to eq(['M', 'F0', I18n.t(:label_dcf_audit_action_rename_value), I18n.t(:label_dcf_audit_status_success),
+                  '<b>S0</b>'])
         expect(doc.css('span.pagination span.items').text).to eq('(1-25/30)')
         get "#{custom_field_configuration_audit_path(project)}?page[]=1"
         expect(response).to have_http_status(200)
@@ -2756,7 +2776,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         patch sort_path(field), params: { direction: 'asc' }
         get custom_field_configuration_audit_path(project)
         cells = doc.css('table.dcf-audit-list tbody tr').first.css('td').map { |td| td.text.strip }
-        expect(cells).to include('sort_values', 'success', 'Sorted 2 value(s) A-Z (2 moved)')
+        # Changed by the Chromium walkthrough of 2026-11-05 (ux-3): translated
+        # action and status; were the stored keys sort_values and success.
+        expect(cells).to include(I18n.t(:label_dcf_audit_action_sort_values), I18n.t(:label_dcf_audit_status_success),
+                                 'Sorted 2 value(s) A-Z (2 moved)')
       end
     end
 
@@ -3909,12 +3932,16 @@ RSpec.describe 'Project custom field configuration', type: :request do
 
         expect(response).to have_http_status(422)
         bytes = yaml_bytes(%w[A B SECRET_C1])
-        expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_values_too_large, field: field.name,
-                                                                               size: limits.delimited(bytes),
-                                                                               limit: limits.delimited(ceiling)))
+        # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): the
+        # ceiling text and key with the setting in KiB; was
+        # error_dcf_values_too_large.
+        expect(flash_box.text.strip).to eq(I18n.t(:error_dcf_values_over_ceiling,
+                                                  field: field.name, size: limits.delimited(bytes),
+                                                  limit: limits.delimited(ceiling),
+                                                  ceiling: limits.delimited(ceiling / 1024)))
         row = rows(field).last
         expect([row.action, row.status, row.error_message])
-          .to eq(%w[validation_failed validation_failed error_dcf_values_too_large])
+          .to eq(%w[validation_failed validation_failed error_dcf_values_over_ceiling])
         expect(row.changes_summary).to eq("possible_values: #{bytes} bytes exceeds #{ceiling} (custom field ##{field.id})")
         expect(response.body).not_to include('SECRET_C1')
         expect(response.body).not_to include(I18n.t('activerecord.errors.messages.dcf_storage_too_large',
@@ -3954,7 +3981,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
              params: { value: 'C', dcf_storage_ceiling: (10**12).to_s, project_storage_ceiling_kib: '999999',
                        custom_field: { dcf_storage_ceiling: (10**12).to_s } }
         expect(response).to have_http_status(422)
-        expect(rows(field).last.error_message).to eq('error_dcf_values_too_large')
+        # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): was error_dcf_values_too_large.
+        expect(rows(field).last.error_message).to eq('error_dcf_values_over_ceiling')
         expect(field.reload.possible_values).to eq(%w[A B])
       end
 
@@ -3975,7 +4003,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response).to have_http_status(422)
         expect(flash_box.text.strip).to include(child.name)
         expect(flash_box.text.strip).to include(limits.delimited(stored))
-        expect(rows(child).last.error_message).to eq('error_dcf_mapping_too_large')
+        # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): was error_dcf_mapping_too_large.
+        expect(rows(child).last.error_message).to eq('error_dcf_mapping_over_ceiling')
         expect(editor_root['data-dcf-editor-dirty']).to eq('1')
         expect(JSON.parse(editor_root['data-dcf-editor-mapping'])['value_dependencies']).to eq(grown)
         expect(doc.css('input[name="dependencies_json"]').map { |input| input['value'] }).to eq([''])
@@ -4036,7 +4065,8 @@ RSpec.describe 'Project custom field configuration', type: :request do
           expect(events.all.map { |row| row.attributes.values.join(' ') }.join(' ')).not_to include(secret)
         end
         row = rows(parent).last
-        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
+        # Changed by the Chromium walkthrough of 2026-11-05 (admin-2): was error_dcf_mapping_too_large.
+        expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_over_ceiling])
         # Changed by the full review of 2026-11-05 (project-pages-7): no id of
         # the hidden field (was 'custom field #<id>' in the summary).
         expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds \d+\z/)

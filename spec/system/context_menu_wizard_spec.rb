@@ -172,7 +172,8 @@ RSpec.describe 'Context menu wizard', type: :system do
         .setAttribute('data-issue-ids', String(arguments[1]));
     JS
     find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu").click
-    expect(page).to have_css('#cf-wizard-container [role=alert]', text: 'The wizard could not be loaded.')
+    expect(page).to have_css('#cf-wizard-container [role=alert]',
+                             text: 'The wizard could not be loaded. Click the entry again to try again.')
     expect(page).to have_no_css('#cf-wizard-container form')
     expect(page).not_to have_text('WizFailHiddenZz')
     shot('wizard-load-failed', wp: 'wp-36')

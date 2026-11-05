@@ -10,6 +10,8 @@ module RedmineDependingCustomFields
   # wizardLoadFailed are the loading and load failure texts of the context
   # menu wizard, which fetches its body when it opens (WP-36); the loading
   # text reuses core label_loading (all four locales on every supported core).
+  # noOptionsRequired is the empty hint of a required field (Chromium
+  # walkthrough of 2026-11-05, ux-10).
   #
   # module_function and stateless: the payload is built per call.
   module ClientConfig
@@ -18,6 +20,7 @@ module RedmineDependingCustomFields
       'selectParent' => :text_dcf_hint_select_parent,
       'noOptions' => :text_dcf_hint_no_options,
       'noOptionsGeneric' => :text_dcf_hint_no_options_generic,
+      'noOptionsRequired' => :text_dcf_hint_no_options_required,
       'legacy' => :text_dcf_hint_legacy,
       'legacyLocked' => :text_dcf_hint_legacy_locked,
       'legacyGeneric' => :text_dcf_hint_legacy_generic,

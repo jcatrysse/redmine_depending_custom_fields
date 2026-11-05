@@ -106,10 +106,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
   end
 
   # The page loads only the columns the view shows (project design 4); the
-  # count stays on the unselected scope.
+  # count stays on the unselected scope. Rows of a field the user may not
+  # see, or of a deleted field, are left out (Chromium walkthrough of
+  # 2026-11-05, admin-1); an administrator sees every row.
   def audit
     scope = RedmineDependingCustomFields::ConfigAuditEvent
             .where(project_id: @project.id).order(created_at: :desc, id: :desc)
+    scope = scope.where(custom_field_id: audit_field_ids(scope)) unless User.current.admin?
     @event_count = scope.count
     page = RedmineDependingCustomFields::ValuesPage.coerce_page(params[:page])
     @paginator = Redmine::Pagination::Paginator.new(@event_count, 25, page)
@@ -124,10 +127,13 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     render_404
   end
 
+  # A field the user may not see answers like an unknown one (Chromium
+  # walkthrough of 2026-11-05, admin-1: UsageCalculator.nameable?).
   def find_field
     @field = CustomField.find_by(id: params[:field_id])
     return render_field_error(:error_field_not_found, :not_found) unless @field
-    unless RedmineDependingCustomFields::FieldRelevance.in_project?(@field, @project)
+    unless RedmineDependingCustomFields::FieldRelevance.in_project?(@field, @project) &&
+           RedmineDependingCustomFields::UsageCalculator.nameable?(@field, @project, User.current)
       return render_field_error(:error_field_not_found, :not_found)
     end
     unless RedmineDependingCustomFields::FieldRelevance.supported_format?(@field)
@@ -219,6 +225,14 @@ class ProjectCustomFieldConfigurationController < ApplicationController
             end
     page = RedmineDependingCustomFields::ValuesPage.page_for_index(index, options.size, per_page_option)
     page > 1 ? { page: page } : {}
+  end
+
+  # The ids of the fields with rows in +scope+ that the user may see.
+  def audit_field_ids(scope)
+    ids = scope.unscope(:order).distinct.pluck(:custom_field_id).compact
+    CustomField.where(id: ids).select do |field|
+      RedmineDependingCustomFields::UsageCalculator.nameable?(field, @project, User.current)
+    end.map(&:id)
   end
 
   # R9: every render reloads the field, so the state hash and the editor never

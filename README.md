@@ -34,12 +34,15 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
      blank choice, if the field has one, is left, apart from a stored value
      (see below). A hint under the field explains why, for example "Select a
      value for Hardware first." or "No values are available for the selected
-     Hardware.", and hints are announced to screen readers
+     Hardware.", and hints are announced to screen readers. A required field
+     whose parent value allows nothing says that it stays empty and that the
+     form can still be saved
    - Dependent fields, and all fields below them, update automatically when a
      parent value changes or is cleared
    - Per-parent default values are filled in on new records that are no copy
      and when the parent value changes; they are not filled into empty fields
-     of a saved record or of a copy when its form opens
+     of a saved record or of a copy when its form opens, nor into a field you
+     left blank when a new record's form comes back after a refused save
    - The value you last picked for each parent value comes back when you
      switch the parent back, also after the form refreshes (for example after
      a tracker or status change)
@@ -123,7 +126,9 @@ options' and the edit style:
 - in each section a filter for the child values, a view (all, linked to this
   value, not linked to this value, not linked to any parent value), 'Check
   all shown' and 'Uncheck all shown' (also for rows not shown yet; 200 rows at
-  a time) and the per-parent default value;
+  a time) and the per-parent default value; a section opens on the linked
+  values when the parent value has links and the field has more than 200
+  child values, else on all child values;
 - counters, and the list of child values not linked to any parent value;
 - inactive Key/Value list entries with an 'inactive' badge; their links are
   kept.
@@ -247,7 +252,8 @@ access the wizard. It needs the **Edit issues** permission for every selected
 issue, for its tracker too when the role limits that permission to some
 trackers (as the edit entries of Redmine's own menu), so a closed project gets
 no wizard. A save is recorded in the issue history and sends the usual
-notifications, as bulk edit does; each error names its issue (`#12: ...`). Only
+notifications, as bulk edit does; a refused save lists each error once with
+the numbers of its issues, as bulk edit does (`City is invalid: #12, #13`). Only
 `__none__` clears a field, as in bulk edit, so a value named `none` is saved. The menu shows one
 wizard entry for each top-level parent field (a field other fields depend on
 that does not depend on another field itself) that you may edit on every
@@ -260,8 +266,8 @@ at the entry: it shows "Loading..." while it fetches its fields from the
 server, with the same checks as the menu (the request needs your session; an
 API key is not accepted). If they cannot be loaded, for example after the
 session expired or when the selection changed meanwhile, the wizard shows
-"The wizard could not be loaded." and names no field; choose the entry again
-to retry. Every opening loads the fields again. **Escape**, the **Cancel**
+"The wizard could not be loaded. Click the entry again to try again." and
+names no field; choose the entry again to retry. Every opening loads the fields again. **Escape**, the **Cancel**
 button, a click outside the wizard or moving to another menu entry closes it
 without saving. The wizard shows the top-level field and the dependent fields
 below it, one column per level, each labelled with its field name, and a
@@ -376,10 +382,12 @@ every supported Redmine version:
 - A field you can see reports "is invalid" under its name. A field you cannot
   see is never named: the error is shown on the parent field, for example
   "Hardware cannot be changed because a dependent field you cannot see has a
-  value that does not match the new value", or as the general message "This
-  change cannot be saved because a dependent field you cannot see has a value
-  that the change does not allow." when you cannot see the parent field either
-  or its value did not change.
+  value that does not match the new value. Keep the current value, or ask
+  someone who can see all fields to make this change", or as the general
+  message "This change cannot be saved because a dependent field you cannot
+  see has a value that the change does not allow. Keep the current values, or
+  ask someone who can see all fields to make this change." when you cannot see
+  the parent field either or its value did not change.
 - A new issue, a new project or a copy gets the default value of a dependent
   field you cannot edit, and so does an issue moved to a tracker or project
   where that field was not available. The save is refused when the parent
@@ -908,7 +916,8 @@ these reasons:
   not allow. A field you can see reports "is invalid" under its name; a field
   you cannot see is never named: the message is on the parent field, or it is
   the general message "This change cannot be saved because a dependent field
-  you cannot see has a value that the change does not allow."
+  you cannot see has a value that the change does not allow. Keep the current
+  values, or ask someone who can see all fields to make this change."
 - `POST /issues.json`, a copy with
   `POST /projects/:id/issues.json?copy_from=<id>` and `POST /projects.json`
   give a dependent field you cannot edit its default value, and so does a
@@ -1239,7 +1248,12 @@ on the administration form.
   audit log, written in the same transaction as the change; a change that
   still waits for its confirmation is not recorded. Project managers see
   the audit for their project in the settings tab; administrators can view the
-  global log at `/dcf_config_audit`.
+  global log at `/dcf_config_audit`. Both show the action, the status and the
+  reason of a refusal as translated text; the stored rows keep their keys.
+* A field hidden for your role (visible to other roles only) is not listed in
+  the settings tab, its pages and changes answer "not found" as for an unknown
+  field, and the audit log of the project leaves out its rows (and the rows of
+  deleted fields). Administrators see and manage every field.
 * A list value added or renamed here has at most 255 characters (counted as
   characters, not bytes). Values stored before with more characters are kept:
   they can be removed, sorted, set as default or renamed to a value of at most
@@ -1266,8 +1280,8 @@ Three plugin settings (Administration → Plugins → Configure):
   dependent fields whose parent keys a rename rewrites. A field that is already
   larger, for example because an administrator made it so, can still shrink or
   keep its size from project settings, but not grow. The refused change is
-  audited and the message names the field and both sizes (a dependent field
-  you cannot see is not named). The custom field administration, the JSON API
+  audited and the message names the field, both sizes and this setting in KiB
+  (a dependent field you cannot see is not named). The custom field administration, the JSON API
   and issue imports are not limited by this setting. On MySQL and MariaDB the
   `TEXT` column limit (65,535 bytes) is smaller and applies first, so the
   setting matters on PostgreSQL, SQLite and widened columns. The setting

@@ -302,12 +302,23 @@ CHANGELOG:
 - Fixed: Imports and email accept labels of multi-value dependent fields that contain a comma (the longest label is matched first, as Redmine does), and an Extended user import cell such as '42 Jane Roe' no longer selects the user with id 42.
 - Fixed: A project copy keeps the values of dependent fields that no longer fit an unchanged parent value, as an issue copy does.
 - Fixed: In project settings, removing the default value of a Key/Value list also clears the default, an entry name longer than 60 characters is refused with a clear message, a list with a value stored twice can be reordered by drag and drop, the dependency page works with a standard parent field while standard fields are not managed in projects, and a closed project is called closed or archived.
-- Fixed: The context-menu wizard saves a value named 'none', records its changes in the issue history and sends notifications as bulk edit does, is offered only when you may edit the selected issues for their trackers, and names the issue in each error.
+- Fixed: The context-menu wizard saves a value named 'none', records its changes in the issue history and sends notifications as bulk edit does, is offered only when you may edit the selected issues for their trackers, and lists each error once with the numbers of its issues.
 - Fixed: Dependent fields are indented on the correct side in right-to-left languages, and the dependency editor hides its toolbar while there are no values to link.
 - Fixed: An Extended user field created through the API without show_active lists active users, as a field created in the administration does.
 - Security: Versions, users, groups and documents no longer name a dependent field you cannot see in the error of a save; as on issues, projects and time entries, the error is shown on the parent field, or as a general error when you cannot see the parent field either or its value did not change.
 - Security: The project dependency page names the parent field and sends its values only when you can see that field (used in the project and visible for your role), and the audit summary of a refused project settings change no longer holds the id of a dependent field you cannot see.
 - Security: Extended user fields offer, accept and list in filters only the users you may see (role setting Users visibility); administrators see every user, and a stored value is kept.
+- Changed: In project settings, a change refused by the maximum stored size of the plugin settings names that size in KiB and explains that a field already larger than it may keep its size but not grow.
+- Changed: A required dependent field whose parent value allows no value says that it stays empty and that the form can still be saved.
+- Changed: The refusal caused by a dependent field you cannot see suggests keeping the current value or asking someone who can see all fields, and the wizard load error says that clicking the entry again retries.
+- Fixed: The project and administration audit logs show translated actions, statuses and refusal texts instead of internal keys and technical sizes; the stored entries are unchanged.
+- Fixed: On Redmine 6.0 and later, the context-menu wizard entries show the submenu arrow of Redmine's own entries.
+- Fixed: In the dependency editor, a parent value with links opens in the Linked view when the field has more child values than one page shows, and the check and uncheck buttons stay together.
+- Fixed: Project settings show counts with thousands separators, page subtitles without extra parentheses, the values table left-aligned and without an empty drag column, the two sort buttons as one group, and say when drag and drop is not available for a large field.
+- Fixed: Hints under dependent fields line up with their indented field on issue forms, in bulk edit and in the context-menu wizard, and the wizard has more space between fields and bold field names.
+- Fixed: A new issue, time entry or project form shown again after a refused save keeps a dependent field you left blank instead of filling in its default value.
+- Fixed: The confirmation panel in project settings shows its heading beside the warning icon and in the normal text color.
+- Security: In project settings, a custom field hidden for your role is no longer listed, shown or changed: its pages answer 'not found' and the audit log leaves out its entries; administrators see every field.
 
 ## 4. Work packages
 

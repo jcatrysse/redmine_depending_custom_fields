@@ -1,4 +1,7 @@
 .depending-child { margin-inline-start: 20px; }
+/* The hint under a dependent control starts where its control does
+   (Chromium walkthrough of 2026-11-05, ux-7). */
+em.info.dcf-hint.dcf-hint--child { margin-inline-start: 20px; }
 
 /* Issue-form runtime (frontend design 8). Core's em.info and
    .check_box_group label set display:block, which beats [hidden]. */
@@ -57,12 +60,13 @@ label.dcf-legacy-option { font-style: italic; }
 .cf-wizard .cf-wizard-field {
   display: flex;
   flex-direction: column;
-  margin-bottom: 4px;
+  margin-block-end: 8px;
 }
 
 .cf-wizard .field-description {
   display: block;
   margin-bottom: 2px;
+  font-weight: bold; /* as core's bulk edit labels (ux-13) */
 }
 
 .cf-wizard label {
@@ -82,6 +86,7 @@ label.dcf-legacy-option { font-style: italic; }
   display: block;
   max-width: 260px;
   white-space: normal;
+  margin-block-end: 4px; /* space before the next field (ux-13) */
 }
 
 .cf-wizard select {

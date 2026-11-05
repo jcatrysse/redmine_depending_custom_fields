@@ -67,7 +67,10 @@ RSpec.describe 'Global config audit view', type: :request do
       expect(audit.grep(/COUNT\(\*\)/i)).not_to be_empty
       rows = doc.css('table.dcf-audit-list tbody tr')
       expect(rows.size).to eq(50)
-      expect(cells(rows.first)[1..]).to eq([project.name, 'M', 'F0', 'rename_value', 'success', '<b>S0</b>'])
+      # Changed by the Chromium walkthrough of 2026-11-05 (ux-3): translated
+      # action and status; were the stored keys.
+      expect(cells(rows.first)[1..]).to eq([project.name, 'M', 'F0', I18n.t(:label_dcf_audit_action_rename_value),
+                                            I18n.t(:label_dcf_audit_status_success), '<b>S0</b>'])
       expect(response.body).to include('&lt;b&gt;S0&lt;/b&gt;')
       expect(response.body).not_to include('&amp;lt;')
       expect(doc.css('span.pagination span.items').text).to eq('(1-50/60)')
@@ -75,13 +78,16 @@ RSpec.describe 'Global config audit view', type: :request do
       expect(doc.css('span.pagination span.items').text).to eq('(51-60/60)')
     end
 
-    it 'shows the error message and the id of a deleted project as before' do
+    # Changed by the Chromium walkthrough of 2026-11-05 (ux-3): the action,
+    # the status and the error are shown translated; were the stored keys.
+    it 'shows the error message and the id of a deleted project' do
       events.create!(project_id: 999_999, action: 'add_value', status: 'validation_failed',
                      custom_field_name: 'Gone', acting_user_name: 'M', error_message: 'error_value_blank',
                      created_at: Time.now)
       get dcf_config_audit_path
       expect(cells(doc.at_css('table.dcf-audit-list tbody tr'))[1..])
-        .to eq(['999999', 'M', 'Gone', 'add_value', 'validation_failed', 'error_value_blank'])
+        .to eq(['999999', 'M', 'Gone', I18n.t(:label_dcf_audit_action_add_value),
+                I18n.t(:label_dcf_audit_status_validation_failed), I18n.t(:error_value_blank)])
     end
 
     it 'answers an Array, a Hash or a junk page with page 1 instead of a 500' do

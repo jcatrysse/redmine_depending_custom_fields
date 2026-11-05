@@ -168,9 +168,19 @@ module RedmineDependingCustomFields
     # administrator, or a field used in the project and visible to the user.
     # Fail closed.
     def nameable_child?(child, field, project, user)
-      return true if child.id == field.id || user.admin?
+      return true if child.id == field.id
 
-      FieldRelevance.in_project?(child, project) && child.visible_by?(project, user)
+      nameable?(child, project, user)
+    end
+
+    # The same rule for a field on its own: an administrator, or a field used
+    # in the project and visible to the user. The project pages list, show
+    # and change only such a field (Chromium walkthrough of 2026-11-05,
+    # admin-1). Fail closed.
+    def nameable?(field, project, user)
+      return true if user.admin?
+
+      FieldRelevance.in_project?(field, project) && field.visible_by?(project, user)
     rescue StandardError
       false
     end

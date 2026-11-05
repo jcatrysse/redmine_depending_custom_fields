@@ -245,14 +245,16 @@
         values = current.filter(usable);
         // An empty child takes memory (AJAX re-render; a pick filtered down
         // to nothing is ignored); a plain new record with no usable value
-        // left takes the per-parent defaults.
+        // left takes the per-parent defaults, unless the form came back
+        // after a refused save (errored), where the posted blank stays
+        // (Chromium walkthrough of 2026-11-05, ux-11).
         var remembered0 = current.length ? undefined : i.memory.get(i.key);
         if (remembered0 !== undefined) {
           var restored0 = remembered0.filter(usable);
           if (remembered0.length && !restored0.length) remembered0 = undefined;
           else values = restored0;
         }
-        if (remembered0 === undefined && !values.length && !i.stored && i.kind === 'values') {
+        if (remembered0 === undefined && !values.length && !i.stored && !i.errored && i.kind === 'values') {
           values = defaultsFor(i.defaults, i.values, allowed);
         }
       } else {
@@ -376,6 +378,7 @@
       selectParent: 'Select a value for %{parent} first.',
       noOptions: 'No values are available for the selected %{parent}.',
       noOptionsGeneric: 'No values are available for this field.',
+      noOptionsRequired: 'No values are available for the selected %{parent}, so this required field stays empty and the form can still be saved.',
       legacy: 'Stored values that do not match the selected %{parent} are kept until you change %{parent}: %{values}.',
       legacyLocked: 'Stored values that do not match %{parent} (not editable here) are kept unchanged: %{values}.',
       legacyGeneric: 'Stored values that do not match the current selection are kept unchanged: %{values}.',
@@ -388,7 +391,7 @@
       // key set equals the meta tag's. wizardLoading is the en text of core
       // label_loading.
       wizardLoading: 'Loading...',
-      wizardLoadFailed: 'The wizard could not be loaded.'
+      wizardLoadFailed: 'The wizard could not be loaded. Click the entry again to try again.'
     };
     var states = new WeakMap();
     var configs = new WeakMap();
@@ -622,7 +625,11 @@
       var shown = hint === 'legacy' ? valueLabels(ctl, legacyValues) : '';
       switch (hint) {
         case 'waiting': return parent ? t('selectParent', { parent: parent }) : t('noOptionsGeneric');
-        case 'empty': return parentEl && parent ? t('noOptions', { parent: parent }) : t('noOptionsGeneric');
+        // A required field stays empty and the form is still saved (UD-10;
+        // Chromium walkthrough of 2026-11-05, ux-10).
+        case 'empty':
+          if (!parentEl || !parent) return t('noOptionsGeneric');
+          return t(requiredMark(ctl) ? 'noOptionsRequired' : 'noOptions', { parent: parent });
         case 'legacy':
           if (parentEl && parent) return t('legacy', { parent: parent, values: shown });
           if (parent) return t('legacyLocked', { parent: parent, values: shown });
@@ -633,8 +640,22 @@
       }
     }
 
+    // A form core re-rendered after a refused save: its error box
+    // (error_messages_for, div#errorExplanation) sits inside the form.
+    function erroredForm(ctl) {
+      var form = ctl.closest('form');
+      return !!(form && form.querySelector('#errorExplanation'));
+    }
+
+    // The required marker core puts in the label of the control's row.
+    function requiredMark(ctl) {
+      var box = ctl.closest('p, .cf-wizard-field');
+      return !!(box && box.querySelector('label .required'));
+    }
+
     // One em.info.dcf-hint per control, created lazily; true when a visible
-    // text newly appeared or changed.
+    // text newly appeared or changed. The hint of a dependent control takes
+    // its indent (dcf-hint--child; Chromium walkthrough of 2026-11-05, ux-7).
     function setHint(ctl, st, text, legacy) {
       if (!text && !st.hint) return false;
       if (!st.hint) {
@@ -652,6 +673,7 @@
       if (text && hint.textContent !== text) hint.textContent = text;
       if (hint.hidden !== !text) hint.hidden = !text;
       setClass(hint, 'dcf-hint--legacy', !!text && legacy);
+      setClass(hint, 'dcf-hint--child', ctl.classList.contains('depending-child'));
       describedTargets(ctl).forEach(function (el) { setDescribedBy(el, hint.id, !!text); });
       return changed;
     }
@@ -714,6 +736,7 @@
       var appeared = on && (em.hidden || em.textContent !== text);
       if (on && em.textContent !== text) em.textContent = text;
       if (em.hidden !== !on) em.hidden = !on;
+      setClass(em, 'dcf-hint--child', el.classList.contains('depending-child'));
       var targets = isSelect(el) ? [el] : parent.els.filter(function (i) { return i.type === 'radio' || i.type === 'checkbox'; });
       targets.forEach(function (target) { setDescribedBy(target, em.id, on); });
       return appeared ? em : null;
@@ -805,7 +828,8 @@
         ctx: cfg.ctx, kind: ps.kind, key: ps.key, values: ps.values, prevValues: st.values, allowed: allowed,
         current: before, initial: initial, parentChanged: !initial, multiple: cfg.multiple,
         hasBlank: optionValues.has(R.BLANK), hasNone: optionValues.has(R.NONE),
-        optionValues: optionValues, defaults: cfg.defaults, memory: mem, hide: cfg.hide, stored: cfg.stored
+        optionValues: optionValues, defaults: cfg.defaults, memory: mem, hide: cfg.hide, stored: cfg.stored,
+        errored: initial && erroredForm(ctl)
       });
       apply(ctl, d, options, optionVals);
       var legacyValues = d.values.filter(function (v) { return d.legacy.has(v); });

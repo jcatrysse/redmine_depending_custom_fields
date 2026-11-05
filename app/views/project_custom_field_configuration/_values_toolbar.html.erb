@@ -26,10 +26,13 @@
       <% sort_path = custom_field_configuration_sort_values_path(@project, @field) %>
       <% sort_state = { state_hash: @state_hash }.merge(@values_page.list_state.slice(:q)) %>
       <% sort_data = scope == :project ? { confirm: l(:text_dcf_sort_confirm, count: @values_page.total) } : {} %>
-      <%= button_to l(:label_dcf_sort_az), sort_path, method: :patch, params: sort_state.merge(direction: 'asc'),
-                    form_class: 'button_to dcf-values-sort', data: sort_data %>
-      <%= button_to l(:label_dcf_sort_za), sort_path, method: :patch, params: sort_state.merge(direction: 'desc'),
-                    form_class: 'button_to dcf-values-sort', data: sort_data %>
+      <%# One group with core's label_sort, so the pair reads as one control (Chromium walkthrough of 2026-11-05, ux-15). %>
+      <span class="dcf-values-sort-group" role="group" aria-label="<%= l(:label_sort) %>">
+        <%= button_to l(:label_dcf_sort_az), sort_path, method: :patch, params: sort_state.merge(direction: 'asc'),
+                      form_class: 'button_to dcf-values-sort', data: sort_data %>
+        <%= button_to l(:label_dcf_sort_za), sort_path, method: :patch, params: sort_state.merge(direction: 'desc'),
+                      form_class: 'button_to dcf-values-sort', data: sort_data %>
+      </span>
     <% end %>
   </div>
 <% end %>

@@ -17,7 +17,7 @@
         <div class="cf-col" data-level="<%= index %>">
           <% field_level.each do |cf| %>
             <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>">
-              <label class="cf-wizard-label"><span title="<%= cf.description.presence %>" class="field-description"><%= h(cf.name) %></span>
+              <label class="cf-wizard-label"><%= content_tag(:span, cf.name, class: 'field-description', title: cf.description.presence) %>
               <%= render_custom_field(cf, issues) %></label>
             </div>
           <% end %>

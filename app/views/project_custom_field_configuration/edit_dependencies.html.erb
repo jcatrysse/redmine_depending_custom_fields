@@ -8,7 +8,7 @@
               class: 'icon icon-cancel' %>
 </div>
 
-<h2><%= h(@field.name) %> <em class="info">(<%= l(:label_custom_field_dependencies) %>)</em></h2>
+<h2><%= h(@field.name) %> <em class="info"><%= l(:label_custom_field_dependencies) %></em></h2>
 <% scope = dcf_field_scope(@field, @project) %>
 <% unless scope == :project %>
   <%= dcf_flash_box(:warning, scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning)) %>

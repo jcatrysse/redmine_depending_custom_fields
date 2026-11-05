@@ -103,14 +103,18 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       expect(field.reload.possible_values).to eq(%w[A B])
     end
 
-    it 'names the edited field also when it is hidden from the manager role' do
+    # Changed by the Chromium walkthrough of 2026-11-05 (admin-1): a field
+    # hidden from the manager role is refused as unknown before any write
+    # and is not named; was the storage error naming it.
+    it 'refuses the edited field as unknown when it is hidden from the manager role' do
       hidden = dcf_list_field(name: 'Hidden-Edited', values: %w[A B], is_for_all: false, projects: [project])
       hidden.update!(visible: false, role_ids: [dcf_create_role.id])
       stub_limit('possible_values', column_value(hidden, 'possible_values').bytesize)
 
       error = rejected { service('AddValueService', hidden, { value: 'C' }, user: dcf_manager(project)).call }
 
-      expect([error.key, error.interpolations[:field]]).to eq([:error_dcf_values_too_large, 'Hidden-Edited'])
+      expect([error.key, error.http_status, error.interpolations]).to eq([:error_field_not_found, :not_found, {}])
+      expect(hidden.reload.possible_values).to eq(%w[A B])
     end
 
     it 'still raises the mapped error when the failure row cannot be written' do

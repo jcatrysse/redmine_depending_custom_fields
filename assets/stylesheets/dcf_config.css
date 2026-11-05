@@ -7,6 +7,11 @@
 .dcf-scope-shared { background: #ef6c00; color: #fff; }
 .dcf-scope-project { background: #2e7d32; color: #fff; }
 .dcf-confirm-panel ul { margin: .5em 0; }
+/* Chromium walkthrough of 2026-11-05 (ux-14): a confirmation request keeps
+   core's warning box and icon in the page's text colour, not the error-like
+   red of 7.0; the heading sits on the icon line. */
+.dcf-confirm-panel > .flash.warning { color: inherit; }
+.dcf-confirm-panel > .flash.warning > p:first-of-type { margin-block-start: .5em; }
 .dcf-status-success { color: #2e7d32; }
 .dcf-status-failed { color: #c62828; }
 .dcf-status-neutral { color: #555; }
@@ -26,3 +31,11 @@
 .dcf-values-toolbar { display: flex; flex-wrap: wrap; gap: .5em 1.5em; align-items: center; margin-bottom: .5em; }
 .dcf-values-toolbar form { display: inline; }
 .dcf-page-scope-note { color: #555; }
+
+/* Chromium walkthrough of 2026-11-05: the values and the audit tables read
+   from the start of the cell, as core's lists of names (admin-4, ux-3); the
+   two sort buttons form one group (ux-15). */
+table.dcf-values th:first-child,
+table.dcf-values td:first-child,
+table.dcf-audit-list td { text-align: start; }
+.dcf-values-sort-group { display: inline-flex; gap: .3em; }

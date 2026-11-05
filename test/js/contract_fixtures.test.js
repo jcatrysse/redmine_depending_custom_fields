@@ -139,8 +139,10 @@ test('every fixture has an expectation and every expectation a fixture (the WP-1
   const spec = fs.readFileSync(path.join(__dirname, '..', '..', 'spec', 'frontend', 'markup_fixtures_spec.rb'), 'utf8');
   const listed = /def self\.scenarios\s+%w\[([^\]]*)\]/.exec(spec)[1].split(/\s+/).filter(Boolean).sort();
   // Changed by WP-36: 37 (wizard_entry and wizard_body replace
-  // wizard_template); was 36.
-  assert.equal(F.files().length, 37);
+  // wizard_template); was 36. Changed by the Chromium walkthrough of
+  // 2026-11-05 (ux-1): 38, wizard_entry.redmine-5.1.html has no sprite
+  // arrow (core 5.1 draws it by CSS); was 37.
+  assert.equal(F.files().length, 38);
   assert.deepEqual(F.scenarios(), listed);
   assert.deepEqual(Object.keys(EXPECTED).sort(), F.scenarios());
 });

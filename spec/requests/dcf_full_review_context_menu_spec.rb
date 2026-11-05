@@ -60,15 +60,18 @@ RSpec.describe 'Full review: context-menu wizard', type: :request do
       .to contain_exactly(['cf', parent.id.to_s, 'low', 'high'], ['cf', child.id.to_s, 'c1', 'c2'])
   end
 
-  # context-menu-4: each error names its issue.
-  it 'names the issue in each error' do
+  # context-menu-4: each error names its issues. Changed by the Chromium
+  # walkthrough of 2026-11-05 (issue-1, ux-2): one line per message with the
+  # issue numbers, as core's bulk edit; was one '#<id>: <message>' line per
+  # issue and message.
+  it 'names the issues in each error' do
     second = dcf_real_issue(project, parent => 'low', child => 'c1')
     post_values({ parent.id.to_s => 'high' }, [issue, second])
 
     expect(response).to have_http_status(:unprocessable_entity)
     errors = JSON.parse(response.body)['errors']
-    expect(errors).to eq(["##{issue.id}: #{child.name} #{I18n.t('activerecord.errors.messages.invalid')}",
-                          "##{second.id}: #{child.name} #{I18n.t('activerecord.errors.messages.invalid')}"])
+    invalid = I18n.t('activerecord.errors.messages.invalid')
+    expect(errors).to eq(["#{child.name} #{invalid}: ##{issue.id}, ##{second.id}"])
   end
 
   # context-menu-3: the tracker-specific edit permission, as core's menu.

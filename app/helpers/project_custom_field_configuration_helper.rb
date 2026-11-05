@@ -1,10 +1,11 @@
 module ProjectCustomFieldConfigurationHelper
-  # Overview rows: supported, project-relevant fields. Rendered via this
+  # Overview rows: supported, project-relevant fields the current user may
+  # see (Chromium walkthrough of 2026-11-05, admin-1). Rendered via this
   # helper because ProjectsController#settings does not set this feature's
   # ivars. Their counts come from dcf_overview_counts (three grouped
   # queries, full review of 2026-11-05: no rows preloaded).
   def dcf_relevant_custom_fields(project)
-    RedmineDependingCustomFields::FieldRelevance.relevant_fields(project)
+    RedmineDependingCustomFields::FieldRelevance.relevant_fields(project, user: User.current)
   end
 
   def dcf_overview_counts(fields, project)
@@ -101,6 +102,53 @@ module ProjectCustomFieldConfigurationHelper
     render(partial: 'custom_fields/dcf_storage_usage', locals: { usage: usage, admin: false })
   rescue StandardError
     ''
+  end
+
+  # Audit tables (Chromium walkthrough of 2026-11-05, ux-3): the stored keys
+  # are translated at render time; an unknown key is shown as stored.
+  def dcf_audit_action_label(action)
+    l(:"label_dcf_audit_action_#{action}", default: action.to_s)
+  end
+
+  def dcf_audit_status_label(status)
+    l(:"label_dcf_audit_status_#{status}", default: status.to_s)
+  end
+
+  # The summary of a success row as stored (a sentence about the field's own
+  # values); the error key of a refusal as its text, sizes read from the
+  # stored summary. A storage refusal gets a text without a field name: the
+  # field over its size may be a dependent field the viewer may not see. A
+  # raw message is shown as stored.
+  def dcf_audit_summary(event)
+    summary = event.changes_summary.to_s
+    return summary if event.status == 'success' && summary.present?
+
+    key = event.error_message.to_s
+    return summary.presence || key unless key.match?(/\Aerror_[a-z0-9_]+\z/)
+
+    dcf_audit_error_text(key, summary) || l(:error_save_failed)
+  end
+
+  def dcf_audit_error_text(key, summary)
+    match = summary.match(/(\d+) bytes exceeds (\d+)/)
+    sizes = match && { size: number_with_delimiter(match[1]), limit: number_with_delimiter(match[2]) }
+    case key
+    when 'error_dcf_values_too_large', 'error_dcf_values_over_ceiling'
+      sizes && l(:text_dcf_audit_values_too_large, **sizes)
+    when 'error_dcf_mapping_too_large', 'error_dcf_mapping_over_ceiling'
+      sizes && l(:text_dcf_audit_mapping_too_large, **sizes)
+    when 'error_dcf_value_length'
+      max = summary[/characters exceeds (\d+)/, 1]
+      max && l(key, max: number_with_delimiter(max))
+    when 'error_dcf_dependencies_too_large_to_send'
+      size = summary[/\((\d+) bytes\)/, 1]
+      size && l(key, size: number_with_delimiter(size),
+                     limit: number_with_delimiter(RedmineDependingCustomFields::DependencyPayload::MAX_BYTES))
+    else
+      I18n.exists?(key) ? l(key) : nil
+    end
+  rescue I18n::MissingInterpolationArgument
+    nil
   end
 
   def dcf_audit_status_class(status)

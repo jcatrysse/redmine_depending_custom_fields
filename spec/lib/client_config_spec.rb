@@ -29,6 +29,7 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       'selectParent' => :text_dcf_hint_select_parent,
       'noOptions' => :text_dcf_hint_no_options,
       'noOptionsGeneric' => :text_dcf_hint_no_options_generic,
+      'noOptionsRequired' => :text_dcf_hint_no_options_required,
       'legacy' => :text_dcf_hint_legacy,
       'legacyLocked' => :text_dcf_hint_legacy_locked,
       'legacyGeneric' => :text_dcf_hint_legacy_generic,
@@ -44,6 +45,8 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
     # lockedRefused; was lockedRefused last. Changed by review round 1: the
     # loading text is core's label_loading (present in 5.1, 6.0, 6.1 and 7.0
     # in all four locales); was the plugin key text_dcf_wizard_loading.
+    # Changed by the Chromium walkthrough of 2026-11-05 (ux-10):
+    # noOptionsRequired follows noOptionsGeneric.
     expect(described_class::I18N.keys.last(3)).to eq(%w[lockedRefused wizardLoading wizardLoadFailed])
     expect(described_class::I18N).to be_frozen
   end
@@ -132,7 +135,8 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       expect(fragment.at_css('link')['href']).to match(asset.call('dcf_dependency_editor', 'css'))
       expect(described_class.instance_variables).to eq([])
       # Changed by WP-36: 13 (wizardLoading, wizardLoadFailed); was 11.
-      expect(described_class::I18N.size).to eq(13)
+      # Changed by the Chromium walkthrough of 2026-11-05: 14 (noOptionsRequired).
+      expect(described_class::I18N.size).to eq(14)
     end
   end
 end

@@ -250,8 +250,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyEditorConfig do
       expect(config::I18N.values).not_to include(:error_invalid_dependency_payload)
       expect(config::I18N).to be_frozen
       # Changed by WP-36: 13 (the wizard's wizardLoading and wizardLoadFailed);
-      # was 11.
-      expect(RedmineDependingCustomFields::ClientConfig::I18N.size).to eq(13)
+      # was 11. Changed by the Chromium walkthrough of 2026-11-05: 14
+      # (noOptionsRequired).
+      expect(RedmineDependingCustomFields::ClientConfig::I18N.size).to eq(14)
       expect(RedmineDependingCustomFields::ClientConfig::I18N).not_to have_key('storageEstimate')
       expect(config.const_defined?(:I18N_KEYS)).to be(false)
     end

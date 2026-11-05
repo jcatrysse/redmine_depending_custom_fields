@@ -16,7 +16,7 @@
   var FALLBACK = {
     saveFailed: 'The change could not be saved.',
     wizardLoading: 'Loading...',
-    wizardLoadFailed: 'The wizard could not be loaded.'
+    wizardLoadFailed: 'The wizard could not be loaded. Click the entry again to try again.'
   };
   var ENTRY_SEL = 'li.cf-parent';
   var FORM_SEL = 'form.cf-wizard-form';

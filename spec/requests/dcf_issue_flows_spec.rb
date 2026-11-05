@@ -412,7 +412,8 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
       expect(response).to have_http_status(422)
       # Changed by the full review of 2026-11-05 (context-menu-4): each wizard
       # error starts with its issue number (was the message alone).
-      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{child.name} #{invalid}"])
+      # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+      expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{invalid}: ##{issue.id}"])
     end
   end
 
@@ -483,9 +484,11 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
          'in en and de (Flipped by WP-09b)' do
         child.update!(name: "Hidden#{SecureRandom.hex(4)}", visible: false, role_ids: [other_role.id])
         hidden = { en: 'cannot be changed because a dependent field you cannot see has a value that does not ' \
-                       'match the new value',
+                       'match the new value. Keep the current value, or ask someone who can see all fields to ' \
+                       'make this change',
                    de: 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen ' \
-                       'Wert hat, der nicht zum neuen Wert passt' }
+                       'Wert hat, der nicht zum neuen Wert passt. Behalten Sie den aktuellen Wert oder bitten Sie ' \
+                       'jemanden, der alle Felder sehen kann, diese Änderung vorzunehmen' }
         hidden.each do |locale, message|
           I18n.with_locale(locale) do
             issue = change_parent(stored_issue, parent)
@@ -524,9 +527,11 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
       it 'rejects the change for a child not visible for the user role, in en and de' do
         child.update!(visible: false, role_ids: [other_role.id])
         hidden = { en: 'cannot be changed because a dependent field you cannot see has a value that does not ' \
-                       'match the new value',
+                       'match the new value. Keep the current value, or ask someone who can see all fields to ' \
+                       'make this change',
                    de: 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen ' \
-                       'Wert hat, der nicht zum neuen Wert passt' }
+                       'Wert hat, der nicht zum neuen Wert passt. Behalten Sie den aktuellen Wert oder bitten Sie ' \
+                       'jemanden, der alle Felder sehen kann, diese Änderung vorzunehmen' }
         hidden.each do |locale, message|
           I18n.with_locale(locale) do
             entry = time_entry(parent => 'A', child => 'a1')

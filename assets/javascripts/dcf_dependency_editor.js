@@ -625,10 +625,14 @@
     return details;
   };
 
+  // A section opens in the Linked view when its parent value has links and
+  // the child list is longer than one row page, so the links are in sight
+  // (Chromium walkthrough of 2026-11-05, ux-4); else in All child values.
   Editor.prototype.ui = function (key) {
     var ui = this.sectionUi.get(key);
     if (!ui) {
-      ui = { open: false, query: [], text: '', view: 'all', limit: ROW_PAGE };
+      var linkedView = this.children.items.length > ROW_PAGE && this.state.linkedCount(key, this.children) > 0;
+      ui = { open: false, query: [], text: '', view: linkedView ? 'linked' : 'all', limit: ROW_PAGE };
       this.sectionUi.set(key, ui);
     }
     return ui;
@@ -701,8 +705,11 @@
     tools.appendChild(wrap(this.t('show'), view));
     entry.check = button('data-dcf-ed-check-shown', '');
     entry.uncheck = button('data-dcf-ed-uncheck-shown', '');
-    tools.appendChild(entry.check);
-    tools.appendChild(entry.uncheck);
+    // One group, so the two buttons wrap together (ux-4).
+    var bulk = el('span', 'dcf-dep-section__bulk');
+    bulk.appendChild(entry.check);
+    bulk.appendChild(entry.uncheck);
+    tools.appendChild(bulk);
     body.appendChild(tools);
     entry.defaultRow = el('p', 'dcf-dep-section__default-row');
     body.appendChild(entry.defaultRow);

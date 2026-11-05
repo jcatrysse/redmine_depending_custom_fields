@@ -613,10 +613,13 @@ test('i18n: English fallbacks without a meta tag, the meta texts when given, fal
 // is core label_loading, so its fallback equals the en head fixture (rendered
 // from core en.yml); was compared with the registry row of the plugin key
 // text_dcf_wizard_loading.
-test('i18n: the 13 English fallbacks equal the en texts of the registry, en.yml error_save_failed and core label_loading', async () => {
+// Changed by the Chromium walkthrough of 2026-11-05 (ux-10): 14 keys, the
+// empty hint of a required field (noOptionsRequired) added; was 13.
+test('i18n: the 14 English fallbacks equal the en texts of the registry, en.yml error_save_failed and core label_loading', async () => {
   const keys = {
     selectParent: 'text_dcf_hint_select_parent', noOptions: 'text_dcf_hint_no_options',
-    noOptionsGeneric: 'text_dcf_hint_no_options_generic', legacy: 'text_dcf_hint_legacy',
+    noOptionsGeneric: 'text_dcf_hint_no_options_generic', noOptionsRequired: 'text_dcf_hint_no_options_required',
+    legacy: 'text_dcf_hint_legacy',
     legacyLocked: 'text_dcf_hint_legacy_locked', legacyGeneric: 'text_dcf_hint_legacy_generic',
     bulkDefault: 'text_dcf_hint_bulk_default', bulkCleared: 'text_dcf_hint_bulk_cleared',
     liveMessage: 'text_dcf_live_message', lockedRefused: 'text_dcf_hint_locked_refused',

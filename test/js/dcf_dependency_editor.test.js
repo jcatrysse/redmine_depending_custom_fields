@@ -2029,3 +2029,29 @@ test('WP-35: List fields keep the plain unknown and ambiguity messages; #12 is a
     assert.deepEqual(errorItems(qui), [q.t('err_unknown_child', { line: '1', value: '#12' })]);
   }
 });
+
+// Chromium walkthrough of 2026-11-05 (ux-4): a section of a parent value
+// with links opens in the Linked view while the child list is longer than
+// one row page, else in All child values; the two bulk buttons sit in one
+// group so they wrap together.
+test('a section with links opens in the Linked view when the child list exceeds a row page (ux-4)', async () => {
+  const children = L.names(450, { prefix: 'C ', offset: 5000 });
+  const p = await E.load('admin_list', {
+    form: { values: children },
+    tweak: (r) => setJson(r, 'mapping', { value_dependencies: { Belgium: [children[400], children[401]] },
+                                          default_value_dependencies: {} })
+  });
+  const belgium = p.open(p.section('Belgium'));
+  assert.equal(belgium.querySelector('select[data-dcf-ed-child-view]').value, 'linked');
+  assert.deepEqual(p.rows(belgium).map((r) => r.getAttribute('data-dcf-ed-child-key')), [children[400], children[401]]);
+  const france = p.open(p.section('France'));
+  assert.equal(france.querySelector('select[data-dcf-ed-child-view]').value, 'all');
+  assert.equal(p.rows(france).length, 200);
+  const group = belgium.querySelector('.dcf-dep-section__bulk');
+  assert.ok(group, 'the bulk buttons are grouped');
+  assert.ok(group.querySelector('[data-dcf-ed-check-shown]') && group.querySelector('[data-dcf-ed-uncheck-shown]'));
+
+  const small = await E.load('admin_list');
+  const section = small.open(small.section('Belgium'));
+  assert.equal(section.querySelector('select[data-dcf-ed-child-view]').value, 'all');
+});

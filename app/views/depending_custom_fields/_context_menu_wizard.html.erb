@@ -9,5 +9,7 @@
     data-issue-ids="<%= issue_ids.join(',') %>"
     data-wizard-url="<%= depending_custom_fields_wizard_path %>">
   <a href="#" class="submenu"><%= h(parent_field.name) %></a>
+  <%# Core's submenu arrow where core draws it as a sprite (6.0 and later; Chromium walkthrough of 2026-11-05, ux-1). %>
+  <% if respond_to?(:sprite_icon) %><span class="icon-only"><%= sprite_icon('angle-right', rtl: true) %></span><% end %>
 </li>
 <% end %>

@@ -362,6 +362,14 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(entry['data-wizard-url']).to eq('/depending_custom_fields/wizard')
       expect(entry['data-template-id']).to be_nil
       expect(entry.at_css('a.submenu').attribute_nodes.map(&:name)).to eq(%w[href class])
+      # Chromium walkthrough of 2026-11-05 (ux-1): core's submenu arrow after
+      # the link where core draws one (sprite icons, 6.0 and later).
+      arrow = entry.at_css('a.submenu + span.icon-only')
+      if Redmine::VERSION::MAJOR >= 6
+        expect(arrow.at_css('svg use')['href']).to end_with('#icon--angle-right')
+      else
+        expect(arrow).to be_nil
+      end
       expect(menu.css('template, form, select, option, input')).to be_empty
       form = form_of(menu)
       expect([form['data-parent-id'], form['data-issue-ids'].split(',')]).to match([parent.id.to_s, match_array(ids)])

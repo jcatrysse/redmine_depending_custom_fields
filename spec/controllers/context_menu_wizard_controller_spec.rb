@@ -56,8 +56,10 @@ RSpec.describe ContextMenuWizardController, type: :controller do
 
       expect(response).to have_http_status(:unprocessable_entity)
       # Changed by the full review of 2026-11-05 (context-menu-4): the issue
-      # number first (was 'oops').
-      expect(JSON.parse(response.body)).to eq('errors' => ['#2: oops'])
+      # number first (was 'oops'). Changed by the Chromium walkthrough of
+      # 2026-11-05 (issue-1): one line per message with its issue numbers
+      # (was '#2: oops').
+      expect(JSON.parse(response.body)).to eq('errors' => ['oops: #2'])
     end
 
     it 'clears the value when __none__ is passed' do

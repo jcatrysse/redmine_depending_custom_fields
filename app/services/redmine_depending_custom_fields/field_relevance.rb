@@ -83,8 +83,10 @@ module RedmineDependingCustomFields
     # All supported, project-relevant fields, by position and id. Nothing is
     # preloaded (full review of 2026-11-05, project-pages-3): the overview
     # tab, which core renders on every settings page, needs counts only
-    # (overview_counts), never every enumeration or enabled project.
-    def relevant_fields(project)
+    # (overview_counts), never every enumeration or enabled project. With
+    # +user+, only the fields that user may see (UsageCalculator.nameable?,
+    # Chromium walkthrough of 2026-11-05, admin-1).
+    def relevant_fields(project, user: nil)
       issue_ids = project.all_issue_custom_fields.map(&:id)
 
       issue_fields = if issue_ids.any?
@@ -98,7 +100,7 @@ module RedmineDependingCustomFields
       project_fields = ProjectCustomField.where(field_format: SUPPORTED_VALUE_FORMATS).to_a
 
       (issue_fields + project_fields)
-        .select { |f| supported_format?(f) }
+        .select { |f| supported_format?(f) && (user.nil? || UsageCalculator.nameable?(f, project, user)) }
         .sort_by { |f| [f.position || 0, f.id] }
     end
 

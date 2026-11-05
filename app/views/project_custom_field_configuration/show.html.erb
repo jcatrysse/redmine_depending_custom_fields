@@ -27,7 +27,8 @@
   <% end %>
 </div>
 
-<h2><%= h(@field.name) %> <em class="info">(<%= dcf_format_label(@field) %>)</em></h2>
+<%# The format as a plain subtitle, without parentheses around its own (Chromium walkthrough of 2026-11-05, ux-6). %>
+<h2><%= h(@field.name) %> <em class="info"><%= dcf_format_label(@field) %></em></h2>
 
 <% unless scope == :project %>
   <%= dcf_flash_box(:warning, scope == :global ? l(:text_global_field_warning) : l(:text_shared_field_warning)) %>
@@ -44,9 +45,11 @@
 
 <div class="box">
   <% if @values_page.filtered? && !@values_page.empty_match? %>
-    <p class="info"><%= l(:text_dcf_values_filtered, count: @values_page.filtered_count, total: @values_page.total) %></p>
+    <p class="info"><%= l(:text_dcf_values_filtered, count: number_with_delimiter(@values_page.filtered_count),
+                                                     total: number_with_delimiter(@values_page.total)) %></p>
   <% end %>
-  <% if @values_page.paginated? %>
+  <%# Not on an empty match, which has no table (ux-15). %>
+  <% if @values_page.paginated? && !@values_page.empty_match? %>
     <p class="info"><%= l(:text_dcf_drag_reorder_large, max: RedmineDependingCustomFields::ValuesPage::UNPAGINATED_MAX) %></p>
   <% elsif @values_page.filtered? && !@values_page.empty_match? && @values_page.total > 1 %>
     <p class="info"><%= l(:text_dcf_drag_reorder_filtered) %></p>
@@ -73,7 +76,7 @@
             <tr>
               <th><%= l(:label_dcf_value) %></th>
               <th><%= l(:field_active) %></th>
-              <th></th>
+              <% if sortable %><th></th><% end %>
               <th></th>
             </tr>
           </thead>
@@ -94,7 +97,7 @@
                   <%= check_box_tag "enumerations[#{row.key}][active]", 1, row.active, id: nil,
                                     title: l(:field_active), 'aria-label': l(:field_active) %>
                 </td>
-                <td class="reorder"><%= dcf_sort_handle if sortable %></td>
+                <% if sortable %><td class="reorder"><%= dcf_sort_handle %></td><% end %>
                 <td>
                   <%= delete_link(custom_field_configuration_remove_value_path(
                         @project, @field, list_state.merge(enumeration_id: row.key, state_hash: @state_hash))) %>
@@ -158,7 +161,8 @@
               <th><%= l(:label_usage_other_projects) %></th>
               <th><%= l(:label_dependency_references) %></th>
             <% end %>
-            <th></th>
+            <%# The handle column only where drag and drop is offered (admin-4). %>
+            <% if sortable %><th></th><% end %>
             <th></th>
           </tr>
         </thead>
@@ -180,7 +184,7 @@
                 <td><%= usage.other %></td>
                 <td><%= usage.refs %></td>
               <% end %>
-              <td class="reorder"><%= dcf_sort_handle if sortable %></td>
+              <% if sortable %><td class="reorder"><%= dcf_sort_handle %></td><% end %>
               <td>
                 <%= button_to l(:button_delete), custom_field_configuration_remove_value_path(@project, @field),
                               method: :delete,

@@ -36,15 +36,19 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
   let(:invalid_texts) { { 'en' => 'is invalid', 'de' => 'ist nicht gültig' } }
   let(:hidden_texts) do
     { 'en' => 'cannot be changed because a dependent field you cannot see has a value that does not match the ' \
-              'new value',
+              'new value. Keep the current value, or ask someone who can see all fields to make this ' \
+              'change',
       'de' => 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, ' \
-              'der nicht zum neuen Wert passt' }
+              'der nicht zum neuen Wert passt. Behalten Sie den aktuellen Wert oder bitten Sie jemanden, der alle ' \
+              'Felder sehen kann, diese Änderung vorzunehmen' }
   end
   let(:base_texts) do
     { 'en' => 'This change cannot be saved because a dependent field you cannot see has a value that the change ' \
-              'does not allow.',
+              'does not allow. Keep the current values, or ask someone who can see all fields to make this ' \
+              'change.',
       'de' => 'Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, ' \
-              'einen Wert hat, den die Änderung nicht zulässt.' }
+              'einen Wert hat, den die Änderung nicht zulässt. Behalten Sie die aktuellen Werte oder bitten Sie ' \
+              'jemanden, der alle Felder sehen kann, diese Änderung vorzunehmen.' }
   end
   let(:secret) { "Qz#{SecureRandom.hex(4)}secret" }
   let(:project) { dcf_create_project }
@@ -888,7 +892,8 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       expect(response).to have_http_status(422)
       # Changed by the full review of 2026-11-05 (context-menu-4): each error
       # names its issue (was the message alone).
-      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{parent.name} #{hidden_message}"])
+      # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+      expect(JSON.parse(response.body)['errors']).to eq(["#{parent.name} #{hidden_message}: ##{issue.id}"])
       expect(leaks?(response.body, child)).to be(false), response.body
       expect(stored(issue, parent)).to eq('A')
     end
@@ -898,7 +903,8 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       read_only(issue, child)
       wizard(issue, parent => 'B')
       expect(response).to have_http_status(422)
-      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{child.name} #{invalid}"])
+      # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+      expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{invalid}: ##{issue.id}"])
     end
 
     it 'saves an unrelated value while the parent is unchanged and a hidden child holds a legacy value' do

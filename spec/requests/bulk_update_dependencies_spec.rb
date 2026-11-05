@@ -282,7 +282,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
           expect(response).to have_http_status(422), target
           # Changed by the full review of 2026-11-05 (context-menu-4): each
           # wizard error starts with its issue number.
-          expect(JSON.parse(response.body)['errors']).to eq(["##{kept.id}: #{message(Issue, child, invalid)}"]), target
+          # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+          expect(JSON.parse(response.body)['errors']).to eq(["#{message(Issue, child, invalid)}: ##{kept.id}"]), target
           expect([value(kept, parent), value(kept, child)]).to eq([kit_key(parent, 'A'), kit_key(child, 'a1')]), target
           expect(value(empty, parent)).to eq(target == '__none__' ? '' : kit_key(parent, 'C')), target
           expect(value(empty, child)).to be_blank, target
@@ -577,7 +578,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       expect(response).to have_http_status(422)
       # Changed by the full review of 2026-11-05 (context-menu-4): each wizard
       # error starts with its issue number (was the message alone).
-      expect(JSON.parse(response.body)['errors']).to eq(["##{other.id}: #{message(Issue, child, blank)}"])
+      # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+      expect(JSON.parse(response.body)['errors']).to eq(["#{message(Issue, child, blank)}: ##{other.id}"])
       expect([value(other, parent), value(other, child)]).to eq(%w[A a1])
     end
 
@@ -592,7 +594,8 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       expect(response).to have_http_status(422)
       # Changed by the full review of 2026-11-05 (context-menu-4): each wizard
       # error starts with its issue number (was the message alone).
-      expect(JSON.parse(response.body)['errors']).to eq(["##{refused.id}: #{message(Issue, child, blank)}"])
+      # Changed by the Chromium walkthrough (issue-1): '<message>: #<id>'; was '#<id>: <message>'.
+      expect(JSON.parse(response.body)['errors']).to eq(["#{message(Issue, child, blank)}: ##{refused.id}"])
       expect([value(cleared, child), value(refused, child)]).to eq(['', 'a1'])
     end
   end
@@ -625,8 +628,11 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       errors = JSON.parse(response.body)['errors']
       expect(errors.size).to eq(1)
       # Changed by the full review of 2026-11-05 (context-menu-4): each wizard
-      # error starts with its issue number (was the message alone).
-      expect(errors.first).to start_with("##{issue.id}: #{Issue.human_attribute_name(parent.name)}")
+      # error names its issue number (was the message alone). Changed by the
+      # Chromium walkthrough of 2026-11-05 (issue-1): the number after the
+      # message, as core's bulk edit (was '#<id>: ' first).
+      expect(errors.first).to start_with(Issue.human_attribute_name(parent.name))
+      expect(errors.first).to end_with(": ##{issue.id}")
       expect(response.body).not_to include("#{secret}H")
       expect(response.body).not_to include("#{secret}v")
       expect(value(issue, parent)).to eq('A')

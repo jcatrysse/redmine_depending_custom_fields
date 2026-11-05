@@ -32,6 +32,10 @@
   gap: 4px 12px;
   margin-block: 4px;
 }
+/* Chromium walkthrough of 2026-11-05 (ux-4): check and uncheck wrap as one
+   group, each label on one line. */
+.dcf-dep-section__bulk { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.dcf-dep-section__bulk button { white-space: nowrap; }
 .dcf-dep-editor__status { font-size: .9em; color: var(--oc-gray-7, #555); margin-block: 4px; }
 .dcf-dep-editor__sections { border: 1px solid var(--oc-gray-3, #e4e4e4); border-radius: 3px; }
 .dcf-dep-section + .dcf-dep-section { border-block-start: 1px solid var(--oc-gray-3, #e4e4e4); }

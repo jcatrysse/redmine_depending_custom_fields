@@ -31,8 +31,8 @@
             <td><%= link_to field.name, custom_field_configuration_field_path(@project, field) %></td>
             <td><%= dcf_format_label(field) %></td>
             <td><%= dcf_scope_badge(field, @project, counts) %></td>
-            <td><%= dcf_project_usage_count(field, counts) %></td>
-            <td><%= dcf_value_count(field, counts) %></td>
+            <td><%= number_with_delimiter(dcf_project_usage_count(field, counts)) %></td>
+            <td><%= number_with_delimiter(dcf_value_count(field, counts)) %></td>
             <td>
               <% unless dcf_field_scope(field, @project, counts) == :project %>
                 <span class="icon icon-warning" title="<%= l(:text_shared_field_warning) %>"></span>

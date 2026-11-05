@@ -28,7 +28,7 @@ const LEAF = 'issue[custom_field_values][9100003]';
 const SAVE_FAILED = 'The change could not be saved.';
 const DE_SAVE_FAILED = 'Die Änderung konnte nicht gespeichert werden.';
 const LOADING = 'Loading...';
-const LOAD_FAILED = 'The wizard could not be loaded.';
+const LOAD_FAILED = 'The wizard could not be loaded. Click the entry again to try again.';
 const WIZARD_URL = 'https://redmine.example/depending_custom_fields/wizard?parent_id=9100001&ids%5B%5D=9300001';
 
 // A Response-like object of the wizard GET: an HTML body by default.

@@ -30,15 +30,19 @@ RSpec.describe 'Time entries with a depending child the user cannot see (WP-38, 
   let(:base_message) { I18n.t('error_dcf_hidden_child_conflict') }
   let(:hidden_texts) do
     { 'en' => 'cannot be changed because a dependent field you cannot see has a value that does not match the ' \
-              'new value',
+              'new value. Keep the current value, or ask someone who can see all fields to make this ' \
+              'change',
       'de' => 'kann nicht geändert werden, weil ein abhängiges Feld, das Sie nicht sehen können, einen Wert hat, ' \
-              'der nicht zum neuen Wert passt' }
+              'der nicht zum neuen Wert passt. Behalten Sie den aktuellen Wert oder bitten Sie jemanden, der alle ' \
+              'Felder sehen kann, diese Änderung vorzunehmen' }
   end
   let(:base_texts) do
     { 'en' => 'This change cannot be saved because a dependent field you cannot see has a value that the ' \
-              'change does not allow.',
+              'change does not allow. Keep the current values, or ask someone who can see all fields to make ' \
+              'this change.',
       'de' => 'Diese Änderung kann nicht gespeichert werden, weil ein abhängiges Feld, das Sie nicht sehen können, ' \
-              'einen Wert hat, den die Änderung nicht zulässt.' }
+              'einen Wert hat, den die Änderung nicht zulässt. Behalten Sie die aktuellen Werte oder bitten Sie ' \
+              'jemanden, der alle Felder sehen kann, diese Änderung vorzunehmen.' }
   end
   let(:secret) { "Qz#{SecureRandom.hex(4)}secret" }
   let(:project) do

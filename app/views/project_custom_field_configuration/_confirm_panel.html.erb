@@ -1,13 +1,16 @@
 <%# The panel names a dependent field only under the WP-12 rule (SD-16): the
     edited field, an administrator, or a field used in the project and
     visible to the user; the others are only counted. %>
+<%# The heading is the first line of the box, beside its icon, and the box
+    reads as a question, not as an error (Chromium walkthrough of
+    2026-11-05, ux-14: dcf_config.css). %>
 <%# WP-34 (UD-23): the sort variant of a field shared with other projects or
     global names no field and has no usage lines; it posts the pending
     direction and state_hash and a filtering q, never the page (as the sort
     redirect), with the unchecked confirmation box. %>
 <% if pending_action.to_s == 'sort_values' %>
 <% body = capture do %>
-  <p><strong><%= l(:text_confirm_cross_project_change) %></strong></p>
+  <strong><%= l(:text_confirm_cross_project_change) %></strong>
   <p><%= l(:text_dcf_sort_confirm, count: @values_page.total) %></p>
   <% url, method = dcf_confirm_target(pending_action) %>
   <%= form_tag(url, method: method) do %>
@@ -26,7 +29,7 @@
 <% affected = impact.affected_child_fields %>
 <% named = affected.select { |child| RedmineDependingCustomFields::UsageCalculator.nameable_child?(child, @field, @project, User.current) } %>
 <% body = capture do %>
-  <p><strong><%= l(:text_confirm_cross_project_change) %></strong></p>
+  <strong><%= l(:text_confirm_cross_project_change) %></strong>
   <ul>
     <li><%= l(:label_usage_this_project) %>: <%= impact.usage_here %></li>
     <li><%= l(:label_usage_other_projects) %>: <%= impact.usage_other %></li>

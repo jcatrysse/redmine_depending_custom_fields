@@ -105,7 +105,9 @@ module RedmineDependingCustomFields
       unless @user.allowed_to?(PERMISSION, project)
         raise OperationError.new(:error_forbidden, http_status: :forbidden, audit_status: 'authorization_failed')
       end
-      unless FieldRelevance.relevant?(field, project)
+      # A field the user may not see is unknown (Chromium walkthrough of
+      # 2026-11-05, admin-1); the controller refuses it first.
+      unless FieldRelevance.relevant?(field, project) && UsageCalculator.nameable?(field, project, @user)
         raise OperationError.new(:error_field_not_found, http_status: :not_found)
       end
       unless FieldRelevance.supported_format?(field)
@@ -151,17 +153,24 @@ module RedmineDependingCustomFields
     # summary holds only the column, the byte counts and the field id, the
     # id only for a field the user may see (full review of 2026-11-05,
     # project-pages-7).
+    # A refusal by the project ceiling names the configured ceiling (KiB, as
+    # the setting) and that a larger field may not grow (Chromium
+    # walkthrough of 2026-11-05, admin-2); a column limit keeps its text.
     def storage_error(violation, include_field: true)
-      key = violation.column == 'possible_values' ? :error_dcf_values_too_large : :error_dcf_mapping_too_large
+      values = violation.column == 'possible_values'
+      ceiling = violation.source == 'ceiling'
+      key = if ceiling
+              values ? :error_dcf_values_over_ceiling : :error_dcf_mapping_over_ceiling
+            else
+              values ? :error_dcf_values_too_large : :error_dcf_mapping_too_large
+            end
       summary = "#{violation.column}: #{violation.bytes} bytes exceeds #{violation.limit}"
       summary += " (custom field ##{violation.custom_field_id})" if include_field
-      OperationError.new(
-        key,
-        summary: summary,
-        interpolations: { field: violation.custom_field_name.to_s,
-                          size: StorageLimits.delimited(violation.bytes),
-                          limit: StorageLimits.delimited(violation.limit) }
-      )
+      interpolations = { field: violation.custom_field_name.to_s,
+                         size: StorageLimits.delimited(violation.bytes),
+                         limit: StorageLimits.delimited(violation.limit) }
+      interpolations[:ceiling] = StorageLimits.delimited(ProjectStoragePolicy.ceiling_bytes / 1024) if ceiling
+      OperationError.new(key, summary: summary, interpolations: interpolations)
     end
 
     # The edited field, or one the user may see in this project (fail closed).
