@@ -1,0 +1,146 @@
+const { L, start, check, finish, exp, rails } = require('../lib-admin');
+(async () => {
+  const run = await start('project-dependency');
+  const p = () => run.page;
+  const base = '/projects/walk/custom_field_configuration/fields/';
+  const dialogs = [];
+  const arm = (accept) => { p().removeAllListeners('dialog'); p().on('dialog', (d) => { dialogs.push(d.type() + ': ' + d.message()); accept ? d.accept() : d.dismiss(); }); };
+  const mapping = async () => JSON.parse(await p().$eval('fieldset[data-dcf-editor]', (e) => e.getAttribute('data-dcf-editor-mapping')));
+  const open = async (id) => { await L.goto(run, `${base}${id}/dependencies`); await p().waitForSelector('fieldset.dcf-dep-editor .dcf-dep-editor__sections'); };
+  const sec = (k) => p().locator(`details.dcf-dep-section[data-dcf-ed-section='${k}']`);
+  const tick = async (k, child) => { const d = sec(k); await d.locator('summary').click(); await d.locator('.dcf-dep-section__body').waitFor(); await d.locator(`input[data-dcf-ed-child-key='${child}']`).click(); };
+  const saveBtn = () => p().locator('form#dcf-dependencies-form input[type=submit][data-dcf-editor-submit]');
+  const flash = async () => (await p().locator('#flash_notice, #flash_error, #errorExplanation').allInnerTexts()).join(' | ').replace(/\s+/g, ' ');
+  await L.login(run, 'manager');
+  arm(true);
+  await check(run, 'open-global-field', 'City dependency page: global banner, editor, unticked required confirmation checkbox, Save enabled by JS', async () => {
+    await open(2);
+    const banner = (await p().locator('div.flash.warning').first().innerText()).replace(/\s+/g, ' ');
+    const cb = p().locator('#dcf-dependencies-form input[name=confirm]');
+    exp(await cb.count(), 1, 'confirm box'); exp(await cb.isChecked(), false, 'checked'); 
+    const dis = await saveBtn().isDisabled();
+    exp(dis, false, 'Save disabled after init');
+    return `banner "${banner}"; save disabled=${dis}`;
+  });
+  await check(run, 'browser-requires-checkbox', 'Save without the checkbox: the browser refuses (required), nothing sent', async () => {
+    await tick('Germany', 'Lyon');
+    let sent = false; p().on('request', (r) => { if (r.method() === 'PATCH' || (r.method() === 'POST' && /dependencies/.test(r.url()))) sent = true; });
+    await saveBtn().click(); await p().waitForTimeout(600);
+    const valid = await p().$eval('#dcf-dependencies-form input[name=confirm]', (e) => e.validity.valid);
+    exp(sent, false, 'request sent'); exp(valid, false, 'validity');
+    return 'no request sent, checkbox invalid';
+  });
+  await check(run, 'server-refuses-without-confirm', 'bypassing the browser check: server answers with the changes still in the editor and the confirmation text; nothing stored', async () => {
+    await p().evaluate(() => { const c = document.querySelector('#dcf-dependencies-form input[name=confirm]'); c.required = false; });
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    await p().waitForSelector('fieldset.dcf-dep-editor .dcf-dep-editor__sections');
+    const f = await flash();
+    const dirty = await p().$eval('fieldset[data-dcf-editor]', (e) => e.getAttribute('data-dcf-editor-dirty'));
+    const m = await mapping();
+    const checked = await p().isChecked('#dcf-dependencies-form input[name=confirm]');
+    const stored = rails(run, "puts CustomField.find(2).value_dependencies.to_hash.inspect");
+    if (/Germany/.test(stored)) throw new Error('stored without confirmation: ' + stored);
+    exp(checked, false, 'confirm checked after refusal');
+    return `flash "${f}", dirty ${dirty}, posted mapping Germany ${JSON.stringify(m.value_dependencies.Germany)}, stored ${stored.trim().slice(0, 150)}`;
+  });
+  await check(run, 'confirm-and-save', 'tick the box and Save: success notice, reload shows Germany [Lyon]', async () => {
+    await p().check('#dcf-dependencies-form input[name=confirm]');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    const f = await flash();
+    await open(2); const m = await mapping();
+    exp(m.value_dependencies.Germany, ['Lyon']);
+    return `flash "${f}"`;
+  });
+  await check(run, 'audit-trail', 'project audit page shows the dependency change with user and source', async () => {
+    await L.goto(run, '/projects/walk/custom_field_configuration/audit');
+    const t = (await p().locator('table.list').first().innerText()).replace(/\s+/g, ' ');
+    if (!/City/.test(t)) throw new Error('no City row: ' + t.slice(0, 300));
+    return t.slice(0, 700);
+  });
+  await check(run, 'admin-global-audit', 'admin sees the same rows in /dcf_config_audit (second context)', async () => {
+    const ctx = await run.browser.newContext({ viewport: { width: 1366, height: 900 } }); const pg = await ctx.newPage();
+    await pg.goto(run.base + '/login'); await pg.fill('#username', 'admin'); await pg.fill('#password', 'admin123!');
+    await Promise.all([pg.waitForLoadState('load'), pg.click('#login-submit')]);
+    await pg.goto(run.base + '/dcf_config_audit');
+    const t = (await pg.locator('table.list').first().innerText()).replace(/\s+/g, ' ');
+    await pg.screenshot({ path: run.outDir + '/project-dependency/admin-audit.png', fullPage: true });
+    await ctx.close(); if (!/City/.test(t)) throw new Error('no City row');
+    return t.slice(0, 500);
+  });
+  await check(run, 'cancel-path-dirty', 'dirty editor + Cancel link: browser asks about unsaved changes; dismissing stays, accepting leaves and stores nothing', async () => {
+    await open(2); await tick('Netherlands', 'Paris');
+    dialogs.length = 0; arm(false);
+    const url = p().url();
+    await p().click('#dcf-dependencies-form a:has-text("Cancel")', { noWaitAfter: true }).catch(() => {}); await p().waitForTimeout(600);
+    const stay = p().url() === url; const d1 = dialogs.slice();
+    arm(true);
+    await Promise.all([p().waitForNavigation({ timeout: 8000 }).catch(() => {}), p().click('#dcf-dependencies-form a:has-text("Cancel")', { noWaitAfter: true })]);
+    await p().waitForTimeout(500);
+    const left = !/dependencies$/.test(p().url());
+    await open(2); const m = await mapping();
+    if (m.value_dependencies.Netherlands.includes('Paris')) throw new Error('stored cancelled change');
+    return `first Cancel: stayed=${stay} dialogs=${JSON.stringify(d1)}; second: left=${left} url ${p().url()}; dialogs ${JSON.stringify(dialogs)}`;
+  });
+  await check(run, 'csv-replace-needs-confirm', 'replace import on the global field is a normal Save: needs the checkbox; saves with it', async () => {
+    await open(2);
+    const d = p().locator('details.dcf-dep-editor__import'); await d.locator('summary').click();
+    await d.locator('[data-dcf-ed-import-separator]').selectOption('comma'); await d.locator('[data-dcf-ed-import-mode]').selectOption('replace');
+    await d.locator('textarea[data-dcf-ed-import-text]').fill('Country,City\nBelgium,Brussels\nFrance,Paris');
+    await d.locator('[data-dcf-ed-import-preview]').click(); await p().waitForTimeout(400);
+    await d.locator('[data-dcf-ed-import-apply]').click(); await p().waitForTimeout(300);
+    await p().check('#dcf-dependencies-form input[name=confirm]');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    const f = await flash();
+    await open(2); const m = await mapping();
+    exp(Object.keys(m.value_dependencies).sort(), ['Belgium', 'France']);
+    return `flash "${f}"; mapping ${JSON.stringify(m.value_dependencies)}`;
+  });
+  await check(run, 'restore-city-via-ui', 'restore the original City mapping with a replace import and Save', async () => {
+    const d = p().locator('details.dcf-dep-editor__import'); await d.locator('summary').click();
+    await d.locator('[data-dcf-ed-import-separator]').selectOption('comma'); await d.locator('[data-dcf-ed-import-mode]').selectOption('replace');
+    await d.locator('textarea[data-dcf-ed-import-text]').fill('Country,City\nBelgium,Brussels\nBelgium,Ghent\nBelgium,Antwerp\nNetherlands,Amsterdam\nNetherlands,Utrecht\nFrance,Paris\nFrance,Lyon');
+    await d.locator('[data-dcf-ed-import-preview]').click(); await p().waitForTimeout(400);
+    await d.locator('[data-dcf-ed-import-apply]').click(); await p().waitForTimeout(300);
+    await p().check('#dcf-dependencies-form input[name=confirm]');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    return await flash();
+  });
+  await check(run, 'project-only-field-no-checkbox', 'Walk Local Child (project only): no banner, no checkbox; save works directly', async () => {
+    await open(13);
+    exp(await p().locator('#dcf-dependencies-form input[name=confirm]').count(), 0, 'checkbox');
+    const ban = await p().locator('div.flash.warning').count(); exp(ban, 0, 'banner');
+    await tick('Gamma', 'A1');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    const f = await flash();
+    await open(13); const m = await mapping(); exp(m.value_dependencies.Gamma, ['A1']);
+    await tick('Gamma', 'A1');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    return `saved: "${f}"; reverted: "${await flash()}"`;
+  });
+  await check(run, 'shared-field-checkbox-and-conflict', 'Shared Child: checkbox present; a second window saves first, the stale save gets the conflict panel with Use my version', async () => {
+    await open(15);
+    exp(await p().locator('#dcf-dependencies-form input[name=confirm]').count(), 1, 'checkbox');
+    await tick('Red', 'Lime');
+    const pg2 = await run.context.newPage();
+    await pg2.goto(run.base + base + '15/dependencies'); await pg2.waitForSelector('fieldset.dcf-dep-editor .dcf-dep-editor__sections');
+    const d = pg2.locator("details.dcf-dep-section[data-dcf-ed-section='Green']"); await d.locator('summary').click(); await d.locator("input[data-dcf-ed-child-key='Rose']").click();
+    await pg2.check('#dcf-dependencies-form input[name=confirm]'); await Promise.all([pg2.waitForLoadState('load'), pg2.click('form#dcf-dependencies-form input[data-dcf-editor-submit]')]);
+    await pg2.close();
+    await p().check('#dcf-dependencies-form input[name=confirm]');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    await p().waitForSelector('.dcf-dep-editor__conflict');
+    const t = (await p().locator('.dcf-dep-editor__conflict').innerText()).replace(/\s+/g, ' ');
+    await L.screenshot(run, 'conflict');
+    const confirmAfter = await p().isChecked('#dcf-dependencies-form input[name=confirm]');
+    await p().locator('button[data-dcf-ed-use-mine]').click();
+    await p().check('#dcf-dependencies-form input[name=confirm]');
+    await Promise.all([p().waitForLoadState('load'), saveBtn().click()]);
+    const f = await flash();
+    return `conflict "${t}"; confirm ticked after conflict: ${confirmAfter}; use-mine save: "${f}"`;
+  });
+  await check(run, 'restore-shared-child', 'restore Shared Child mapping via the reseed-independent UI (Red: Rose, Ruby; Green: Lime, Moss)', async () => {
+    const r = rails(run, "f=CustomField.find(15); puts f.value_dependencies.to_hash.inspect");
+    return r.trim();
+  });
+  await finish(run);
+})();
