@@ -44,7 +44,7 @@ mkdir -p docs/reviews
 out="docs/reviews/openai-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD).md"
 
 python3 - "$base" "$out" <<'PY'
-import json, os, re, subprocess, sys, urllib.error, urllib.request
+import http.client, json, os, re, subprocess, sys, time, urllib.error, urllib.request
 
 base, out = sys.argv[1], sys.argv[2]
 head = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], text=True).strip()
@@ -110,14 +110,22 @@ def ask(text, part, total):
                                                    {'role': 'user', 'content': user}]}).encode()
     req = urllib.request.Request(url, data=body, headers={
         'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
-    try:
-        with urllib.request.urlopen(req, timeout=600) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors='replace')[:500]
-        sys.exit(f'ERROR: OpenAI answered HTTP {e.code}: {detail}')
-    except urllib.error.URLError as e:
-        sys.exit(f'ERROR: cannot reach {url}: {e.reason} (network policy of this environment?)')
+    # A dropped connection (proxy restart, reset mid-response) is retried 4 times with backoff;
+    # an HTTP error answer from OpenAI is not.
+    for attempt, wait in enumerate((2, 4, 8, 16, None), 1):
+        try:
+            with urllib.request.urlopen(req, timeout=600) as r:
+                data = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503, 504) and wait:
+                print(f'  HTTP {e.code}, retry {attempt} in {wait}s', flush=True); time.sleep(wait); continue
+            detail = e.read().decode(errors='replace')[:500]
+            sys.exit(f'ERROR: OpenAI answered HTTP {e.code}: {detail}')
+        except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException) as e:
+            if wait:
+                print(f'  network error ({e}), retry {attempt} in {wait}s', flush=True); time.sleep(wait); continue
+            sys.exit(f'ERROR: cannot reach {url}: {e} (network policy of this environment?)')
     return data['choices'][0]['message']['content'].strip(), data.get('usage', {})
 
 parts, tokens = [], 0
