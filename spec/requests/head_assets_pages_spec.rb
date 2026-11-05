@@ -44,7 +44,10 @@ RSpec.describe 'Head assets on every page (WP-18)', type: :request do
     expect(srcs.grep(%r{/depending_custom_fields(-\h+)?\.js}).size).to eq(1), label
     expect(srcs.grep(%r{/context_menu_wizard(-\h+)?\.js}).size).to eq(1), label
     expect(srcs.grep(/depending_custom_fields_legacy/)).to eq([]), label
-    %w[DependingCustomFieldData ContextMenuWizardConfig data-dcf-map data-dcf-parent].each do |needle|
+    # Changed by WP-39 (R1): data-dcf-map also covers the reference
+    # data-dcf-map-ref (its prefix); the JSON script element is added.
+    %w[DependingCustomFieldData ContextMenuWizardConfig data-dcf-map data-dcf-map-ref data-dcf-parent
+       application/json].each do |needle|
       expect(response.body).not_to include(needle), "#{label}: #{needle}"
     end
     expect(response.body).not_to include(tag), label

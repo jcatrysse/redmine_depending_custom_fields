@@ -33,8 +33,16 @@ module DcfJsFixtures
     'data-dcf-wizard-field' => CF
   }.freeze
   # Attributes whose JSON may hold enumeration ids (numbers or digit strings).
-  JSON_ATTRIBUTES = %w[data-dcf-map data-dcf-defaults data-dcf-parent-values data-dcf-stored
+  # WP-39 (R1): the mapping is the text of a JSON script element
+  # (JSON_SCRIPT, checked the same way); data-dcf-map is gone.
+  JSON_ATTRIBUTES = %w[data-dcf-defaults data-dcf-parent-values data-dcf-stored
                        data-dcf-locked-stored data-dcf-locked-allowed-by].freeze
+  JSON_SCRIPT = 'application/json'
+  # Attributes that hold a core tag id (WP-39: the mapping script key and the
+  # control's reference to it embed it).
+  ID_LIKE = %w[id for data-dcf-map-ref data-dcf-map-id].freeze
+  # Elements whose text is raw (never entity-escaped) in HTML.
+  RAW_TEXT_ELEMENTS = %w[script style].freeze
   PATH_KINDS = { 'issues' => ISSUE, 'custom_fields' => CF, 'fields' => CF }.freeze
 
   class LeakedId < StandardError; end
@@ -68,11 +76,14 @@ module DcfJsFixtures
   end
 
   # A fixed serialization, independent of the Nokogiri version: attributes
-  # in source order, values escaped (& " < >), text escaped (& < >),
+  # in source order, values escaped (& " < >), text escaped (& < >) except
+  # the raw text of script and style (WP-39: a JSON script stays JSON),
   # comments dropped, void elements without a closing tag.
   def dcf_serialize(node)
     case node
     when Nokogiri::XML::Text
+      return node.content if node.parent&.element? && RAW_TEXT_ELEMENTS.include?(node.parent.name)
+
       node.content.gsub('&', '&amp;').gsub('<', '&lt;').gsub('>', '&gt;')
     when Nokogiri::XML::Element
       attributes = node.attribute_nodes.map { |a| " #{a.name}=\"#{dcf_escape_attribute(a.value)}\"" }.join
@@ -174,7 +185,7 @@ module DcfJsFixtures
       name = attr.name
       value = attr.value.to_s
       value.scan(/\[custom_field_values\]\[(\d+)\]/) { |(n)| check.call(node, "@#{name}", n.to_i, CF) }
-      value.scan(/custom_field_values_(\d+)/) { |(n)| check.call(node, "@#{name}", n.to_i, CF) } if %w[id for].include?(name)
+      value.scan(/custom_field_values_(\d+)/) { |(n)| check.call(node, "@#{name}", n.to_i, CF) } if ID_LIKE.include?(name)
       value.scan(/(?:\A|\s)cf_(\d+)(?=\s|\z)/) { |(n)| check.call(node, "@#{name}", n.to_i, CF) } if name == 'class'
       value.scan(%r{/(issues|custom_fields|fields)/(\d+)}) { |(path, n)| check.call(node, "@#{name}", n.to_i, PATH_KINDS[path]) }
       value.scan(/cf-wizard-(\d+)/) { |(n)| check.call(node, "@#{name}", n.to_i, CF) }
@@ -184,6 +195,7 @@ module DcfJsFixtures
       end
       dcf_guard_json(node, name, value, check) if JSON_ATTRIBUTES.include?(name)
     end
+    dcf_guard_json(node, 'text', node.text, check) if node.name == 'script' && node['type'] == JSON_SCRIPT
     dcf_guard_values(node, check, enumeration)
   end
 

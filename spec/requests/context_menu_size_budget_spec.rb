@@ -9,10 +9,12 @@ require_relative '../rails_helper'
 # (/issues/context_menu) holds the entry only: the plugin part is at most
 # 1 KiB and the menu is no larger than the same menu of a 1-value child plus
 # that bound. The body (GET /depending_custom_fields/wizard) is at most 512
-# KiB (524,288 bytes) and at most the rendered wizard selects (data-dcf-map
-# and data-dcf-defaults included) plus 16 KiB. Bytes, not characters: the
-# tricky values are multibyte. Was: the whole menu within 512 KiB with the
-# inline template.
+# KiB (524,288 bytes) and at most the rendered wizard selects
+# (data-dcf-defaults included) plus their JSON mapping scripts plus 16 KiB.
+# Bytes, not characters: the tricky values are multibyte. Was: the whole
+# menu within 512 KiB with the inline template. Changed by WP-39 (R1): the
+# mapping is a JSON script next to its select (was data-dcf-map inside the
+# select), so the bound adds the scripts.
 RSpec.describe 'Context menu size budget (WP-18, WP-36)', type: :request do
   fixtures :users
 
@@ -76,7 +78,7 @@ RSpec.describe 'Context menu size budget (WP-18, WP-36)', type: :request do
     menu = Nokogiri::HTML(menu_body)
     entry = plugin_part(menu_body)
     expect(menu.css('li.folder.cf-parent').map { |li| li['data-parent-id'] }).to eq([parent.id.to_s])
-    expect(menu.css('template, form, select')).to be_empty
+    expect(menu.css('template, form, select, script')).to be_empty
     expect(menu.at_css("li.folder.cf_#{child.id}")).to be_nil
     expect(entry.bytesize).to be <= entry_bound
     expect(plugin_part(small_menu).bytesize).to be <= entry_bound
@@ -87,18 +89,24 @@ RSpec.describe 'Context menu size budget (WP-18, WP-36)', type: :request do
     expect(response).to have_http_status(200)
     expect(Rails.logger).not_to have_received(:warn).with(/context menu wizard failed/)
     selects = body.scan(%r{<select\b.*?</select>}m)
+    scripts = body.scan(%r{<script type="application/json" data-dcf-map-id="[^"]*">.*?</script>}m)
     child_select = form.at_css("select[name='issue[custom_field_values][#{child.id}]']")
 
     expect(selects.size).to eq(2)
     expect(child_select.css('option').count { |o| !['', '__none__'].include?(o['value']) }).to eq(5570)
-    expect(child_select['data-dcf-map']).to be_present
+    expect(child_select['data-dcf-map']).to be_nil
+    expect(child_select['data-dcf-map-ref']).to be_present
+    expect(dcf_map_of(child_select).values.flatten.size).to eq(5570)
     expect(child_select['data-dcf-defaults']).to be_present
+    expect(scripts.size).to eq(1)
+    expect(form.css('script').size).to eq(1)
     expect(body.bytesize).to be <= 512 * 1024
-    expect(body.bytesize).to be <= selects.sum(&:bytesize) + (16 * 1024)
+    expect(body.bytesize).to be <= selects.sum(&:bytesize) + scripts.sum(&:bytesize) + (16 * 1024)
     RSpec.configuration.reporter.message(
       format('DCF BUDGET context menu S1: %<menu>d bytes, entry %<entry>d bytes; wizard body %<body>d bytes, ' \
-             'selects %<selects>d bytes',
-             menu: menu_body.bytesize, entry: entry.bytesize, body: body.bytesize, selects: selects.sum(&:bytesize))
+             'selects %<selects>d bytes, scripts %<scripts>d bytes',
+             menu: menu_body.bytesize, entry: entry.bytesize, body: body.bytesize, selects: selects.sum(&:bytesize),
+             scripts: scripts.sum(&:bytesize))
     )
   end
 end

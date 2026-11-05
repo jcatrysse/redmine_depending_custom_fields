@@ -195,6 +195,58 @@ module DcfConfigHelpers
     forms = Nokogiri::HTML(response.body).css('form.cf-wizard-form')
     forms.size == 1 ? forms.first : nil
   end
+
+  # WP-39 (R1): the mapping of a managed control is the JSON text of a
+  # <script type="application/json"> element whose data-dcf-map-id the
+  # control names in data-dcf-map-ref (was the data-dcf-map attribute).
+  DCF_MAP_REF = 'data-dcf-map-ref'
+  DCF_MAP_SCRIPT = 'script[type="application/json"]'
+
+  # The JSON script elements of a parsed page or fragment.
+  def dcf_map_scripts(page)
+    page.css(DCF_MAP_SCRIPT)
+  end
+
+  # The controls that name a mapping script.
+  def dcf_mapped(page)
+    page.css("[#{DCF_MAP_REF}]")
+  end
+
+  # The one JSON script of the control's document (or fragment) whose data-dcf-map-id is the control's
+  # reference (nil without a reference; fails unless exactly one matches).
+  def dcf_map_script(control)
+    ref = control[DCF_MAP_REF]
+    return nil if ref.nil?
+
+    root = control.ancestors.last || control # the document, or the fragment of a tag
+    found = dcf_map_scripts(root).select { |script| script['data-dcf-map-id'] == ref }
+    expect(found.size).to eq(1), "#{found.size} mapping scripts for #{ref.inspect}"
+
+    found.first
+  end
+
+  # The number of managed controls of a parsed page: as many JSON scripts as
+  # controls with a reference, each reference resolving to one of them.
+  def dcf_managed_count(page)
+    controls = dcf_mapped(page)
+    expect(dcf_map_scripts(page).size).to eq(controls.size)
+    expect(controls.map { |control| dcf_map_script(control) }.uniq.size).to eq(controls.size)
+    controls.size
+  end
+
+  # The parsed mapping of the control, nil when it names none.
+  def dcf_map_of(control)
+    script = dcf_map_script(control)
+    script && JSON.parse(script.text)
+  end
+
+  # A raw body (page, fragment or edit.js) without any mapping markup:
+  # neither the former attribute nor the reference (data-dcf-map is its
+  # prefix) nor a JSON script element.
+  def dcf_expect_no_map_markup(body, label = nil)
+    expect(body).not_to include('data-dcf-map'), label
+    expect(body).not_to match(%r{<script[^>]*application/json}), label
+  end
 end
 
 RSpec.configure do |config|

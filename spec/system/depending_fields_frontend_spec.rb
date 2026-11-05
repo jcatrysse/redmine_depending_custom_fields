@@ -183,6 +183,37 @@ RSpec.describe 'Depending fields in the browser (WP-18, WP-19)', type: :system d
     expect(value_of(child_id)).to eq('Bee')
   end
 
+  # WP-39 (R1): the mapping arrives as a JSON script next to the select; the
+  # new issue form filters from it and keeps filtering after core re-renders
+  # the form on a tracker change (updateIssueFrom, replaceIssueFormWith).
+  it 'filters the new issue form from the JSON mapping script, also after a tracker change re-render (WP-39)' do
+    parent, child = pair
+    issue = dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant')
+    child_id = "issue_custom_field_values_#{child.id}"
+    parent_id = "issue_custom_field_values_#{parent.id}"
+
+    dcf_login
+    visit "/projects/#{project.identifier}/issues/new?issue[tracker_id]=#{issue.tracker_id}"
+    expect(page).to have_css("##{child_id}[data-dcf-map-ref]", visible: :all)
+    expect(page).to have_no_css('[data-dcf-map]', visible: :all)
+    expect(page).to have_css('script[type="application/json"]', visible: :all, count: 1)
+    expect(js("document.body.innerText.indexOf('Alpha\":')")).to eq(-1)
+    select_value(parent_id, 'Beta')
+    expect(dcf_selectable_options(child_id)).to eq(['', 'Bee'])
+    expect(value_of(child_id)).to eq('Bee')
+    page.execute_script("window.dcfOldChild = document.getElementById(#{child_id.to_json}); " \
+                        "updateIssueFrom(#{"/projects/#{project.identifier}/issues/new.js".to_json}, " \
+                        "document.getElementById('issue_tracker_id'));")
+    wait_until { js("document.getElementById(#{child_id.to_json}) !== window.dcfOldChild") }
+    expect(page).to have_css('script[type="application/json"]', visible: :all, count: 1)
+    expect(page).to have_no_css('[data-dcf-map]', visible: :all)
+    expect(dcf_selectable_options(child_id)).to eq(['', 'Bee'])
+    expect(value_of(child_id)).to eq('Bee')
+    select_value(parent_id, 'Alpha')
+    expect(dcf_selectable_options(child_id)).to eq(['', 'Ant', 'Ape'])
+    shot('issue-new-script-mapping', wp: 'wp-39')
+  end
+
   it 'applies the bulk edit rules of UD-09' do
     parent, child = pair
     issues = [dcf_real_issue(project.reload, parent => 'Alpha', child => 'Ant'),

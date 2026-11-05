@@ -104,14 +104,15 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
         get path
         expect(response).to have_http_status(200), path
         expect(dcf_names(control(doc, child))).to eq(every_field), path
-        expect(body_without_mapping).not_to include('data-dcf-map')
+        dcf_expect_no_map_markup(body_without_mapping, path)
         expect(body_without_mapping).not_to include("#{secret}P")
         expect(body_without_mapping).not_to include("#{secret}Parent")
       end
 
       as(dcf_admin)
       get "/issues/#{issue.id}/edit"
-      expect(dcf_names(control(doc, child))).to include('data-dcf-parent', 'data-dcf-map', 'data-dcf-parent-values',
+      # Changed by WP-39 (R1): the reference to the JSON script, was data-dcf-map.
+      expect(dcf_names(control(doc, child))).to include('data-dcf-parent', 'data-dcf-map-ref', 'data-dcf-parent-values',
                                                         'data-dcf-parent-label', 'data-dcf-stored')
     end
 
@@ -124,7 +125,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       node = control(doc, child)
 
       expect(node['data-dcf-parent']).to eq(parent.id.to_s)
-      expect(JSON.parse(node['data-dcf-map'])).to eq(RedmineDependingCustomFields::DependencyRules.mapping(child))
+      expect(dcf_map_of(node)).to eq(RedmineDependingCustomFields::DependencyRules.mapping(child))
     end
 
     it 'emits no parent data in bulk edit for a role-invisible parent, the full set for an admin' do
@@ -141,11 +142,14 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(node['data-dcf-context']).to eq('bulk')
       expect(dcf_names(node)).to eq(every_field)
       expect(body_without_mapping).not_to include("#{secret}P")
+      # WP-39 (R1): no reference and no JSON script either.
+      dcf_expect_no_map_markup(response.body)
 
       as(dcf_admin)
       get '/issues/bulk_edit', params: { ids: issues.map(&:id) }
       node = control(doc, child)
-      expect(dcf_names(node)).to eq((every_field + %w[data-dcf-parent data-dcf-parent-name data-dcf-map]).sort)
+      # Changed by WP-39 (R1): data-dcf-map-ref, was data-dcf-map.
+      expect(dcf_names(node)).to eq((every_field + %w[data-dcf-parent data-dcf-parent-name data-dcf-map-ref]).sort)
     end
 
     it 'gates bulk edit on every selected project' do
@@ -195,7 +199,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(response.body).not_to include("#{tag}H")
       expect(response.body).not_to include("#{tag}Hidden")
       expect(response.body).not_to include("[#{hidden.id}]")
-      expect(template.css('[data-dcf-map]').size).to eq(1)
+      # Changed by WP-39 (R1): one reference and one JSON script, was one data-dcf-map.
+      expect(dcf_managed_count(template)).to eq(1)
 
       as(dcf_admin)
       post '/issues/context_menu', params: { ids: [issue.id] }
@@ -204,9 +209,10 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(template.css("[data-dcf-wizard-field='#{visible.id}']").size).to eq(1)
       expect(response.body).not_to include('data-field-id')
       below_select = template.at_css("select[data-dcf-field='#{below.id}']")
-      expect(JSON.parse(below_select['data-dcf-map'])).to eq("#{tag}H1" => %W[#{tag}B1])
+      expect(dcf_map_of(below_select)).to eq("#{tag}H1" => %W[#{tag}B1])
       expect(below_select['data-field-id']).to be_nil
-      expect(template.css('select[data-dcf-map]').size).to eq(3)
+      expect(template.css('select[data-dcf-map-ref]').size).to eq(3)
+      expect(dcf_managed_count(template)).to eq(3)
     end
 
     it 'decides visibility against the project of the re-rendered issue (updateIssueFrom)' do
@@ -220,11 +226,14 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       patch "/issues/#{issue.id}/edit.js", params: { issue: { subject: 'S' } }, xhr: true
       expect(response).to have_http_status(200)
-      expect(response.body).to include('data-dcf-map')
+      # Changed by WP-39 (R1): the reference and the JSON script (escaped for
+      # JavaScript), was data-dcf-map; the second answer has neither.
+      expect(response.body).to include('data-dcf-map-ref')
+      expect(response.body).to match(%r{<script[^>]*application/json})
       patch "/issues/#{issue.id}/edit.js", params: { issue: { project_id: second.id } }, xhr: true
       expect(response).to have_http_status(200)
       expect(response.body).to include("data-dcf-field=\\\"#{child.id}\\\"")
-      expect(response.body).not_to include('data-dcf-map')
+      dcf_expect_no_map_markup(response.body)
     end
 
     # The member holds the parent role in +second+ only, where the parent is
@@ -304,7 +313,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       expect(doc.at_css("select[name='user[custom_field_values][#{parent.id}]']")).not_to be_nil
       expect(node['data-dcf-parent']).to eq(parent.id.to_s)
-      expect(JSON.parse(node['data-dcf-map'])).to eq(RedmineDependingCustomFields::DependencyRules.mapping(child))
+      expect(dcf_map_of(node)).to eq(RedmineDependingCustomFields::DependencyRules.mapping(child))
       expect(node['data-dcf-parent-label']).to eq(parent.name)
       expect(node['data-dcf-stored']).to be_nil
     end
@@ -326,7 +335,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(node).not_to be_nil
       expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
       expect(dcf_names(node)).to eq(every_field)
-      expect(response.body).not_to include('data-dcf-map')
+      dcf_expect_no_map_markup(response.body)
       expect(response.body).not_to include("#{secret}P")
       expect(response.body).not_to include("#{secret}Parent")
 
@@ -351,7 +360,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(node).not_to be_nil
       expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
       expect(dcf_names(node)).to eq(every_field)
-      expect(response.body).not_to include('data-dcf-map')
+      dcf_expect_no_map_markup(response.body)
       expect(response.body).not_to include("#{secret}P")
     end
 
@@ -392,7 +401,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       expect(doc.css("[name='user[custom_field_values][#{parent.id}]']")).to be_empty
       expect(dcf_names(control(doc, child))).to eq(every_field)
-      expect(response.body).not_to include('data-dcf-map')
+      dcf_expect_no_map_markup(response.body)
       expect(response.body).not_to include("#{secret}P")
     end
 
@@ -466,7 +475,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
         expect(response).to have_http_status(200)
         expect(response.body).not_to include('translation missing')
         expect(response.body).not_to include('translation_missing')
-        expect(control(doc, child)['data-dcf-map']).not_to be_nil
+        expect(dcf_map_of(control(doc, child))).not_to be_nil
       end
     end
   end
@@ -484,6 +493,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       select = doc.at_css("select#issue_custom_field_values_#{child.id}")
       expect(select).not_to be_nil
       expect(dcf_names(select)).to eq([])
+      # WP-39 (R1): the mapping is computed inside the same rescue, so no JSON script either.
+      dcf_expect_no_map_markup(response.body)
       expect(Rails.logger).to have_received(:warn).with(/\[DCF\] .*##{child.id}: RuntimeError\z/)
       expect(Rails.logger).not_to have_received(:warn).with(/sql secret/)
     end
@@ -499,6 +510,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(response).to have_http_status(200)
       select = doc.at_css("select#issue_custom_field_values_#{child.id}")
       expect(dcf_names(select)).to eq([])
+      dcf_expect_no_map_markup(response.body)
     end
   end
 
@@ -552,12 +564,13 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       count
     end
 
+    # Changed by WP-39: the tags ask ClientData.field_data, was attributes_for.
     def stub_client
-      allow(client).to receive(:attributes_for).and_return({})
+      allow(client).to receive(:field_data).and_return([{}, nil])
       allow(client).to receive(:locked_children).and_return([])
       yield
     ensure
-      allow(client).to receive(:attributes_for).and_call_original
+      allow(client).to receive(:field_data).and_call_original
       allow(client).to receive(:locked_children).and_call_original
     end
 
@@ -581,7 +594,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       get path, params: params
       real = round_trips { get path, params: params }
       expect(response).to have_http_status(200)
-      expect(doc.css('[data-dcf-map]').size).to eq(managed)
+      expect(dcf_managed_count(doc)).to eq(managed)
       stubbed = stub_client do
         get path, params: params
         round_trips { get path, params: params }
@@ -592,10 +605,10 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
     def overhead(path, managed:, method: :get, params: {})
       real = measure(path, method: method, params: params)
-      expect(doc.css('[data-dcf-map]').size).to eq(managed)
+      expect(dcf_managed_count(doc)).to eq(managed)
       stubbed = stub_client do
         count = measure(path, method: method, params: params)
-        expect(client).to have_received(:attributes_for).at_least(:once)
+        expect(client).to have_received(:field_data).at_least(:once)
         count
       end
       expect(response.body).not_to include('data-dcf-field')
@@ -612,9 +625,9 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
           expect(measure("/issues/#{five[:issue].id}/edit")).to eq(measure("/issues/#{one[:issue].id}/edit"))
           hidden = holds ? 0 : 1 # the first parent is restricted
           new_one = measure_new(one)
-          expect(doc.css('[data-dcf-map]').size).to eq(1 - hidden)
+          expect(dcf_managed_count(doc)).to eq(1 - hidden)
           new_five = measure_new(five)
-          expect(doc.css('[data-dcf-map]').size).to eq(5 - hidden)
+          expect(dcf_managed_count(doc)).to eq(5 - hidden)
           expect(new_five).to eq(new_one)
         end
       end
@@ -627,9 +640,9 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       expect(measure("/issues/#{five[:issue].id}/edit")).to eq(measure("/issues/#{one[:issue].id}/edit"))
       new_one = measure_new(one)
-      expect(doc.css('[data-dcf-map]').size).to eq(1)
+      expect(dcf_managed_count(doc)).to eq(1)
       new_five = measure_new(five)
-      expect(doc.css('[data-dcf-map]').size).to eq(5)
+      expect(dcf_managed_count(doc)).to eq(5)
       expect(new_five).to eq(new_one)
     end
 
@@ -656,7 +669,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       path = "/issues/#{world[:issue].id}/edit"
       get path
       real = dcf_yaml_payloads { get path }
-      expect(doc.css('[data-dcf-map]').size).to eq(3)
+      expect(dcf_managed_count(doc)).to eq(3)
       stubbed = stub_client do
         get path
         dcf_yaml_payloads { get path }
@@ -673,9 +686,9 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       path = '/issues/bulk_edit'
 
       count_one = measure(path, params: { ids: [one[:issue].id] })
-      expect(doc.css('[data-dcf-map]').size).to eq(1)
+      expect(dcf_managed_count(doc)).to eq(1)
       count_five = measure(path, params: { ids: [five[:issue].id] })
-      expect(doc.css('[data-dcf-map]').size).to eq(5)
+      expect(dcf_managed_count(doc)).to eq(5)
       expect(count_five).to eq(count_one)
     end
 
@@ -686,9 +699,9 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       path = '/issues/bulk_edit'
 
       count_one = measure(path, params: { ids: [one[:issue].id] })
-      expect(doc.css('[data-dcf-map]').size).to eq(1)
+      expect(dcf_managed_count(doc)).to eq(1)
       count_five = measure(path, params: { ids: [five[:issue].id] })
-      expect(doc.css('[data-dcf-map]').size).to eq(5)
+      expect(dcf_managed_count(doc)).to eq(5)
       expect(count_five).to eq(count_one)
     end
 
@@ -879,12 +892,16 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
         get "/issues/#{issue.id}/edit"
         expect(response).to have_http_status(200)
         tag = response.body[/<select[^>]*data-dcf-field="#{child.id}"[^>]*>/]
-        bytes = %w[data-dcf-map data-dcf-defaults].sum { |name| tag[/ #{name}="([^"]*)"/, 1].to_s.bytesize }
+        # Changed by WP-39 (R1): the map is the text of the referenced JSON
+        # script (was the data-dcf-map attribute); defaults stay an attribute.
+        node = control(doc, child)
+        script = dcf_map_script(node)
+        bytes = script.text.bytesize + tag[/ data-dcf-defaults="([^"]*)"/, 1].to_s.bytesize
         type = CustomField.type_for_attribute('format_store')
         stored = type.serialize('value_dependencies' => child.value_dependencies.to_hash,
                                 'default_value_dependencies' => child.default_value_dependencies.to_hash).bytesize
 
-        expect(JSON.parse(Nokogiri::HTML(tag).at_css('select')['data-dcf-map']).values.flatten.size).to eq(5570)
+        expect(dcf_map_of(node).values.flatten.size).to eq(5570)
         expect(bytes).to be <= 2 * stored
       end
     end
@@ -926,7 +943,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       expect(node['class']).to be_nil
       expect(node.attribute_nodes.map(&:name).sort).to eq((['hidden'] + carrier_names).sort)
       c1 = %w[data-dcf-field data-dcf-context data-dcf-kind data-dcf-multiple data-dcf-parent data-dcf-parent-name
-              data-dcf-map data-dcf-defaults data-dcf-hide data-dcf-parent-values data-dcf-parent-label data-dcf-stored]
+              data-dcf-map-ref data-dcf-defaults data-dcf-hide data-dcf-parent-values data-dcf-parent-label
+              data-dcf-stored]
       expect(carrier_names & c1).to eq([])
       expect(carrier_names.grep(/\Adata-dcf-parent/)).to eq([])
       expect(node.ancestors('form#issue-form').size).to eq(1)
@@ -1098,6 +1116,8 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
         expect(body).not_to include("cf_#{child.id}")
         expect(body).not_to include("data-dcf-field=\"#{child.id}\"")
         expect(carriers(Nokogiri::HTML(body))).to be_empty
+        # WP-39 (R1): the only depending field is invisible, so no JSON script.
+        dcf_expect_no_map_markup(body)
         page = Nokogiri::HTML(body)
         page.css('input[name="authenticity_token"], meta[name="csrf-token"]').each(&:remove)
         page.css('form[name]').each { |form| form['name'] = form['name'].sub(/-\h{8}\z/, '') } # random per render
@@ -1118,6 +1138,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       body = body_without_mapping
 
       expect(carriers(Nokogiri::HTML(body))).to be_empty
+      dcf_expect_no_map_markup(body)
       expect(body).not_to include("#{secret}c3")
       expect(body).not_to include(child.name)
       expect(body).not_to include("[custom_field_values][#{child.id}]")

@@ -150,6 +150,75 @@ RSpec.describe 'Context menu wizard', type: :system do
     expect(issue.reload.custom_field_value(child)).to eq('a1')
   end
 
+  # WP-39 (R5a): the entry starts loading the body when the pointer rests on
+  # it (about 150 ms) or the link gets the keyboard focus; the click then
+  # opens with that body (no second request); a pass-over sends nothing.
+  # Counts the wizard GETs in the page (fetch wrapped).
+  def count_wizard_gets
+    page.execute_script(<<~JS)
+      window.dcfGets = 0;
+      var realFetch = window.fetch;
+      window.fetch = function (url, init) {
+        if ((!init || init.method === 'GET') && String(url).indexOf('/depending_custom_fields/wizard') !== -1) window.dcfGets += 1;
+        return realFetch(url, init);
+      };
+    JS
+  end
+
+  def wizard_gets
+    page.evaluate_script('window.dcfGets')
+  end
+
+  it 'prefetches the body on hover and on focus, opens it with that one request and saves (WP-39)' do
+    project, parent, child, issue = wizard_world('WizPrefetch')
+    dcf_login
+    visit "/projects/#{project.identifier}/issues"
+    count_wizard_gets
+    find("tr#issue-#{issue.id} td.subject").right_click
+    link = find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu")
+    heading = find('#content h2', match: :first)
+    # The menu opens under the pointer: move away first, then count. A
+    # pass-over: in and out within one action chain.
+    page.driver.browser.action.move_to(heading.native).perform
+    sleep 0.6
+    page.execute_script('window.dcfGets = 0;')
+    # duration 0: Selenium's default move takes 250 ms and passes the entry slowly.
+    page.driver.browser.action.move_to(link.native, duration: 0).move_to(heading.native, duration: 0).perform
+    sleep 0.6
+    expect(wizard_gets).to eq(0)
+    link.hover
+    Timeout.timeout(Capybara.default_max_wait_time) { sleep 0.05 until wizard_gets == 1 }
+    sleep 0.5
+    link.click
+    expect(wizard_gets).to eq(1)
+    within('#cf-wizard-container') do
+      expect(page).to have_css("select[name='issue[custom_field_values][#{child.id}]'][data-dcf-map-ref]")
+      expect(page).to have_css('script[type="application/json"]', visible: :all, count: 1)
+      find("select[name='issue[custom_field_values][#{parent.id}]'] option[value='B']").select_option
+      selectable = dcf_selectable_options("issue_custom_field_values_#{child.id}")
+      expect(selectable).to include('b1')
+      expect(selectable).not_to include('a1')
+      find("select[name='issue[custom_field_values][#{child.id}]'] option[value='b1']").select_option
+      shot('wizard-prefetched', wp: 'wp-39')
+      find('form.cf-wizard-form button[type=submit]').click
+    end
+    Timeout.timeout(Capybara.default_max_wait_time * 3) do
+      sleep 0.1 until issue.reload.custom_field_value(parent) == 'B'
+    end
+    expect(issue.reload.custom_field_value(child)).to eq('b1')
+
+    visit "/projects/#{project.identifier}/issues"
+    count_wizard_gets
+    find("tr#issue-#{issue.id} td.subject").right_click
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}']")
+    page.execute_script(<<~JS, parent.id)
+      document.querySelector('#context-menu li.cf-parent[data-parent-id="' + arguments[0] + '"] > a.submenu').focus();
+    JS
+    Timeout.timeout(Capybara.default_max_wait_time) { sleep 0.05 until wizard_gets == 1 }
+    sleep 0.3
+    expect(wizard_gets).to eq(1)
+  end
+
   it 'shows a generic message when the body cannot be loaded, and a second click retries (WP-36)' do
     project, parent, _child, issue = wizard_world('WizFail')
     role = dcf_create_role(permissions: [:view_issues, :edit_issues])

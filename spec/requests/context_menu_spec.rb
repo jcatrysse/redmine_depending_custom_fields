@@ -677,7 +677,17 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       needles = Regexp.union('Rails.cache', 'javascript_tag', '<script', 'content_tag(:script', 'tag.script',
                              'depending_custom_fields/mapping', 'DependingCustomFieldData', 'ContextMenuWizardConfig',
                              'MappingBuilder', 'after_custom_field_save')
-      offending = files.select { |path| File.read(path).match?(needles) }
+      # Changed by WP-39 (R1): the one JSON data block of
+      # DependingFormatMethods#dcf_with_map (type application/json, never
+      # executed) is allowed; comment lines are not code (was the whole file).
+      data_block = "view.content_tag(:script, json.html_safe, type: 'application/json', data: { dcf_map_id: data[:dcf_map_ref] })"
+      format_methods = File.join(root, 'lib/redmine_depending_custom_fields/depending_format_methods.rb')
+      expect(File.read(format_methods).scan(data_block).size).to eq(1)
+      offending = files.select do |path|
+        code = File.read(path).lines.reject { |line| line.strip.start_with?('#') }.join
+        code = code.sub(data_block, '') if path == format_methods
+        code.match?(needles)
+      end
       expect(offending.map { |path| path.delete_prefix("#{root}/") }).to eq([])
       assets = Dir[File.join(root, 'assets', 'javascripts', '*.js')].map { |path| File.basename(path) }
       expect(assets).not_to include('depending_custom_fields_legacy.js')

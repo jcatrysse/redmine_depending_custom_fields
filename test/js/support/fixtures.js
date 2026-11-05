@@ -54,4 +54,24 @@ function checkValues(group, values) {
 // The element named name in a tweak document.
 const named = (doc, name) => Array.from(doc.querySelectorAll('select, input')).find((el) => el.name === name) || null;
 
-module.exports = { DIR, files, scenarios, file, read, tweak, selectValues, checkValues, named };
+// WP-39 (R1): a mapping is the JSON text of a <script type="application/json">
+// after its control, which names its data-dcf-map-id in data-dcf-map-ref. jsonEscape mirrors
+// ERB::Util.json_escape (< > & U+2028 U+2029 as \u escapes).
+const JSON_ESCAPES = { '<': '\\u003c', '>': '\\u003e', '&': '\\u0026', '\u2028': '\\u2028', '\u2029': '\\u2029' };
+const jsonEscape = (text) => text.replace(/[<>&\u2028\u2029]/g, (c) => JSON_ESCAPES[c]);
+// The script element markup of a mapping (an object, or raw text as given).
+const mapScript = (id, value) =>
+  `<script type="application/json" data-dcf-map-id="${id}">${typeof value === 'string' ? value : jsonEscape(JSON.stringify(value))}</script>`;
+// The mapping script a control of a tweak document names, or null.
+const mapScriptOf = (doc, ctl) => {
+  const ref = ctl.getAttribute('data-dcf-map-ref');
+  return ref === null ? null : Array.from(doc.querySelectorAll('script')).find((s) => s.getAttribute('data-dcf-map-id') === ref) || null;
+};
+// Replaces the mapping text of a control in a tweak document (an object, or raw text).
+const setMap = (doc, ctl, value) => {
+  mapScriptOf(doc, ctl).textContent = typeof value === 'string' ? value : JSON.stringify(value);
+};
+
+module.exports = {
+  DIR, files, scenarios, file, read, tweak, selectValues, checkValues, named, jsonEscape, mapScript, mapScriptOf, setMap
+};

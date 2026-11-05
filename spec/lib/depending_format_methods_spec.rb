@@ -1338,8 +1338,14 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
     end
 
     # Every element without its data-dcf-* attributes, as canonical HTML.
+    # WP-39 (R1): also without the JSON script each reference names (one per
+    # reference, after the control); was the attributes only.
     def without_dcf(html)
       doc = Nokogiri::HTML.fragment(html)
+      refs = doc.css('[data-dcf-map-ref]').map { |node| node['data-dcf-map-ref'] }
+      scripts = doc.css('script[type="application/json"]')
+      expect(scripts.map { |script| script['data-dcf-map-id'] }).to eq(refs)
+      scripts.each(&:remove)
       doc.traverse { |n| dcf_attribute_names(n).each { |name| n.remove_attribute(name) } if n.element? }
       doc.to_html
     end
@@ -1348,11 +1354,13 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       view.custom_field_tag_with_label(:issue, value_of(issue, field)).to_str
     end
 
+    # Changed by WP-39: the tags ask ClientData.field_data (attributes and
+    # mapping JSON); was attributes_for.
     def stubbed
-      allow(client).to receive(:attributes_for).and_return({})
+      allow(client).to receive(:field_data).and_return([{}, nil])
       yield
     ensure
-      allow(client).to receive(:attributes_for).and_call_original
+      allow(client).to receive(:field_data).and_call_original
     end
 
     def locales
@@ -1570,12 +1578,13 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         it 'asks ClientData once per edit tag and per bulk tag' do
           parent, child = styled(kind, 'check_box', required: true)
           issue = kit_issue(project, parent => 'A', child => 'a1')
-          allow(client).to receive(:attributes_for).and_call_original
+          # Changed by WP-39: field_data, was attributes_for.
+          allow(client).to receive(:field_data).and_call_original
           labelled(issue, child)
           view.custom_field_tag_for_bulk_edit('issue', child, [issue], '')
 
-          expect(client).to have_received(:attributes_for).with(child, hash_including(context: :form)).once
-          expect(client).to have_received(:attributes_for).with(child, hash_including(context: :bulk)).once
+          expect(client).to have_received(:field_data).with(child, hash_including(context: :form)).once
+          expect(client).to have_received(:field_data).with(child, hash_including(context: :bulk)).once
         end
       end
     end
@@ -1629,7 +1638,8 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       html = labelled(issue, CustomField.find(child.id))
       select = Nokogiri::HTML.fragment(html).at_css('select')
 
-      expect(JSON.parse(select['data-dcf-map'])).to eq(mapping)
+      # Changed by WP-39 (R1): the referenced JSON script, was data-dcf-map.
+      expect(dcf_map_of(select)).to eq(mapping)
       expect(JSON.parse(select['data-dcf-defaults'])).to eq(tricky.first => tricky.last)
       expect(JSON.parse(select['data-dcf-parent-values'])).to eq([tricky.first])
       expect(JSON.parse(select['data-dcf-stored'])).to eq('child' => [tricky.last], 'parent' => [tricky.first])
@@ -1638,6 +1648,8 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
       expect(html).not_to include('&amp;amp;')
       expect(html).not_to include('&amp;lt;')
       expect(html).not_to include('<script>')
+      expect(html.scan(/<script\b/).size).to eq(1)
+      expect(html.scan(%r{</script}).size).to eq(1)
       expect(html).not_to include('<b>')
       expect(html.scan(/ id="(.+?)"/).size).to eq(1)
       expect(Nokogiri::HTML.fragment(html).at_css('label')['for']).to eq(select['id'])

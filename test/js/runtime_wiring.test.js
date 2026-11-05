@@ -34,9 +34,9 @@ function eventLog(pg) {
 // themselves get no parent attributes, UD-08).
 const CYCLE = '<form id="issue-form">' +
   '<p><label>A</label><select name="issue[custom_field_values][1]" data-dcf-field="1" data-dcf-parent="2" data-dcf-context="form" ' +
-  'data-dcf-map="{&quot;b1&quot;:[&quot;a1&quot;],&quot;b2&quot;:[&quot;a2&quot;]}"><option value=""></option><option value="a1" selected>a1</option><option value="a2">a2</option></select></p>' +
+  'data-dcf-map-ref="map-1"><option value=""></option><option value="a1" selected>a1</option><option value="a2">a2</option></select><script type="application/json" data-dcf-map-id="map-1">{"b1":["a1"],"b2":["a2"]}</script></p>' +
   '<p><label>B</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
-  'data-dcf-map="{&quot;a1&quot;:[&quot;b1&quot;,&quot;b2&quot;],&quot;a2&quot;:[&quot;b2&quot;]}"><option value=""></option><option value="b1" selected>b1</option><option value="b2">b2</option></select></p>' +
+  'data-dcf-map-ref="map-2"><option value=""></option><option value="b1" selected>b1</option><option value="b2">b2</option></select><script type="application/json" data-dcf-map-id="map-2">{"a1":["b1","b2"],"a2":["b2"]}</script></p>' +
   '</form>';
 
 test('UMD: in a window the only new global is DependingCustomFields, created at evaluation time', () => {
@@ -169,7 +169,7 @@ test('X2 stored cycle and self-parent fixtures and a self-parent child: no error
     assert.deepEqual(pg.errors, []);
     assert.equal(pg.document.querySelectorAll('[data-dcf-state], .depending-child, em.dcf-hint').length, 0, scenario);
   }
-  const self = await load('<form><p><select name="issue[custom_field_values][1]" data-dcf-field="1" data-dcf-parent="1" data-dcf-map="{}"><option value="a">a</option></select></p></form>');
+  const self = await load('<form><p><select name="issue[custom_field_values][1]" data-dcf-field="1" data-dcf-parent="1" data-dcf-map-ref="map-1"><option value="a">a</option></select><script type="application/json" data-dcf-map-id="map-1">{}</script></p></form>');
   assert.equal(self.document.querySelector('select').hasAttribute('data-dcf-state'), false);
   assert.deepEqual(D.enabled(self.document.querySelector('select')), ['a']);
 });
@@ -274,9 +274,9 @@ test('UD-37 carrier: a parent the cascade changes is checked too (P to C cleared
   const html = '<form id="issue-form"><div id="all_attributes">' +
     '<p><label>P</label><select name="issue[custom_field_values][1]"><option value=""></option><option value="A" selected>A</option><option value="B">B</option></select></p>' +
     '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
-    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{&quot;A&quot;:[&quot;c1&quot;],&quot;B&quot;:[&quot;c2&quot;]}" ' +
+    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map-ref="map-2" ' +
     'data-dcf-parent-values="[&quot;A&quot;]" data-dcf-parent-label="P" data-dcf-stored="{&quot;child&quot;:[&quot;c1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
-    '<option value=""></option><option value="c1" selected>c1</option><option value="c2">c2</option></select></p>' +
+    '<option value=""></option><option value="c1" selected>c1</option><option value="c2">c2</option></select><script type="application/json" data-dcf-map-id="map-2">{"A":["c1"],"B":["c2"]}</script></p>' +
     '<span hidden="hidden" data-dcf-locked-parent="2" data-dcf-locked-stored="[&quot;c1&quot;]" data-dcf-locked-allowed-by="[[&quot;c1&quot;]]"></span>' +
     '</div></form>';
   const pg = await load(html);
@@ -300,9 +300,9 @@ test('UD-37 carrier: a cascade parent with "Hide when no valid options" stays sh
   const html = '<form id="issue-form"><div id="all_attributes">' +
     '<p><label>P</label><select name="issue[custom_field_values][1]"><option value=""></option><option value="A" selected>A</option><option value="Z">Z</option></select></p>' +
     '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" data-dcf-hide="1" ' +
-    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{&quot;A&quot;:[&quot;c1&quot;]}" ' +
+    'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map-ref="map-2" ' +
     'data-dcf-parent-values="[&quot;A&quot;]" data-dcf-parent-label="P" data-dcf-stored="{&quot;child&quot;:[&quot;c1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
-    '<option value=""></option><option value="c1" selected>c1</option></select></p>' +
+    '<option value=""></option><option value="c1" selected>c1</option></select><script type="application/json" data-dcf-map-id="map-2">{"A":["c1"]}</script></p>' +
     '<span hidden="hidden" data-dcf-locked-parent="2" data-dcf-locked-stored="[&quot;c1&quot;]" data-dcf-locked-allowed-by="[[&quot;c1&quot;]]"></span>' +
     '</div></form>';
   const pg = await load(html);
@@ -741,8 +741,8 @@ test('single select without a blank option: no option stays selected and disable
   const html = '<form><p><label>P</label><select name="issue[custom_field_values][1]"><option value="A" selected>A</option><option value="C">C</option></select></p>' +
     `<p><label>C</label><input type="hidden" name="${name}" value="" data-dcf-blank="1" autocomplete="off">` +
     `<select name="${name}" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ` +
-    'data-dcf-map="{&quot;A&quot;:[&quot;Ant&quot;,&quot;Ape&quot;]}" data-dcf-stored="{&quot;child&quot;:[&quot;Ant&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
-    '<option value="Ant" selected>Ant</option><option value="Ape">Ape</option></select></p></form>';
+    'data-dcf-map-ref="map-2" data-dcf-stored="{&quot;child&quot;:[&quot;Ant&quot;],&quot;parent&quot;:[&quot;A&quot;]}">' +
+    '<option value="Ant" selected>Ant</option><option value="Ape">Ape</option></select><script type="application/json" data-dcf-map-id="map-2">{"A":["Ant","Ape"]}</script></p></form>';
   const pg = await load(html);
   const c = D.control(pg.document, '2');
   const sentinel = pg.document.querySelector('input[data-dcf-blank]');
@@ -779,10 +779,9 @@ test('writes only what changed: an option whose state stays the same gets no att
 test('a 25,000-option child initialises in jsdom (5,000 allowed)', async () => {
   const values = Array.from({ length: 25000 }, (_, i) => `v${i}`);
   const map = { A: values.slice(0, 5000), B: values.slice(5000, 6000) };
-  const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const html = '<form><p><select name="issue[custom_field_values][1]"><option value="A" selected>A</option><option value="B">B</option></select></p>' +
-    `<p><select multiple name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" data-dcf-map="${esc(JSON.stringify(map))}">` +
-    `<option value=""></option>${values.map((v) => `<option value="${v}">${v}</option>`).join('')}</select></p></form>`;
+    `<p><select multiple name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" data-dcf-map-ref="map-2">` +
+    `<option value=""></option>${values.map((v) => `<option value="${v}">${v}</option>`).join('')}</select>${F.mapScript('map-2', map)}</p></form>`;
   const pg = await load(html, { before(w) { w.document.querySelector('[data-dcf-field="2"]').removeAttribute('multiple'); } });
   const c = D.control(pg.document, '2');
   assert.equal(c.multiple, false);
@@ -796,8 +795,8 @@ test('a 25,000-option child initialises in jsdom (5,000 allowed)', async () => {
 test('prototype-named keys are plain keys: choosing __proto__ enables only its value, nothing is polluted', async () => {
   const html = '<form><p><select name="issue[custom_field_values][1]"><option value="toString" selected>toString</option><option value="__proto__">__proto__</option></select></p>' +
     '<p><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
-    'data-dcf-map="{&quot;__proto__&quot;:[&quot;Ant&quot;],&quot;toString&quot;:[&quot;Ape&quot;]}" data-dcf-defaults="{&quot;constructor&quot;:&quot;Ant&quot;}">' +
-    '<option value=""></option><option value="Ant">Ant</option><option value="Ape">Ape</option></select></p></form>';
+    'data-dcf-map-ref="map-2" data-dcf-defaults="{&quot;constructor&quot;:&quot;Ant&quot;}">' +
+    '<option value=""></option><option value="Ant">Ant</option><option value="Ape">Ape</option></select><script type="application/json" data-dcf-map-id="map-2">{"__proto__":["Ant"],"toString":["Ape"]}</script></p></form>';
   const pg = await load(html);
   const c = D.control(pg.document, '2');
   assert.deepEqual(D.enabled(c), ['', 'Ape']);
@@ -811,8 +810,8 @@ test('parent names with quotes, backslashes and brackets match; a name with a ne
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/\n/g, '&#10;');
   const page = (prefix) => `<form><p><select name="${esc(`${prefix}[custom_field_values][1]`)}"><option value="A" selected>A</option><option value="B">B</option></select></p>` +
     `<p><select name="${esc(`${prefix}[custom_field_values][2]`)}" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ` +
-    `data-dcf-parent-name="${esc(`${prefix}[custom_field_values][1]`)}" data-dcf-map="{&quot;A&quot;:[&quot;a1&quot;],&quot;B&quot;:[&quot;b1&quot;]}">` +
-    '<option value=""></option><option value="a1">a1</option><option value="b1">b1</option></select></p></form>';
+    `data-dcf-parent-name="${esc(`${prefix}[custom_field_values][1]`)}" data-dcf-map-ref="map-2">` +
+    '<option value=""></option><option value="a1">a1</option><option value="b1">b1</option></select><script type="application/json" data-dcf-map-id="map-2">{"A":["a1"],"B":["b1"]}</script></p></form>';
   const pg = await load(page('x"y\\z]'));
   const [p, c] = Array.from(pg.document.querySelectorAll('select'));
   assert.equal(p.name, 'x"y\\z][custom_field_values][1]');
@@ -832,7 +831,7 @@ test('radio parent: changes come from its inputs; "(none)" checked makes the chi
   const html = '<form><p><label>Parent</label><span class="check_box_group"><label><input type="radio" name="issue[custom_field_values][1]" value=""> (none)</label>' +
     '<label><input type="radio" name="issue[custom_field_values][1]" value="A" checked> A</label><label><input type="radio" name="issue[custom_field_values][1]" value="B"> B</label></span></p>' +
     '<p><label>Child</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
-    'data-dcf-map="{&quot;A&quot;:[&quot;a1&quot;],&quot;B&quot;:[&quot;b1&quot;]}"><option value=""></option><option value="a1">a1</option><option value="b1">b1</option></select></p></form>';
+    'data-dcf-map-ref="map-2"><option value=""></option><option value="a1">a1</option><option value="b1">b1</option></select><script type="application/json" data-dcf-map-id="map-2">{"A":["a1"],"B":["b1"]}</script></p></form>';
   const pg = await load(html);
   const c = D.control(pg.document, '2');
   assert.deepEqual(D.enabled(c), ['', 'a1']);
@@ -921,21 +920,95 @@ test('without a body at start the observer watches the document element', async 
   w.close();
 });
 
-test('data-dcf-map: absent or invalid leaves the child unfiltered; ids above MAX_SAFE_INTEGER compare as strings', async () => {
-  for (const raw of [null, '{', '[1]', '"x"']) {
-    const pg = await load(F.tweak('list_single', (doc) => {
-      const s = F.named(doc, CHILD);
-      if (raw === null) s.removeAttribute('data-dcf-map');
-      else s.setAttribute('data-dcf-map', raw);
-    }));
-    assert.deepEqual([D.state(child(pg)), D.disabled(child(pg))], ['unfiltered', []], String(raw));
+// Changed by WP-39 (R1): the mapping is the text of the JSON script the
+// control names in data-dcf-map-ref (was the data-dcf-map attribute). No
+// reference, an empty text or invalid JSON leave the child unfiltered (as an
+// absent or invalid attribute did); a reference whose script is missing
+// fails closed like {} (the WP-39 rule); {} allows nothing, so only the
+// stored value Ant of list_single stays usable (legacy, D1).
+test('mapping script: no reference, empty or invalid text leave the child unfiltered; a missing script and {} allow nothing; ids above MAX_SAFE_INTEGER compare as strings', async () => {
+  const cases = [
+    ['no reference', (doc, s) => s.removeAttribute('data-dcf-map-ref'), 'unfiltered'],
+    ['empty text', (doc, s) => F.setMap(doc, s, ''), 'unfiltered'],
+    ['invalid JSON', (doc, s) => F.setMap(doc, s, '{bad'), 'unfiltered'],
+    ['array', (doc, s) => F.setMap(doc, s, '[1]'), 'unfiltered'],
+    ['string', (doc, s) => F.setMap(doc, s, '"x"'), 'unfiltered'],
+    ['dangling reference', (doc, s) => s.setAttribute('data-dcf-map-ref', 'dcf-map-nowhere'), 'empty'],
+    ['script removed', (doc, s) => F.mapScriptOf(doc, s).remove(), 'empty'],
+    ['not a JSON script', (doc, s) => F.mapScriptOf(doc, s).setAttribute('type', 'text/plain'), 'empty'],
+    ['{}', (doc, s) => F.setMap(doc, s, '{}'), 'empty']
+  ];
+  for (const [label, edit, expected] of cases) {
+    const pg = await load(F.tweak('list_single', (doc) => edit(doc, F.named(doc, CHILD))));
+    const c = child(pg);
+    if (expected === 'unfiltered') assert.deepEqual([D.state(c), D.disabled(c)], ['unfiltered', []], label);
+    else assert.deepEqual([D.state(c), D.enabled(c)], ['legacy', ['', 'Ant']], label);
   }
   const big = '9007199254740993';
   const html = '<form><p><select name="issue[custom_field_values][1]"><option value="7" selected>7</option></select></p>' +
     '<p><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
-    `data-dcf-map="{&quot;7&quot;:[&quot;${big}&quot;,12]}"><option value=""></option><option value="${big}">big</option><option value="12">12</option><option value="13">13</option></select></p></form>`;
+    `data-dcf-map-ref="map-2"><option value=""></option><option value="${big}">big</option><option value="12">12</option><option value="13">13</option></select>` +
+    `<script type="application/json" data-dcf-map-id="map-2">{"7":["${big}",12]}</script></p></form>`;
   const pg = await load(html);
   assert.deepEqual(D.enabled(D.control(pg.document, '2')), ['', big, '12']);
+});
+
+// WP-39 (R1): the mapping is read where the control names it, in its own
+// form; a replaced or edited script never leaves a stale mapping.
+test('mapping script: a changed text or a replaced script is read again (no stale cache)', async () => {
+  const pg = await load('new_issue');
+  const c = child(pg);
+  assert.deepEqual(D.enabled(c), ['', 'Ant', 'Ape']);
+  const script = F.mapScriptOf(pg.document, c);
+  script.textContent = JSON.stringify({ Alpha: ['Bee'] });
+  pg.window.DependingCustomFields.init(pg.document);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual(D.enabled(c), ['', 'Bee'], 'edited text');
+  const replacement = pg.document.createElement('script');
+  replacement.type = 'application/json';
+  replacement.setAttribute('data-dcf-map-id', script.getAttribute('data-dcf-map-id'));
+  replacement.textContent = JSON.stringify({ Alpha: ['Ape'] });
+  script.replaceWith(replacement);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  fire.choose(pg.window, parentOf(pg), 'Alpha');
+  assert.deepEqual(D.enabled(c), ['', 'Ape'], 'replaced script');
+  replacement.remove();
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual([D.state(c), D.enabled(c)], ['empty', ['']], 'removed script');
+});
+
+// WP-39 (R1), contract 7: core ids repeat between the issue edit form and the
+// wizard on the issue page (UX-13); each control reads the script of its own
+// form, also when the other form holds a script with the same key first and
+// the script is not right after the control.
+test('mapping script: two forms with the same script key filter by their own mapping', async () => {
+  const form = (id, map) => `<form id="${id}"><p><label>P</label><select name="issue[custom_field_values][1]"><option value="A" selected>A</option></select></p>` +
+    '<p><label>C</label><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ' +
+    'data-dcf-map-ref="dcf-map-same"><option value=""></option><option value="x">x</option><option value="y">y</option></select></p>' +
+    `<div>${F.mapScript('dcf-map-same', map)}</div></form>`;
+  const pg = await load(form('first', { A: ['x'] }) + form('second', { A: ['y'] }));
+  const [one, two] = Array.from(pg.document.querySelectorAll('[data-dcf-field="2"]'));
+  assert.deepEqual([D.enabled(one), D.enabled(two)], [['', 'x'], ['', 'y']]);
+});
+
+// WP-39 (R1), contract 4: values that could end or open a script data block
+// round-trip through the escaped JSON text.
+test('mapping script: escaped values with </script>, <!--, &, quotes and U+2028 filter exactly', async () => {
+  const values = ['</script><script>x</script>', '<!--', '<script', '&amp;', 'q"q', "s'q", 'b\\s', 'l\u2028s', 'p\u2029s', 'Ünï€ ñ'];
+  const key = '</script><!--&"\'\u2028';
+  const opt = (v) => `<option value="${v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}">x</option>`;
+  const html = `<form><p><select name="issue[custom_field_values][1]">${opt(key)}<option value="Other">o</option></select></p>` +
+    '<p><select name="issue[custom_field_values][2]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" data-dcf-map-ref="map-2">' +
+    `<option value=""></option>${values.map(opt).join('')}<option value="none">n</option></select>` +
+    `${F.mapScript('map-2', { [key]: values.slice(0, 7), Other: values.slice(7) })}</p></form>`;
+  assert.doesNotMatch(F.mapScript('map-2', { [key]: values }).replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''), /[<>&\u2028\u2029]/);
+  const pg = await load(html);
+  const c = D.control(pg.document, '2');
+  assert.equal(pg.document.querySelectorAll('script').length, 1);
+  assert.deepEqual(D.enabled(c), [''].concat(values.slice(0, 7)));
+  fire.choose(pg.window, D.byName(pg.document, 'issue[custom_field_values][1]'), 'Other');
+  assert.deepEqual(D.enabled(c), [''].concat(values.slice(7)));
 });
 
 test('meta texts with markup characters are written as text, never as markup', async () => {

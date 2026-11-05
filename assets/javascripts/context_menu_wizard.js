@@ -11,6 +11,16 @@
 // message. Each open fetches again; a closed or replaced wizard drops a late
 // answer. Escape and the Cancel button close it and give the focus back to
 // the entry.
+// WP-39: the body keeps the JSON mapping scripts its fields name
+// (data-dcf-map-ref, the script's data-dcf-map-id); every other script is
+// removed. The entry prefetches
+// its body when the pointer rests on it or its link has the focus for
+// PREFETCH_DELAY ms (nothing on a pass-over): one request per entry li, held
+// only in that entry's state and checked against the entry's URL when used.
+// A click while it runs waits for it, a click after it opens with it; the
+// body is used once (a later open fetches again). A failed prefetch shows
+// nothing and the click asks again. A rebuilt menu (the li removed) or core
+// hiding it (a click outside an a.submenu, core contextMenuClick) drops it.
 (function () {
   'use strict';
   var FALLBACK = {
@@ -21,6 +31,11 @@
   var ENTRY_SEL = 'li.cf-parent';
   var FORM_SEL = 'form.cf-wizard-form';
   var STOPPED = ['mousedown', 'mouseup', 'click', 'contextmenu'];
+  var JSON_TYPE = 'application/json';
+  var PREFETCH_DELAY = 150;
+  // li.cf-parent => {url, status: 'timer'|'loading'|'done'|'failed'|'used',
+  //  timer, abort, promise, hover, focus}; dropped with the li or the menu.
+  var prefetches = new Map();
   // {container, item, menu, outside, onKey, onMenuHover, stopProp, form,
   //  onSubmit, onCancel, cancel, abort}
   var current = null;
@@ -67,7 +82,113 @@
       e.preventDefault(); e.stopPropagation();
       openWizard(menu, li);
     });
+    // WP-39: mouseover/mouseout and focusin/focusout bubble (mouseenter and
+    // focus do not); only crossings of the entry's own border count.
+    menu.addEventListener('mouseover', e => pointerAt(menu, e, 'hover', true));
+    menu.addEventListener('mouseout', e => pointerAt(menu, e, 'hover', false));
+    menu.addEventListener('focusin', e => pointerAt(menu, e, 'focus', true));
+    menu.addEventListener('focusout', e => pointerAt(menu, e, 'focus', false));
     menu.dataset.dcfInit = '1';
+  }
+
+  // ---- WP-39: prefetch -----------------------------------------------------
+
+  function entryOf(target) {
+    return target && typeof target.closest === 'function' ? target.closest(ENTRY_SEL) : null;
+  }
+
+  // The pointer (hover) or the focus (focus) enters or leaves an entry:
+  // entering starts the delay once per entry, leaving with neither left
+  // cancels a delay that has not fired. A request that runs goes on.
+  function pointerAt(menu, e, kind, on) {
+    const item = entryOf(e.target);
+    if (!item || !menu.contains(item)) return;
+    const other = e.relatedTarget;
+    if (other && typeof other.nodeType === 'number' && item.contains(other)) return;
+    let p = prefetches.get(item);
+    if (on) {
+      if (kind === 'focus' && !e.target.closest('a.submenu')) return;
+      if (!p) {
+        p = { url: null, status: 'timer', timer: null, abort: null, promise: null, hover: false, focus: false };
+        p.timer = window.setTimeout(() => startPrefetch(menu, item, p), PREFETCH_DELAY);
+        prefetches.set(item, p);
+      }
+      p[kind] = true;
+      return;
+    }
+    if (!p) return;
+    p[kind] = false;
+    if (p.status === 'timer' && !p.hover && !p.focus) dropPrefetch(item);
+  }
+
+  function hidden(menu) {
+    return !menu.isConnected || menu.style.display === 'none';
+  }
+
+  function startPrefetch(menu, item, p) {
+    p.timer = null;
+    if (prefetches.get(item) !== p) return;
+    const url = item.isConnected && !hidden(menu) ? wizardUrl(item) : null;
+    if (!url) {
+      dropPrefetch(item);
+      return;
+    }
+    const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+    p.url = url;
+    p.status = 'loading';
+    p.abort = controller;
+    p.promise = loadForm(url, controller);
+    p.promise.then(() => {
+      if (p.status === 'loading') p.status = 'done';
+    }, () => {
+      p.status = 'failed';
+      p.promise = null;
+    });
+  }
+
+  // Clears the timer and aborts the request of an entry's prefetch.
+  function dropPrefetch(item) {
+    const p = prefetches.get(item);
+    if (!p) return;
+    prefetches.delete(item);
+    if (p.timer !== null) window.clearTimeout(p.timer);
+    if (p.abort && p.status === 'loading') p.abort.abort();
+    p.status = 'used';
+    p.promise = null;
+  }
+
+  function dropAll(keep) {
+    Array.from(prefetches.keys()).forEach(item => {
+      if (!keep || !keep(item)) dropPrefetch(item);
+    });
+  }
+
+  // The prefetched form promise for an open of +item+ at +url+, or null.
+  // Every open ends the entry's prefetching (no later prefetch); a body of
+  // another URL is dropped.
+  function adoptPrefetch(item, url) {
+    const p = prefetches.get(item);
+    if (!p) {
+      prefetches.set(item, { url: url, status: 'used', timer: null, abort: null, promise: null, hover: false, focus: false });
+      return null;
+    }
+    if (p.timer !== null) {
+      window.clearTimeout(p.timer);
+      p.timer = null;
+    }
+    if ((p.status === 'loading' || p.status === 'done') && p.url === url && p.promise) return p.promise;
+    if (p.status === 'loading' && p.abort) p.abort.abort();
+    p.status = 'used';
+    p.promise = null;
+    return null;
+  }
+
+  // A shown body is used once: a later open fetches again (fresh token).
+  function consumed(item) {
+    const p = prefetches.get(item);
+    if (!p) return;
+    p.status = 'used';
+    p.promise = null;
   }
 
   function adjustWidth(menu) {
@@ -118,8 +239,36 @@
       failed(state);
       return;
     }
-    const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
-    state.abort = controller;
+    // Its own request, which a close aborts.
+    const own = () => {
+      const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+      state.abort = controller;
+      return loadForm(url, controller);
+    };
+    // WP-39: the entry's prefetch (shared, never aborted by a close); when it
+    // fails the click asks again with its own request.
+    const prefetched = adoptPrefetch(item, url);
+    const request = prefetched ? prefetched.catch(() => {
+      if (current !== state || !item.isConnected) return null;
+      return own();
+    }) : own();
+    request.then(form => {
+      if (current !== state || form === null) return;
+      if (!item.isConnected) {
+        closeWizard(false);
+        return;
+      }
+      show(state, form);
+      consumed(item);
+    }).catch(() => {
+      if (current === state) failed(state);
+    });
+  }
+
+  // The WP-36 GET of a wizard body, parsed: resolves to the one form of the
+  // body (parseForm), rejects on any failure (rejection, abort, a status
+  // that is not ok, a followed redirect, another type, no single form).
+  function loadForm(url, controller) {
     const init = {
       method: 'GET',
       credentials: 'same-origin',
@@ -133,21 +282,13 @@
     } catch (e) {
       request = Promise.reject(e);
     }
-    request.then(res => {
-      if (current !== state) return null;
+    return request.then(res => {
       if (!res || !res.ok || res.redirected || !isHtml(res)) throw new Error('load');
       return res.text();
     }).then(body => {
-      if (current !== state || body === null) return;
-      if (!item.isConnected) {
-        closeWizard(false);
-        return;
-      }
       const form = parseForm(body);
       if (!form) throw new Error('load');
-      show(state, form);
-    }).catch(() => {
-      if (current === state) failed(state);
+      return form;
     });
   }
 
@@ -159,14 +300,21 @@
 
   // The one form.cf-wizard-form of body, parsed in an inert document, with
   // every script and event handler attribute removed; null when the body
-  // holds no form or more than one.
+  // holds no form or more than one. WP-39: a <script type="application/json">
+  // whose data-dcf-map-id a field of the form names in data-dcf-map-ref
+  // stays (a data block, never run); every other script goes.
   function parseForm(body) {
     if (typeof body !== 'string' || typeof window.DOMParser !== 'function') return null;
     const doc = new window.DOMParser().parseFromString(body, 'text/html');
     const forms = doc.querySelectorAll('form');
     if (forms.length !== 1 || !forms[0].matches(FORM_SEL)) return null;
     const form = forms[0];
-    Array.prototype.forEach.call(form.querySelectorAll('script'), s => s.remove());
+    const refs = Array.prototype.map.call(form.querySelectorAll('[data-dcf-map-ref]'), el => el.getAttribute('data-dcf-map-ref'));
+    Array.prototype.forEach.call(form.querySelectorAll('script'), s => {
+      const type = String(s.getAttribute('type') || '').trim().toLowerCase();
+      const key = s.getAttribute('data-dcf-map-id');
+      if (type !== JSON_TYPE || !key || refs.indexOf(key) === -1) s.remove();
+    });
     [form].concat(Array.prototype.slice.call(form.querySelectorAll('*'))).forEach(el => {
       Array.prototype.slice.call(el.attributes).forEach(attr => {
         if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
@@ -329,7 +477,10 @@
 
   // Core fills #context-menu with .html(data): the added nodes are its
   // children, so an added node that is or holds a wizard entry binds the menu.
+  // WP-39: a removed entry (core empties the menu before each show) drops its
+  // prefetch.
   function onMutations(records) {
+    if (prefetches.size) dropAll(item => item.isConnected);
     records.forEach(record => {
       Array.prototype.forEach.call(record.addedNodes, node => {
         if (node.nodeType !== 1) return;
@@ -339,9 +490,19 @@
     });
   }
 
+  // WP-39: core hides the menu on a document click that is not on an
+  // a.submenu (contextMenuClick); the entry's own click stops before here.
+  function onDocumentClick(e) {
+    if (!prefetches.size) return;
+    const target = e.target;
+    if (target && typeof target.closest === 'function' && target.closest('a.submenu')) return;
+    dropAll(null);
+  }
+
   function start() {
     const menu = document.getElementById('context-menu');
     if (menu && menu.querySelector(ENTRY_SEL)) setupMenu(menu);
+    document.addEventListener('click', onDocumentClick);
     if (typeof window.MutationObserver === 'function') {
       new window.MutationObserver(onMutations).observe(document.body || document.documentElement,
         { childList: true, subtree: true });

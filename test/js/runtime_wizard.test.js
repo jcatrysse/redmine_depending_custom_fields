@@ -676,7 +676,8 @@ test('L5 scripts and event handler attributes of the body never run and are not 
   fire.choose(pg.window, D.byName(container, ROOT), 'Alpha');
   await settle();
   assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1);
-  assert.equal(container.querySelectorAll('script').length, 0);
+  // Changed by WP-39 (R1): the JSON mapping scripts of the body are kept; was no script at all.
+  assert.equal(container.querySelectorAll('script:not([type="application/json"])').length, 0);
   assert.equal(container.querySelectorAll('[onerror], [onload], [onchange]').length, 0);
   ['dcfPwned', 'dcfPwned2', 'dcfPwned3', 'dcfPwned4', 'dcfPwned5'].forEach((k) => assert.equal(pg.window[k], undefined, k));
 });
@@ -805,4 +806,354 @@ test('L7 every listener added while loading or shown is removed on close', async
   assert.deepEqual(closed(container), ['none', 0]);
   Object.keys(counts).forEach((k) => assert.equal(counts[k], 0, k));
   assert.ok(Object.keys(counts).includes('doc:keydown') && Object.keys(counts).includes('doc:mousedown'));
+});
+
+// ---- WP-39 (R1): the body carries the mappings as JSON scripts ------------
+
+// The wizard body with every field mapping as a JSON script inside the
+// field's label (the WP-39 markup; a no-op on a regenerated fixture).
+const SCRIPT_BODY = F.tweak('wizard_body', (doc) => {
+  doc.querySelectorAll('[data-dcf-map]').forEach((select) => {
+    const id = `dcf-map-bulk-${select.id}`;
+    const script = doc.createElement('script');
+    script.type = 'application/json';
+    script.setAttribute('data-dcf-map-id', id);
+    script.textContent = select.getAttribute('data-dcf-map');
+    select.removeAttribute('data-dcf-map');
+    select.setAttribute('data-dcf-map-ref', id);
+    select.after(script);
+  });
+});
+// The mappings of the wizard_body fixture (Middle under Root, Leaf under Middle).
+const BODY_MAPS = { 9100002: { Alpha: ['Ant', 'Ape'], Beta: ['Bee'] }, 9100003: { Ant: ['Cub', 'Calf'], Bee: ['Colt'] } };
+const WITH_MAPS = F.tweak(SCRIPT_BODY, (doc) => {
+  Object.keys(BODY_MAPS).forEach((field) => {
+    const select = doc.querySelector(`select[data-dcf-field="${field}"]`);
+    F.setMap(doc, select, BODY_MAPS[field]);
+  });
+});
+
+test('WP-39 the imported form keeps its JSON mapping scripts and filters with them at once', async () => {
+  const pg = await wizardPage({ form: WITH_MAPS });
+  const container = await open(pg);
+  const scripts = Array.from(container.querySelectorAll('script'));
+  assert.deepEqual(scripts.map((s) => s.type), ['application/json', 'application/json']);
+  assert.ok(scripts.every((s) => s.closest('label.cf-wizard-label')), 'inside the field labels');
+  fire.choose(pg.window, D.byName(container, ROOT), 'Beta');
+  assert.deepEqual(D.enabled(D.byName(container, MIDDLE)), ['', '__none__', 'Bee']);
+  assert.equal(D.state(D.byName(container, MIDDLE)), 'ok');
+  assert.deepEqual(realErrors(pg), []);
+});
+
+test('WP-39 parseForm keeps only referenced JSON scripts; every other script is removed and never runs', async () => {
+  const form = F.tweak(WITH_MAPS, (doc) => {
+    const f = doc.querySelector('form');
+    [['', 'window.dcfRun1 = 1;'], ['text/javascript', 'window.dcfRun2 = 1;'], ['module', 'window.dcfRun3 = 1;'],
+      ['text/plain', 'x'], ['application/json', '{"stray":1}']].forEach(([type, text]) => {
+      const s = doc.createElement('script');
+      if (type) s.setAttribute('type', type);
+      s.textContent = text;
+      f.appendChild(s);
+    });
+  });
+  const outside = '<script type="application/json" data-dcf-map-id="dcf-map-bulk-issue_custom_field_values_9100002">{"Alpha":["Ant"]}</script>';
+  const s = stubs(null, () => Promise.resolve(htmlResponse(outside + form)));
+  const pg = await D.page(F.read('wizard_entry'), { head: true, url: URL_, scripts: [D.WIZARD], before: s.before });
+  pg.log = s.log;
+  const container = await open(pg);
+  const kept = Array.from(container.querySelectorAll('script'));
+  assert.deepEqual(kept.map((x) => [x.type, x.getAttribute('data-dcf-map-id')]),
+    [['application/json', 'dcf-map-bulk-issue_custom_field_values_9100002'], ['application/json', 'dcf-map-bulk-issue_custom_field_values_9100003']]);
+  ['dcfRun1', 'dcfRun2', 'dcfRun3'].forEach((k) => assert.equal(pg.window[k], undefined, k));
+  assert.equal(pg.document.querySelectorAll('script[type="application/json"]').length, 2, 'the script outside the form is not imported');
+});
+
+test('WP-39 the live message names a wizard field by its label text, never the JSON of its script', async () => {
+  const pg = await wizardPage({ form: WITH_MAPS });
+  const container = await open(pg);
+  fire.choose(pg.window, D.byName(container, ROOT), '__none__');
+  pg.clock.tick(400);
+  const live = pg.document.getElementById('dcf-live');
+  assert.ok(live, 'a live region');
+  assert.match(live.textContent, /^Middle field: /);
+  assert.doesNotMatch(live.textContent, /[{}"]|Ant|application/);
+});
+
+// ---- WP-39 (R5a): the entry prefetches its body ----------------------------
+
+const ENTRY_ABC = F.tweak('wizard_entry', (doc) => {
+  const li = doc.querySelector('li.cf-parent');
+  ['9100004', '9100005'].forEach((id) => {
+    const copy = li.cloneNode(true);
+    copy.setAttribute('data-parent-id', id);
+    li.parentNode.appendChild(copy);
+  });
+});
+
+function entryLink(pg, parentId) {
+  const sel = parentId ? `#context-menu li.cf-parent[data-parent-id="${parentId}"] > a.submenu` : '#context-menu li.cf-parent > a.submenu';
+  return pg.document.querySelector(sel);
+}
+
+// The pointer enters (or leaves) an entry from outside it.
+function pointer(pg, type, parentId) {
+  entryLink(pg, parentId).dispatchEvent(new pg.window.MouseEvent(type, { bubbles: true, relatedTarget: pg.document.body }));
+}
+const hover = (pg, parentId) => pointer(pg, 'mouseover', parentId);
+const leave = (pg, parentId) => pointer(pg, 'mouseout', parentId);
+const gets = (pg) => pg.log.fetch.filter((c) => !c.init || c.init.method !== 'POST');
+
+test('P1 the hover prefetch starts after 150 ms with the WP-36 request, and only then', async () => {
+  const pg = await wizardPage();
+  hover(pg);
+  pg.clock.tick(149);
+  assert.equal(gets(pg).length, 0);
+  pg.clock.tick(1);
+  assert.equal(gets(pg).length, 1);
+  const call = gets(pg)[0];
+  assert.equal(call.url, WIZARD_URL);
+  assert.deepEqual([call.init.method, call.init.credentials, call.init.cache, call.init.body],
+    ['GET', 'same-origin', 'no-store', undefined]);
+  assert.equal(JSON.stringify(call.init.headers), JSON.stringify({ 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' }));
+  await settle();
+  assert.equal(pg.document.getElementById('cf-wizard-container'), null, 'a prefetch shows nothing');
+  assert.deepEqual(realErrors(pg), []);
+});
+
+test('P2 a pass-over sends nothing: leaving before the delay, or sweeping over three entries', async () => {
+  const pg = await wizardPage({ body: ENTRY_ABC });
+  hover(pg);
+  pg.clock.tick(100);
+  leave(pg);
+  pg.clock.tick(1000);
+  assert.equal(gets(pg).length, 0);
+  ['9100001', '9100004', '9100005'].forEach((id) => {
+    hover(pg, id);
+    pg.clock.tick(60);
+    leave(pg, id);
+  });
+  pg.clock.tick(1000);
+  assert.equal(gets(pg).length, 0);
+  // Moving inside the entry (link to its icon) neither starts nor cancels.
+  hover(pg);
+  const li = entryLink(pg).closest('li');
+  entryLink(pg).dispatchEvent(new pg.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: li.querySelector('span') || li }));
+  pg.clock.tick(150);
+  assert.equal(gets(pg).length, 1);
+});
+
+test('P3 hover then click: one request; a click while it runs waits for it; a click after it opens at once', async () => {
+  const c = controlled();
+  const pg = await wizardPage({ load: c.load });
+  hover(pg);
+  pg.clock.tick(150);
+  assert.equal(c.calls.length, 1);
+  const container = click(pg);
+  assert.equal(c.calls.length, 1, 'no second request');
+  assert.equal(container.textContent, LOADING);
+  c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1);
+  assert.equal(c.calls.length, 1);
+
+  const done = await wizardPage();
+  hover(done);
+  done.clock.tick(150);
+  await settle();
+  const box = click(done);
+  await D.microtask();
+  await D.microtask();
+  assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1, 'shown without a new request');
+  assert.equal(gets(done).length, 1);
+});
+
+test('P4 repeated hover and focus on the same entry never start a second prefetch', async () => {
+  const pg = await wizardPage();
+  hover(pg);
+  pg.clock.tick(150);
+  hover(pg);
+  pg.clock.tick(150);
+  entryLink(pg).dispatchEvent(new pg.window.FocusEvent('focusin', { bubbles: true }));
+  pg.clock.tick(150);
+  await settle();
+  leave(pg);
+  hover(pg);
+  pg.clock.tick(500);
+  assert.equal(gets(pg).length, 1);
+  await open(pg);
+  assert.equal(gets(pg).length, 1);
+});
+
+test('P5 keyboard focus on the entry link prefetches after the delay; leaving focus first cancels', async () => {
+  const pg = await wizardPage();
+  entryLink(pg).focus();
+  pg.clock.tick(149);
+  entryLink(pg).blur();
+  pg.clock.tick(500);
+  assert.equal(gets(pg).length, 0);
+  entryLink(pg).focus();
+  pg.clock.tick(150);
+  assert.equal(gets(pg).length, 1);
+  assert.equal(gets(pg)[0].url, WIZARD_URL);
+});
+
+test('P6 a failed prefetch shows nothing; the click fetches again with the WP-36 handling', async () => {
+  const leak = '<p>HiddenFieldName</p>';
+  const failures = [
+    () => Promise.reject(new TypeError('Failed HiddenFieldName')),
+    () => Promise.resolve(htmlResponse(leak, { ok: false, status: 403 })),
+    () => Promise.resolve(htmlResponse(F.read('wizard_body'), { redirected: true })),
+    () => Promise.resolve(htmlResponse(leak))
+  ];
+  for (const [k, failure] of failures.entries()) {
+    let calls = 0;
+    const pg = await wizardPage({ load: () => { calls += 1; return calls === 1 ? failure() : Promise.resolve(htmlResponse(F.read('wizard_body'))); } });
+    hover(pg);
+    pg.clock.tick(150);
+    await settle();
+    assert.equal(pg.document.getElementById('cf-wizard-container'), null, `case ${k}: nothing shown`);
+    assert.deepEqual(pg.log.alerts, [], `case ${k}`);
+    const container = await open(pg);
+    assert.equal(calls, 2, `case ${k}: the click asks again`);
+    assert.equal(container.querySelectorAll('form.cf-wizard-form').length, 1, `case ${k}`);
+    assert.deepEqual(realErrors(pg), [], `case ${k}`);
+  }
+  // The click's own request fails too: the generic alert, never server text.
+  const pg = await wizardPage({ load: () => Promise.resolve(htmlResponse('<p>HiddenFieldName</p>', { ok: false, status: 500 })) });
+  hover(pg);
+  pg.clock.tick(150);
+  await settle();
+  const container = await open(pg);
+  assert.equal(gets(pg).length, 2);
+  assert.equal(container.querySelector('[role="alert"]').textContent, LOAD_FAILED);
+  assert.doesNotMatch(pg.document.body.textContent, /HiddenFieldName/);
+  // A prefetch that fails while the click waits for it: the click asks again.
+  const c = controlled();
+  const waiting = await wizardPage({ load: c.load });
+  hover(waiting);
+  waiting.clock.tick(150);
+  const box = click(waiting);
+  c.calls[0].reject(new TypeError('x'));
+  await settle();
+  assert.equal(c.calls.length, 2);
+  c.calls[1].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1);
+});
+
+test('P7 a rebuilt menu or another selection drops the prefetch: aborted, never shown, a new request', async () => {
+  const c = controlled();
+  const pg = await wizardPage({ load: c.load });
+  hover(pg);
+  pg.clock.tick(150);
+  const first = c.calls[0];
+  const menu = pg.document.getElementById('context-menu');
+  const inner = F.read('wizard_entry').replace(/^<div id="context-menu">/, '').replace(/<\/div>\s*$/, '')
+    .replace('data-issue-ids="9300001"', 'data-issue-ids="9300002"');
+  menu.textContent = '';
+  await D.microtask();
+  if (first.init.signal) assert.equal(first.init.signal.aborted, true, 'the in-flight prefetch is aborted');
+  menu.innerHTML = inner;
+  await D.microtask();
+  first.resolve(htmlResponse(F.tweak('wizard_body', (doc) => doc.querySelector('form').setAttribute('data-old', '1'))));
+  const container = click(pg);
+  assert.equal(c.calls.length, 2);
+  assert.ok(c.calls[1].url.includes('ids%5B%5D=9300002'));
+  c.calls[1].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(container.querySelectorAll('form').length, 1);
+  assert.equal(container.querySelector('form[data-old]'), null, 'the old body is never shown');
+
+  // The same li with other data-issue-ids: the URL is checked at use time.
+  const d = controlled();
+  const other = await wizardPage({ load: d.load });
+  hover(other);
+  other.clock.tick(150);
+  d.calls[0].resolve(htmlResponse(F.tweak('wizard_body', (doc) => doc.querySelector('form').setAttribute('data-old', '1'))));
+  await settle();
+  entryLink(other).closest('li').setAttribute('data-issue-ids', '9300003');
+  const box = click(other);
+  assert.equal(d.calls.length, 2);
+  assert.ok(d.calls[1].url.includes('ids%5B%5D=9300003'));
+  d.calls[1].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(box.querySelector('form[data-old]'), null);
+});
+
+test('P8 core hiding the menu (a click outside it) drops the prefetch; the next hover asks again', async () => {
+  const c = controlled();
+  const pg = await wizardPage({ load: c.load });
+  hover(pg);
+  pg.clock.tick(150);
+  pg.document.body.dispatchEvent(new pg.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  if (c.calls[0].init.signal) assert.equal(c.calls[0].init.signal.aborted, true);
+  c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  hover(pg);
+  pg.clock.tick(150);
+  assert.equal(c.calls.length, 2);
+  // A hidden menu starts nothing.
+  pg.document.body.dispatchEvent(new pg.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  pg.document.getElementById('context-menu').style.display = 'none';
+  hover(pg);
+  pg.clock.tick(500);
+  assert.equal(c.calls.length, 2);
+});
+
+test('P9 an adopted body is used once: Escape, Cancel or a save need a new request with a fresh token (L6)', async () => {
+  const pg = await wizardPage();
+  hover(pg);
+  pg.clock.tick(150);
+  await settle();
+  const first = await open(pg);
+  const token1 = first.querySelector('input[name="authenticity_token"]');
+  assert.equal(gets(pg).length, 1);
+  keydown(pg, 'Escape');
+  const second = await open(pg);
+  assert.equal(gets(pg).length, 2);
+  assert.notEqual(second.querySelector('input[name="authenticity_token"]'), token1);
+  // Escape while the click waits for the prefetch keeps the shared request.
+  const c = controlled();
+  const waiting = await wizardPage({ load: c.load });
+  hover(waiting);
+  waiting.clock.tick(150);
+  click(waiting);
+  keydown(waiting, 'Escape');
+  if (c.calls[0].init.signal) assert.equal(c.calls[0].init.signal.aborted, false, 'not aborted by the close');
+  const box = click(waiting);
+  c.calls[0].resolve(htmlResponse(F.read('wizard_body')));
+  await settle();
+  assert.equal(c.calls.length, 1);
+  assert.equal(box.querySelectorAll('form.cf-wizard-form').length, 1);
+});
+
+test('P10 nothing is stored: no Web Storage, Cache API or module cache; an entry without a URL sends nothing', async () => {
+  const writes = [];
+  const pg = await wizardPage({
+    body: F.tweak('wizard_entry', (doc) => doc.querySelector('li').removeAttribute('data-wizard-url')),
+    before(w) {
+      ['localStorage', 'sessionStorage'].forEach((k) => {
+        try { const st = w[k]; st.setItem = (...a) => writes.push([k, ...a]); } catch (e) { /* not available */ }
+      });
+      w.caches = { open: () => { writes.push(['caches']); return Promise.resolve({}); } };
+    }
+  });
+  hover(pg);
+  pg.clock.tick(500);
+  await settle();
+  assert.equal(gets(pg).length, 0);
+  const ok = await wizardPage({
+    before(w) {
+      ['localStorage', 'sessionStorage'].forEach((k) => {
+        try { const st = w[k]; st.setItem = (...a) => writes.push([k, ...a]); } catch (e) { /* not available */ }
+      });
+      w.caches = { open: () => { writes.push(['caches']); return Promise.resolve({}); } };
+    }
+  });
+  hover(ok);
+  ok.clock.tick(150);
+  await settle();
+  await open(ok);
+  assert.deepEqual(writes, []);
+  assert.doesNotMatch(D.WIZARD, /localStorage|sessionStorage|caches\.|serviceWorker/);
 });

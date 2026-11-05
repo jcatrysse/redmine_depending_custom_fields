@@ -382,3 +382,28 @@ test('gap 13: a leaf inserted before its parent is re-filtered when the parent a
   assert.deepEqual([D.selected(leaf), D.state(leaf), D.enabled(leaf)], [[''], 'empty', ['']]);
   assert.deepEqual(pg.errors, []);
 });
+
+// WP-39 (R1), contract 15: the JSON script arrives with the re-rendered
+// field; jQuery keeps it inert (not a JavaScript type), the new select reads
+// the new script and the old one is gone with its p.
+test('WP-39 replaceIssueFormWith brings the new mapping script; the new select filters with it', async () => {
+  const pg = await load('new_issue');
+  assert.deepEqual(D.enabled(child(pg)), ['', 'Ant', 'Ape']);
+  const oldScript = F.mapScriptOf(pg.document, child(pg));
+  pg.window.updateIssueFrom('/issues/1/edit.js', parentOf(pg));
+  const inner = attributes(F.tweak('new_issue', (doc) => {
+    const s = F.named(doc, CHILD);
+    F.setMap(doc, s, { Alpha: ['Bee'], Beta: ['Ant'] });
+  }));
+  pg.window.replaceIssueFormWith(coreForm(inner));
+  await D.microtask();
+  const c = child(pg);
+  assert.equal(oldScript.isConnected, false);
+  const scripts = Array.from(pg.document.querySelectorAll('script[type="application/json"]'));
+  assert.equal(scripts.length, 1);
+  assert.equal(F.mapScriptOf(pg.document, c), scripts[0]);
+  assert.deepEqual([D.state(c), D.enabled(c)], ['ok', ['', 'Bee']]);
+  fire.choose(pg.window, parentOf(pg), 'Beta');
+  assert.deepEqual(D.enabled(c), ['', 'Ant']);
+  assert.equal(scripts[0].type, 'application/json', 'the data block keeps its type');
+});

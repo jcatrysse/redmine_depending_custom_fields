@@ -545,6 +545,10 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   # Table rules of server design 2.2 on every field of a fixture.
   def check_contract(name, fragment)
     fields = fragment.css('[data-dcf-field]')
+    # WP-39 (R1): no data-dcf-map; one JSON script per reference, none else.
+    expect(fragment.css('[data-dcf-map]')).to be_empty, name
+    expect(dcf_managed_count(fragment)).to eq(fragment.css('[data-dcf-parent]').size), name
+    expect(fragment.css('script').reject { |script| script['type'] == 'application/json' }).to be_empty, name
     fields.each do |node|
       names = dcf_names(node)
       label = "#{name}: field #{node['data-dcf-field']}"
@@ -558,7 +562,10 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       context = node['data-dcf-context']
       expect(%w[form bulk]).to include(context), label
       if node['data-dcf-parent']
-        expect(names).to include('data-dcf-parent-name', 'data-dcf-map'), label
+        # Changed by WP-39 (R1): the reference to one JSON script of the
+        # fixture, was data-dcf-map.
+        expect(names).to include('data-dcf-parent-name', 'data-dcf-map-ref'), label
+        expect(dcf_map_of(node)).to be_a(Hash), label
         if context == 'form'
           expect(names).to include('data-dcf-parent-values', 'data-dcf-parent-label'), label
         else
@@ -575,7 +582,8 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
     # before WP-19; was allowed in its place (the marked (none)).
     expect(fragment.to_html).not_to match(/data-dcf-(state|required-none)/)
     check_markers(name, fragment)
-    expect(fragment.css('script')).to be_empty
+    # Changed by WP-39 (R1): only the JSON mapping scripts (checked above); was no script.
+    expect(fragment.css('script').map { |script| script['type'] }.uniq - ['application/json']).to eq([])
     fields
   end
 
@@ -650,7 +658,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       end,
       'legacy_parent_value' => lambda do |fragment|
         node = field_named(fragment, 'Child field')
-        expect(JSON.parse(node['data-dcf-map'])).to include('Gamma' => ['Ape'])
+        expect(dcf_map_of(node)).to include('Gamma' => ['Ape'])
         expect(JSON.parse(node['data-dcf-parent-values'])).to eq(['Gamma'])
       end,
       'issue_copy' => lambda do |fragment|
@@ -662,13 +670,13 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         expect(node.at_css('option[selected]')['value']).to eq('Bee')
       end,
       'enumeration' => lambda do |fragment|
-        values = JSON.parse(field_named(fragment, 'Child field')['data-dcf-map']).values.flatten
+        values = dcf_map_of(field_named(fragment, 'Child field')).values.flatten
         expect(values).to all(be_an(Integer))
       end,
       'enumeration_inactive_child' => lambda do |fragment|
         node = field_named(fragment, 'Child field')
         cat, dog = %w[Cat Dog].map { |n| CustomFieldEnumeration.find_by(name: n).id }
-        expect(JSON.parse(node['data-dcf-map']).values.flatten).to include(cat, dog)
+        expect(dcf_map_of(node).values.flatten).to include(cat, dog)
         expect(JSON.parse(node['data-dcf-defaults']).values).to include(dog, cat)
         expect(JSON.parse(node['data-dcf-stored'])['child']).to eq([cat.to_s])
         expect(node.css('option').pluck('value')).to include(cat.to_s)
@@ -704,7 +712,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         node = field_named(fragment, 'User child')
         expect(node['data-dcf-parent']).not_to be_nil
         expect(JSON.parse(node['data-dcf-parent-values'])).to eq(['Alpha'])
-        expect(JSON.parse(node['data-dcf-map'])).to eq('Alpha' => ['Ant'], 'Beta' => ['Bee'])
+        expect(dcf_map_of(node)).to eq('Alpha' => ['Ant'], 'Beta' => ['Bee'])
         expect(node.at_css('option[selected]')['value']).to eq('Ant')
         expect(select_labelled(fragment, 'User parent').at_css('option[selected]')['value']).to eq('Alpha')
       end,
@@ -736,7 +744,9 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       # default Beta); was a data-field-id on every select. Changed by WP-36:
       # the fetched form (wizard_body) without the template around it.
       'wizard_body' => lambda do |fragment|
-        expect(fragment.css('template, li, script')).to be_empty
+        # Changed by WP-39 (R1): the two JSON mapping scripts, nothing else (was no script).
+        expect(fragment.css('template, li')).to be_empty
+        expect(fragment.css('script').pluck('type')).to eq(%w[application/json application/json])
         expect(fragment.css('form').size).to eq(1)
         expect(fragment.at_css('form')['class']).to eq('cf-wizard-form')
         expect(fragment.css("input[name='authenticity_token']").size).to eq(1)
@@ -769,7 +779,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       end,
       'tricky_values' => lambda do |fragment|
         node = field_named(fragment, 'Child')
-        expect(JSON.parse(node['data-dcf-map']).keys).to include('[x]', 'semi;colon', '<b>&"')
+        expect(dcf_map_of(node).keys).to include('[x]', 'semi;colon', '<b>&"')
         expect(node['data-dcf-parent-label']).to eq('Parent <b>"&')
       end,
       'read_only_child_carrier' => lambda do |fragment|
@@ -787,7 +797,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
         node = field_named(fragment, 'Child field')
         expect(node['data-dcf-hide']).to eq('1')
         expect(JSON.parse(node['data-dcf-parent-values'])).to eq(['Gamma'])
-        expect(JSON.parse(node['data-dcf-map'])).not_to have_key('Gamma')
+        expect(dcf_map_of(node)).not_to have_key('Gamma')
       end,
       'bulk_hide_when_disabled' => lambda do |fragment|
         node = field_named(fragment, 'Child field')
@@ -834,8 +844,9 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   describe 'the marker checks' do
     let(:group) do
       '<span class="check_box_group" data-dcf-field="2" data-dcf-context="form" data-dcf-kind="list" data-dcf-parent="1" ' \
-        'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map="{}" data-dcf-parent-values="[]" ' \
-        'data-dcf-parent-label="P"><label><input type="radio" name="issue[custom_field_values][2]" value="a"> a</label></span>'
+        'data-dcf-parent-name="issue[custom_field_values][1]" data-dcf-map-ref="m" data-dcf-parent-values="[]" ' \
+        'data-dcf-parent-label="P"><label><input type="radio" name="issue[custom_field_values][2]" value="a"> a</label></span>' \
+        '<script type="application/json" data-dcf-map-id="m">{}</script>'
     end
     let(:sentinel) { '<input type="hidden" name="issue[custom_field_values][2]" value="" data-dcf-blank="1" autocomplete="off">' }
 
@@ -845,7 +856,8 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       form = context == 'form' ? ' data-dcf-parent-values="[]" data-dcf-parent-label="P"' : ''
       "<select name=\"issue[custom_field_values][2]\"#{' multiple="multiple"' if multiple} data-dcf-field=\"2\" " \
         "data-dcf-context=\"#{context}\" data-dcf-kind=\"list\"#{' data-dcf-multiple="1"' if multiple} data-dcf-parent=\"1\" " \
-        "data-dcf-parent-name=\"issue[custom_field_values][1]\" data-dcf-map=\"{}\"#{form}>#{options}</select>"
+        "data-dcf-parent-name=\"issue[custom_field_values][1]\" data-dcf-map-ref=\"m\"#{form}>#{options}</select>" \
+        '<script type="application/json" data-dcf-map-id="m">{}</script>'
     end
 
     def contract(html)
@@ -875,6 +887,16 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       refused(sentinel + bulk_select('<option value="">(No change)</option>'))
       refused(sentinel.sub('value=""', 'value="a"') + group)
       refused('<p data-dcf-state="ok"></p>')
+    end
+
+    # WP-39 (R1): the reference must name exactly one JSON script; no other
+    # script and no data-dcf-map attribute.
+    it 'refuses a dangling reference, a second or executable script and the former attribute' do
+      plain = '<option value="">(No change)</option><option value="a">a</option>'
+      refused(bulk_select(plain).sub('<script type="application/json" data-dcf-map-id="m">{}</script>', ''))
+      refused(bulk_select(plain) + '<script type="application/json" data-dcf-map-id="m">{}</script>')
+      refused(bulk_select(plain) + '<script>x()</script>')
+      refused(bulk_select(plain).sub('data-dcf-map-ref="m"', 'data-dcf-map-ref="m" data-dcf-map="{}"'))
     end
 
     # Flipped by WP-34 (UD-10): a marked (none) is refused in every place,
@@ -915,8 +937,11 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       expect(leak('<template id="cf-wizard-13"></template>')).to include('13')
       expect(leak('<select class="depending_enumeration_cf cf_9100001"><option value="77">x</option></select>'))
         .to include('77', 'CustomFieldEnumeration')
-      expect(leak('<select data-dcf-map="{&quot;12&quot;:[9200001]}"></select>')).to include('12', 'key')
-      expect(leak('<select data-dcf-map="{&quot;a&quot;:[44]}"></select>')).to include('44')
+      # Changed by WP-39 (R1): the JSON script text, was the data-dcf-map attribute.
+      expect(leak('<script type="application/json" data-dcf-map-id="m">{"12":[9200001]}</script>')).to include('12', 'key', 'text')
+      expect(leak('<script type="application/json" data-dcf-map-id="m">{"a":[44]}</script>')).to include('44')
+      expect(leak('<script type="application/json" data-dcf-map-id="dcf-map-form-issue_custom_field_values_57">{}</script>'))
+        .to include('57', '@data-dcf-map-id')
       expect(leak('<span data-dcf-locked-allowed-by="[[&quot;55&quot;]]"></span>')).to include('55')
       expect(leak('<div class="cf-wizard-field" data-dcf-wizard-field="66"></div>')).to include('66', '@data-dcf-wizard-field')
     end
@@ -925,10 +950,12 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       html = '<p><label for="issue_custom_field_values_9100001">A</label>' \
              '<select name="issue[custom_field_values][9100001]" id="issue_custom_field_values_9100001" ' \
              'class="depending_enumeration_cf cf_9100001" data-dcf-field="9100001" data-dcf-parent="9100002" ' \
-             'data-dcf-map="{&quot;9200001&quot;:[9200002]}"><option value="9200002">x</option></select></p>' \
+             'data-dcf-map-ref="dcf-map-form-issue_custom_field_values_9100001"><option value="9200002">x</option>' \
+             '</select><script type="application/json" data-dcf-map-id="dcf-map-form-issue_custom_field_values_9100001">' \
+             '{"9200001":[9200002]}</script></p>' \
              '<li data-issue-ids="9300001,9300002"></li><a href="/issues/9300001">x</a>'
       expect(dcf_js_guard!(html)).to be(true)
-      expect(dcf_js_guard!('<select data-dcf-map="{&quot;a: b&quot;:[&quot;1.0&quot;]}"></select>')).to be(true)
+      expect(dcf_js_guard!('<script type="application/json" data-dcf-map-id="m">{"a: b":["1.0"]}</script>')).to be(true)
     end
   end
 
@@ -1004,17 +1031,30 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   end
 
   describe 'the normalizer' do
+    # WP-39 (R1): script text is raw in HTML, so it is written back raw: an
+    # entity there would change the JSON that jsdom reads.
+    it 'writes the text of a JSON script raw, byte for byte' do
+      script = '<script type="application/json" data-dcf-map-id="m">{"a&b":["<\\u003c","x > y","&amp;","\\u0026"]}</script>'
+      out = dcf_js_normalize("<p>#{script}</p>")
+
+      expect(out).to eq("<p>#{script}</p>")
+      expect(JSON.parse(dcf_parse_fragment(out).at_css('script').text)).to eq('a&b' => ['<<', 'x > y', '&amp;', '&'])
+      expect(dcf_serialize(dcf_parse_fragment('<p>a &amp; b</p>'))).to eq('<p>a &amp; b</p>')
+    end
+
     it 'scrubs tokens, state hashes and asset digests and keeps values untouched' do
       digest = 'a' * 64
       html = '<input type="hidden" name="authenticity_token" value="abc"><meta name="csrf-token" content="xyz">' \
              '<input type="hidden" name="state_hash" value="0123abcd">' \
              "<script src=\"/assets/app-#{digest}.js?1700000000\"></script>" \
-             "<select data-dcf-map=\"{&quot;a?123&quot;:[&quot;#{digest}&quot;,&quot;tab\tin&quot;]}\">" \
-             '<option value="1.0">a: b</option></select>'
+             "<select data-dcf-defaults=\"{&quot;a?123&quot;:[&quot;#{digest}&quot;,&quot;tab\tin&quot;]}\">" \
+             '<option value="1.0">a: b</option></select>' \
+             "<script type=\"application/json\" data-dcf-map-id=\"m\">{\"a?123\":[\"#{digest}\",\"tab\\tin\"]}</script>"
       out = dcf_js_normalize(html)
 
       expect(out).to include('value="{{TOKEN}}"', 'content="{{TOKEN}}"', 'value="{{STATE_HASH}}"', 'src="/assets/app.js"')
       expect(out).to include("{&quot;a?123&quot;:[&quot;#{digest}&quot;,&quot;tab\tin&quot;]}")
+      expect(out).to include("<script type=\"application/json\" data-dcf-map-id=\"m\">{\"a?123\":[\"#{digest}\",\"tab\\tin\"]}</script>")
       expect(out).to include('<option value="1.0">a: b</option>')
       expect(dcf_js_normalize(out)).to eq(out)
     end

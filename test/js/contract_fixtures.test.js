@@ -196,7 +196,9 @@ Object.keys(EXPECTED).forEach((scenario) => {
     // the container.
     if (want.wizard) {
       const form = doc.querySelector('form.cf-wizard-form');
-      assert.equal(doc.querySelectorAll('template, script').length, 0);
+      // Changed by WP-39 (R1): the two JSON mapping scripts, nothing else; was no script.
+      assert.equal(doc.querySelectorAll('template, script:not([type="application/json"])').length, 0);
+      assert.equal(doc.querySelectorAll('script[type="application/json"]').length, 2);
       ['9100002', '9100003'].forEach((id) => assert.equal(D.state(D.control(form, id)), 'unfiltered', id));
       // UD-11 (WP-18): every field, the root with a default included, on '(no change)'.
       assert.deepEqual(Array.from(form.querySelectorAll('select')).map((sel) => sel.value), ['', '', '']);

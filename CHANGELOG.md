@@ -222,6 +222,7 @@
 * Changed: In project settings, a change refused by the maximum stored size of the plugin settings names that size in KiB and explains that a field already larger than it may keep its size but not grow.
 * Changed: A required dependent field whose parent value allows no value says that it stays empty and that the form can still be saved.
 * Changed: The refusal caused by a dependent field you cannot see suggests keeping the current value or asking someone who can see all fields, and the wizard load error says that clicking the entry again retries.
+* Changed: The context-menu wizard starts loading its fields when the pointer rests on its entry or the entry has the keyboard focus, so it usually opens at once; a click while they load waits for them, and nothing is loaded when the pointer only passes over an entry.
 * Fixed: Key/Value list (depending): a disallowed new value gives one error instead of two, and the edit form no longer shows the stored value twice.
 * Fixed: On MySQL/MariaDB, a value list or dependency mapping that is too large gives a clear validation error (HTTP 422 in the APIs, audited error in project settings) instead of an internal error or silent truncation.
 * Fixed: A large mapping save on widened MySQL columns no longer rolls back because its audit row overflowed.

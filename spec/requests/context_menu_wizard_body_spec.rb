@@ -96,7 +96,12 @@ RSpec.describe 'Context menu wizard body (WP-36)', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.media_type).to eq('text/html')
       expect(response.body.lstrip).to start_with('<form class="cf-wizard-form"')
-      expect(response.body).not_to match(/<html|<head|<body|<template|<li\b|<script/i)
+      # Changed by WP-39 (R1): the JSON mapping script of the child is the
+      # only script (a data block); was no script at all.
+      expect(response.body).not_to match(/<html|<head|<body|<template|<li\b/i)
+      expect(response.body.scan(/<script\b[^>]*>/i)).to eq(
+        ["<script type=\"application/json\" data-dcf-map-id=\"dcf-map-bulk-issue_custom_field_values_#{child.id}\">"]
+      )
       expect(Nokogiri::HTML(response.body).css('form').size).to eq(1)
       expect(levels).to eq([[parent.id], [child.id]])
       no_store

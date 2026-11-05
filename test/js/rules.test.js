@@ -191,7 +191,7 @@ test('parentState: one assertion per row of frontend design 5.3', () => {
   assert.deepEqual(ps('bulk', false, [], null), ['unfiltered', []]);
   // bulk never carries parent values
   assert.deepEqual(ps('bulk', false, [], ['B']), ['unfiltered', []]);
-  // any context, data-dcf-map absent or invalid
+  // any context, no mapping: no reference, or a script text that is empty or not a JSON object (WP-39; was data-dcf-map absent or invalid)
   assert.deepEqual(ps('form', true, ['A'], null, false), ['unfiltered', []]);
   assert.deepEqual(ps('bulk', true, ['A'], null, false), ['unfiltered', []]);
 });

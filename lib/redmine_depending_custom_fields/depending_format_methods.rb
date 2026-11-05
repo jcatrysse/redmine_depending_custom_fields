@@ -138,24 +138,44 @@ module RedmineDependingCustomFields
     # managed single radio group (or a required select without a '' option)
     # an id-less hidden input with the same name posts '' first; a checked
     # radio or selected option comes later and wins (last-wins parsing).
+    # WP-39 (R1): after core's markup, the mapping script the control names.
     def edit_tag(view, tag_id, tag_name, custom_value, options = {})
       cf = custom_value.custom_field
-      data = ClientData.attributes_for(cf, context: :form, customized: custom_value.customized,
-                                           custom_value: custom_value, tag_name: tag_name)
+      data, json = ClientData.field_data(cf, context: :form, customized: custom_value.customized,
+                                             custom_value: custom_value, tag_name: tag_name, tag_id: tag_id)
       html = super(view, tag_id, tag_name, custom_value, ClientData.merge_options(options, data))
-      return html unless ClientData.sentinel?(cf, data) && !tag_name.to_s.end_with?('[]')
-
-      view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 }) + html
+      html = view.hidden_field_tag(tag_name, '', id: nil, data: { dcf_blank: 1 }) + html if dcf_sentinel?(cf, data, tag_name)
+      dcf_with_map(view, html, data, json)
     end
 
     # Bulk edit, time-entry bulk edit and the context-menu wizard: core's
-    # select plus the bulk attributes for the selected +objects+.
+    # select plus the bulk attributes for the selected +objects+, then the
+    # mapping script (WP-39).
     def bulk_edit_tag(view, tag_id, tag_name, custom_field, objects, value, options = {})
-      data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
-      super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
+      data, json = ClientData.field_data(custom_field, context: :bulk, objects: objects, tag_name: tag_name,
+                                                       tag_id: tag_id)
+      html = super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
+      dcf_with_map(view, html, data, json)
     end
 
     private
+
+    def dcf_sentinel?(cf, data, tag_name)
+      ClientData.sentinel?(cf, data) && !tag_name.to_s.end_with?('[]')
+    end
+
+    # WP-39 (R1): +html+ followed by the <script type="application/json">
+    # whose data-dcf-map-id the control names in data-dcf-map-ref; its text
+    # is the JSON of ClientData.field_data, already escaped for a script
+    # context (no <, >, & U+2028 or U+2029), so it is written as it is. A
+    # data block: never executed, not rendered. No id attribute: core's
+    # custom_field_tag_with_label takes label for= from the only ' id="' of
+    # the tag. Without JSON, +html+ unchanged.
+    def dcf_with_map(view, html, data, json)
+      return html unless json && data[:dcf_map_ref]
+
+      html + view.content_tag(:script, json.html_safe, type: 'application/json', data: { dcf_map_id: data[:dcf_map_ref] })
+    end
 
     # The label index of value_from_keyword: folded label => value, first
     # label kept. Memoized on the record.

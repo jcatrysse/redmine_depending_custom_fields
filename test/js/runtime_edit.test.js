@@ -598,7 +598,7 @@ test('F19 inline-edit rows with a nested prefix issues[7] are filtered by their 
     const p = `issues[${n}][custom_field_values][9100001]`;
     const c = `issues[${n}][custom_field_values][9100002]`;
     return `<p><label>Parent</label><select name="${p}"><option value=""></option><option value="Alpha"${parentValue === 'Alpha' ? ' selected' : ''}>Alpha</option><option value="Beta"${parentValue === 'Beta' ? ' selected' : ''}>Beta</option></select></p>` +
-      `<p><label>Child</label><select name="${c}" data-dcf-field="9100002" data-dcf-parent="9100001" data-dcf-context="form" data-dcf-parent-name="${p}" data-dcf-map="{&quot;Alpha&quot;:[&quot;Ant&quot;],&quot;Beta&quot;:[&quot;Bee&quot;]}"><option value=""></option><option value="Ant">Ant</option><option value="Bee">Bee</option></select></p>`;
+      `<p><label>Child</label><select name="${c}" data-dcf-field="9100002" data-dcf-parent="9100001" data-dcf-context="form" data-dcf-parent-name="${p}" data-dcf-map-ref="map-${n}"><option value=""></option><option value="Ant">Ant</option><option value="Bee">Bee</option></select><script type="application/json" data-dcf-map-id="map-${n}">{"Alpha":["Ant"],"Beta":["Bee"]}</script></p>`;
   };
   const pg = await load(`<form id="inline_edit_form">${row(7, 'Alpha')}${row(8, 'Beta')}</form>`);
   const c7 = D.byName(pg.document, 'issues[7][custom_field_values][9100002]');
@@ -624,7 +624,7 @@ test('F19b a third-party select without data-dcf-* is not filtered', async () =>
 test('F19c an empty multi select in an inline edit form posts core name[]= only', async () => {
   const body = '<form id="inline_edit_form"><p><select name="issues[7][custom_field_values][9100001]"><option value="Alpha" selected>Alpha</option></select></p>' +
     '<p><select multiple name="issues[7][custom_field_values][9100002][]" data-dcf-field="9100002" data-dcf-parent="9100001" data-dcf-context="form" ' +
-    'data-dcf-parent-name="issues[7][custom_field_values][9100001]" data-dcf-map="{&quot;Alpha&quot;:[&quot;Ant&quot;]}"><option value="Ant">Ant</option><option value="Bee">Bee</option></select>' +
+    'data-dcf-parent-name="issues[7][custom_field_values][9100001]" data-dcf-map-ref="map-9100002"><option value="Ant">Ant</option><option value="Bee">Bee</option></select><script type="application/json" data-dcf-map-id="map-9100002">{"Alpha":["Ant"]}</script>' +
     '<input type="hidden" name="issues[7][custom_field_values][9100002][]" value=""></p></form>';
   const pg = await load(body);
   assert.deepEqual(E.list(pg.document.forms[0], 'issues[7][custom_field_values][9100002]'), ['issues[7][custom_field_values][9100002][]=']);
@@ -696,6 +696,8 @@ test('X10 legacy hint: at most 3 option labels, then ", ..."', async () => {
     'Stored values that do not match the selected Parent field are kept until you change Parent field: Bee, Cat label, Cow label, ....');
 });
 
+// Changed by WP-39 (R1): the JSON mapping script is the form's only script
+// (was no script), so the check names the other scripts.
 test('X10 hint texts are set as text: markup characters of labels and values stay text', async () => {
   const html = F.tweak('tricky_values', (doc) => {
     const s = F.named(doc, CHILD);
@@ -707,10 +709,10 @@ test('X10 hint texts are set as text: markup characters of labels and values sta
   const hint = D.hint(c);
   assert.equal(hint.textContent, 'Stored values that do not match the selected Parent <b>"& are kept until you change Parent <b>"&: <b>&".');
   assert.equal(hint.children.length, 0);
-  assert.equal(pg.document.querySelectorAll('form b, form script').length, 0);
+  assert.equal(pg.document.querySelectorAll('form b, form script:not([type="application/json"])').length, 0);
   fire.choose(pg.window, parentOf(pg), '');
   assert.equal(D.hintText(c), 'Select a value for Parent <b>"& first.');
-  assert.equal(pg.document.querySelectorAll('form b, form script').length, 0);
+  assert.equal(pg.document.querySelectorAll('form b, form script:not([type="application/json"])').length, 0);
   invariants(pg);
 });
 
@@ -823,7 +825,8 @@ test('F14 parent invisible to the role: no parent attributes, the child stays un
 test('form context: a literal __none__ list value is an ordinary value, enabled when allowed and posted', async () => {
   const pg = await load(F.tweak('list_single', (doc) => {
     const s = F.named(doc, CHILD);
-    s.setAttribute('data-dcf-map', JSON.stringify({ Alpha: ['Ant', '__none__'], Beta: ['Bee'] }));
+    // Changed by WP-39 (R1): the mapping script text, was the data-dcf-map attribute.
+    F.setMap(doc, s, { Alpha: ['Ant', '__none__'], Beta: ['Bee'] });
     s.insertAdjacentHTML('beforeend', '<option value="__none__">none</option>');
   }));
   const c = child(pg);
@@ -955,8 +958,9 @@ test('legacy hint labels over 25,000 options cost one pass, not one per legacy v
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const html = '<form><p><label>P</label><select name="issue[custom_field_values][1]"><option value="A" selected>A</option><option value="B">B</option></select></p>' +
     `<p><select multiple name="issue[custom_field_values][2][]" data-dcf-field="2" data-dcf-parent="1" data-dcf-context="form" ` +
-    `data-dcf-map="${esc(JSON.stringify({ A: values.slice(0, 5000) }))}" data-dcf-stored="${esc(JSON.stringify({ child: legacy, parent: ['A'] }))}">` +
-    `${values.map((v) => `<option value="${v}"${legacy.includes(v) ? ' selected' : ''}>${v}</option>`).join('')}</select></p></form>`;
+    `data-dcf-map-ref="map-2" data-dcf-stored="${esc(JSON.stringify({ child: legacy, parent: ['A'] }))}">` +
+    `${values.map((v) => `<option value="${v}"${legacy.includes(v) ? ' selected' : ''}>${v}</option>`).join('')}</select>` +
+    `${F.mapScript('map-2', { A: values.slice(0, 5000) })}</p></form>`;
   let reads = 0;
   const pg = await load(html, {
     before(w) {

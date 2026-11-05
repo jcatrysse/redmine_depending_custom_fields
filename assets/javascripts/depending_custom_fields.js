@@ -1,7 +1,8 @@
 /* Redmine Depending Custom Fields: issue-form runtime (frontend design 4 and 5).
  * One UMD file: under CommonJS the pure rules are module.exports and no DOM
  * runtime starts; in a browser the runtime reads the per-field data-dcf-*
- * attributes and exposes window.DependingCustomFields (rules at .rules).
+ * attributes and the mapping script each field names in data-dcf-map-ref
+ * (WP-39) and exposes window.DependingCustomFields (rules at .rules).
  * ES2017 only (npm run check); names are compared as strings, never through
  * a CSS escape helper (jsdom has none). */
 (function () {
@@ -128,7 +129,9 @@
 
     // Frontend design 5.3. present: the parent control is in the scope; raw:
     // its selected values; staticValues: data-dcf-parent-values (form) or null;
-    // hasMap false: data-dcf-map absent or invalid.
+    // hasMap false: no mapping (no data-dcf-map-ref, or the text of the script
+    // it names is empty or not a JSON object; WP-39, was data-dcf-map absent or
+    // invalid).
     function parentState(ctx, present, raw, staticValues, hasMap) {
       var unfiltered = { kind: 'unfiltered', values: [], key: NOCHANGE_KEY };
       if (hasMap === false) return unfiltered;
@@ -370,7 +373,7 @@
     var CHILD_SEL = '[data-dcf-parent]';
     var LOCKED_SEL = 'span[data-dcf-locked-parent]';
     var ROOT_SEL = CHILD_SEL + ', ' + LOCKED_SEL;
-    var ATTRS = ['data-dcf-field', 'data-dcf-parent', 'data-dcf-context', 'data-dcf-parent-name', 'data-dcf-map',
+    var ATTRS = ['data-dcf-field', 'data-dcf-parent', 'data-dcf-context', 'data-dcf-parent-name', 'data-dcf-map-ref',
                  'data-dcf-defaults', 'data-dcf-hide', 'data-dcf-parent-values', 'data-dcf-parent-label',
                  'data-dcf-stored'];
     // English fallbacks, equal to the en texts of large_lists_i18n_registry.md.
@@ -447,11 +450,43 @@
     function sameList(a, b) { return a.length === b.length && a.every(function (v, k) { return v === b[k]; }); }
     function jsonAttr(raw) { var p = R.parseJSON(raw); return p.ok ? p.value : null; }
 
-    // Parsed attributes, cached per element while the raw strings stay the same.
+    function isMapScript(el, ref) {
+      return !!el && el.tagName === 'SCRIPT' && el.getAttribute('data-dcf-map-id') === ref &&
+        String(el.getAttribute('type') || '').trim().toLowerCase() === 'application/json';
+    }
+
+    // WP-39 (R1): the <script type="application/json"> whose data-dcf-map-id
+    // is ref, in the control's own scope (form, wizard or document, so a
+    // repeated key in another form is never read): the elements after the
+    // control first (where the server writes it), else the scripts of the
+    // scope, compared as strings. null when there is none.
+    function mapScript(ctl, ref) {
+      if (!ref) return null;
+      for (var el = ctl.nextElementSibling; el; el = el.nextElementSibling) {
+        if (isMapScript(el, ref)) return el;
+      }
+      return Array.prototype.filter.call(scopeOf(ctl).querySelectorAll('script'), function (s) {
+        return isMapScript(s, ref);
+      })[0] || null;
+    }
+
+    // The mapping of a control: null (unfiltered) without a reference or for
+    // an empty, invalid or non-object text; an empty Map (allows nothing,
+    // like {}) for a reference whose script is missing.
+    function mapOf(ref, script, text) {
+      if (ref && !script) return new Map();
+      var parsed = R.parseJSON(text);
+      return parsed.ok ? R.normalizeMap(parsed.value) : null;
+    }
+
+    // Parsed attributes, cached per element while the raw strings, the
+    // mapping script and its text stay the same.
     function config(ctl) {
       var raw = ATTRS.map(function (a) { return ctl.getAttribute(a); });
+      var script = mapScript(ctl, raw[4]);
+      var text = script ? script.textContent : null;
       var cached = configs.get(ctl);
-      if (cached && sameList(cached.raw, raw)) return cached.cfg;
+      if (cached && sameList(cached.raw, raw) && cached.script === script && cached.text === text) return cached.cfg;
       var cfg = null;
       var name = controlName(ctl);
       var parsed = R.parseFieldName(name);
@@ -460,14 +495,13 @@
       if (usable && parsed && parentId && parentId !== raw[0] && parentId !== parsed.fieldId) {
         var ctx = R.contextOf(raw[2]);
         var form = ctx === 'form';
-        var mapParsed = R.parseJSON(raw[4]);
         cfg = {
           fieldId: parsed.fieldId,
           prefix: parsed.prefix,
           parentName: raw[3] || (parsed.prefix + '[custom_field_values][' + parentId + ']'),
           ctx: ctx,
           multiple: isSelect(ctl) ? ctl.multiple : choiceInputs(ctl).some(function (i) { return i.type === 'checkbox'; }),
-          map: mapParsed.ok ? R.normalizeMap(mapParsed.value) : null,
+          map: mapOf(raw[4], script, text),
           defaults: R.normalizeDefaults(jsonAttr(raw[5])),
           hide: form && raw[6] === '1',
           staticValues: form ? R.normalizeList(jsonAttr(raw[7])) : null,
@@ -476,7 +510,7 @@
           stored: form && raw[9] !== null ? (R.normalizeStored(jsonAttr(raw[9])) || { child: [], parent: null }) : null
         };
       }
-      configs.set(ctl, { raw: raw, cfg: cfg });
+      configs.set(ctl, { raw: raw, script: script, text: text, cfg: cfg });
       return cfg;
     }
 
@@ -499,7 +533,8 @@
 
     // The field label of a control: the first label or .field-description of
     // its p or .cf-wizard-field outside .check_box_group, without controls,
-    // .required and hints.
+    // .required, hints and scripts (WP-39: the mapping script sits inside the
+    // wizard label).
     function labelText(el) {
       var box = el.closest('p, .cf-wizard-field');
       if (!box) return '';
@@ -508,7 +543,7 @@
       })[0];
       if (!lab) return '';
       var clone = lab.cloneNode(true);
-      each(clone.querySelectorAll('select, input, textarea, button, .required, .dcf-hint'), function (n) {
+      each(clone.querySelectorAll('select, input, textarea, button, script, .required, .dcf-hint'), function (n) {
         n.parentNode.removeChild(n);
       });
       return textOf(clone);

@@ -267,7 +267,13 @@ server, with the same checks as the menu (the request needs your session; an
 API key is not accepted). If they cannot be loaded, for example after the
 session expired or when the selection changed meanwhile, the wizard shows
 "The wizard could not be loaded. Click the entry again to try again." and
-names no field; choose the entry again to retry. Every opening loads the fields again. **Escape**, the **Cancel**
+names no field; choose the entry again to retry. The wizard starts loading
+its fields when the pointer rests on its entry (about 150 ms) or when the
+entry has the keyboard focus for as long, so it usually opens at once; a
+choice while that loading runs waits for it instead of asking again, and
+nothing is loaded when the pointer only passes over an entry. Loaded fields
+are used for one opening of that menu only: every other opening loads them
+again, and closing or reopening the context menu drops them. **Escape**, the **Cancel**
 button, a click outside the wizard or moving to another menu entry closes it
 without saving. The wizard shows the top-level field and the dependent fields
 below it, one column per level, each labelled with its field name, and a
@@ -651,6 +657,10 @@ is about 2.7 times smaller.
 - Every value of a field is an option of its select on the issue form: about
   280 KB of option markup at 5,570 values and about 1.25 MB at 25,000. Keep
   selects below about 10,000 options.
+- The mapping of a field is written once per field as plain JSON in a script
+  element (about 280 KB for 25,000 values of 8 characters under 500 parent
+  values, against about 535 KB as an HTML attribute, where every quote is an
+  entity).
 - The dependency editors send the mapping as one JSON field of at most 4 MiB
   (see "Dependency editor" for the form bounds); Redmine's `config/boot.rb`
   sets `RACK_QUERY_PARSER_BYTESIZE_LIMIT` to 32 MiB.
@@ -770,7 +780,11 @@ filtered in the browser; the server still validates it.
 
 The server writes these attributes on the `<select>` or the
 `span.check_box_group` of each depending field, except `data-dcf-blank`, which
-marks an extra hidden input (last row). Values are JSON where shown.
+marks an extra hidden input (last row). Values are JSON where shown. The
+mapping of a managed field is not an attribute: it is the JSON text of a
+`<script type="application/json" data-dcf-map-id="...">` element right after
+the field's control (after Redmine's own hidden input of a multi-value
+select), and the control names it in `data-dcf-map-ref`.
 
 | Attribute | Value | When |
 |---|---|---|
@@ -780,7 +794,7 @@ marks an extra hidden input (last row). Values are JSON where shown.
 | `data-dcf-multiple` | `1` | multi-value fields (informational) |
 | `data-dcf-parent` | the parent field id | managed fields: the parent is valid, not part of a cycle and visible to the user (on My account and the registration form: rendered there as a control) |
 | `data-dcf-parent-name` | the form name of the parent control, for example `issue[custom_field_values][5]` | managed fields |
-| `data-dcf-map` | `{"<parent value>": [<child values>]}` | managed fields; `{}` allows nothing |
+| `data-dcf-map-ref` | the `data-dcf-map-id` of the field's mapping script, `dcf-map-<context>-<id of the control>` (a script has no `id`: Redmine takes the label's `for` from the only `id` of the field markup) | managed fields; the script text is `{"<parent value>": [<child values>]}`, the JSON escaped for a script element (`<`, `>`, `&`, U+2028 and U+2029 as `\u` escapes); `{}` allows nothing, no reference or a script text that is empty or not a JSON object leaves the field unfiltered, a reference whose script is missing allows nothing |
 | `data-dcf-defaults` | `{"<parent value>": <child value or values>}` | managed fields with per-parent defaults |
 | `data-dcf-hide` | `1` | managed fields with "Hide when no valid options" (also written in bulk context; the runtime applies it only on single-record forms) |
 | `data-dcf-parent-values` | the parent's current values on the record, `[]` when blank or not available | managed fields in form context |
@@ -795,8 +809,12 @@ the stored parent values and, per stored value of the hidden field, the
 parent values that allow it. A field you cannot see gets no carrier and
 nothing else on the page. The wizard wraps each field in
 `div.cf-wizard-field[data-dcf-wizard-field="<field id>"]` with an implicit
-`label.cf-wizard-label`. Never write parent data or a mapping for a parent
-the user cannot see.
+`label.cf-wizard-label` (the mapping script sits inside that label, after
+the select). Never write parent data or a mapping for a parent the user
+cannot see. The other JSON attributes stay attributes: they hold at most one
+entry per parent value (`data-dcf-defaults`), the parent's values of the
+record (`data-dcf-parent-values`) or the record's stored values
+(`data-dcf-stored`, the carrier attributes), not the child list.
 
 ### State and events
 
@@ -828,7 +846,16 @@ Markup inserted later is picked up by a MutationObserver. Call
 synchronous and does nothing when nothing changed. `setup(root)` and
 `requestSetup(root)` are deprecated aliases (kept throughout 0.1.x,
 removable no earlier than 0.2.0). The runtime reads its texts from
-`<meta name="dcf-i18n">` in the page head.
+`<meta name="dcf-i18n">` in the page head. It reads a mapping where the
+field names it, in the field's own form, and reads it again when the
+script or its text changes; markup that Redmine replaces (a tracker or
+status change on the issue form, a bulk edit refresh) brings its scripts
+along. The context menu wizard (`assets/javascripts/context_menu_wizard.js`)
+loads the body of an entry ahead when the pointer rests on it for about 150
+ms or its link has the focus for as long; a click while that request runs
+waits for it, a click after it opens with its body, and a body is used for
+one opening only. Nothing is stored outside that entry: closing the menu,
+another right-click or another selection drops it.
 
 Known limits:
 

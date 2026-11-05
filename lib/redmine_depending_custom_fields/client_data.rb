@@ -9,7 +9,9 @@ module RedmineDependingCustomFields
   # the options core passes to its select or check box group. Keys are
   # Symbols (Rails dasherizes them and JSON-encodes and escapes non-String
   # values once). Parent data only for a parent the user can see (SP-05);
-  # any error gives no attribute at all (fail open, BC-12).
+  # any error gives no attribute at all (fail open, BC-12). WP-39 (R1): the
+  # mapping is not an attribute; field_data gives its JSON, which the tags
+  # write as a <script type="application/json"> named by data-dcf-map-ref.
   #
   # Also the UD-37 carrier of the depending children the user sees but
   # cannot edit (locked_children, rendered by Hooks::ReadOnlyCarrierHook).
@@ -26,27 +28,48 @@ module RedmineDependingCustomFields
     # The attributes of +cf+ in +context+ (:form from edit_tag, :bulk from
     # bulk_edit_tag). Form context reads +customized+ (and +custom_value+ for
     # the stored baseline), bulk context the selected +objects+. {} for
-    # fields that are not depending and on any error.
-    def attributes_for(cf, context:, customized: nil, objects: nil, custom_value: nil, tag_name: nil, user: User.current)
-      return {} unless DependencyRules.depending?(cf)
+    # fields that are not depending and on any error. The first element of
+    # field_data.
+    def attributes_for(cf, **options)
+      field_data(cf, **options).first
+    end
+
+    # [attributes, mapping JSON] of +cf+ (WP-39, R1). With parent data the
+    # attributes name the mapping script in dcf_map_ref (in the place the
+    # data-dcf-map attribute had) and the JSON is the text that attribute
+    # held (the encoded sanitized mapping, to_json), escaped for a script
+    # context (ERB::Util.json_escape: no < > & U+2028 U+2029). Without
+    # parent data the JSON is nil; on any error [{}, nil] (fail open).
+    def field_data(cf, context:, customized: nil, objects: nil, custom_value: nil, tag_name: nil, tag_id: nil,
+                   user: User.current)
+      return [{}, nil] unless DependencyRules.depending?(cf)
 
       bulk = context.to_s == 'bulk'
       data = { dcf_field: cf.id, dcf_context: bulk ? 'bulk' : 'form', dcf_kind: DependencyRules.kind(cf) }
       data[:dcf_multiple] = 1 if cf.multiple?
       lookup = DependencyRules.lookup_records(bulk ? representatives(objects) : customized)
       pid = DependencyRules.effective_parent_id(cf, lookup)
-      return data unless pid
+      return [data, nil] unless pid
 
       parent = lookup[pid] || DependencyRules.parent_record(cf, pid)
       scope = bulk ? Array(objects) : form_scope(customized)
-      return data unless parent && parent_visible?(parent, scope, bulk, user, bulk ? nil : customized)
+      return [data, nil] unless parent && parent_visible?(parent, scope, bulk, user, bulk ? nil : customized)
 
-      add_parent_data(data, cf, pid, tag_name)
+      json = add_parent_data(data, cf, pid, tag_name, map_id(data[:dcf_context], tag_id, cf))
       add_form_data(data, cf, parent, customized, custom_value) unless bulk
-      data
+      [data, json]
     rescue StandardError => e
       Rails.logger.warn("[DCF] client data skipped for custom field ##{cf&.id}: #{e.class}")
-      {}
+      [{}, nil]
+    end
+
+    # The key of the mapping script (its data-dcf-map-id, the control's
+    # data-dcf-map-ref): the context and core's tag id, so the issue edit
+    # form and the wizard of the issue page (both with core's ids, UX-13)
+    # never share one; the field id when core gives no tag id.
+    def map_id(context, tag_id, cf)
+      tag = tag_id.to_s.presence || "custom_field_values_#{cf.id}"
+      "dcf-map-#{context}-#{tag}"
     end
 
     # WP-19: whether edit_tag prepends the id-less blank sentinel to the
@@ -120,16 +143,19 @@ module RedmineDependingCustomFields
         dcf_locked_allowed_by: stored.map { |value| mapping.select { |_key, values| values.include?(value) }.keys } }
     end
 
-    def add_parent_data(data, cf, pid, tag_name)
+    # Adds the parent attributes and returns the mapping JSON.
+    def add_parent_data(data, cf, pid, tag_name, map_id)
       data[:dcf_parent] = pid
       match = PARENT_NAME_RE.match(tag_name.to_s)
       data[:dcf_parent_name] = "#{match[1]}[custom_field_values][#{pid}]" if match
       raise ArgumentError, 'stored mapping is not a Hash' unless cf.value_dependencies.nil? || cf.value_dependencies.is_a?(Hash)
 
-      data[:dcf_map] = encode(cf, DependencyRules.mapping(cf))
+      json = ERB::Util.json_escape(encode(cf, DependencyRules.mapping(cf)).to_json)
+      data[:dcf_map_ref] = map_id
       defaults = encode(cf, DependencyRules.defaults(cf))
       data[:dcf_defaults] = defaults unless defaults.empty?
       data[:dcf_hide] = 1 if DependencyRules.hide_when_disabled?(cf)
+      json
     end
 
     # Parent values and label while the record carries the field, and the
@@ -239,7 +265,7 @@ module RedmineDependingCustomFields
       end
     end
 
-    private_class_method :locked_child, :add_parent_data, :add_form_data, :form_scope, :moved?, :scope_project,
+    private_class_method :locked_child, :map_id, :add_parent_data, :add_form_data, :form_scope, :moved?, :scope_project,
                          :representatives, :encode, :encode_value
   end
 end

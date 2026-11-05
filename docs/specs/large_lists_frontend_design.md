@@ -166,7 +166,7 @@ Rails JSON-encodes Hash and Array data values and HTML-escapes them. The caller'
 | `data-dcf-kind` | `list` or `enumeration` | every depending field (WP-16) | no (informational for CSS and integrators) |
 | `data-dcf-multiple` | `1` | every depending field with `multiple?` (WP-16) | no (the runtime reads `select.multiple` or the input types) |
 | `data-dcf-parent-name` | `<prefix>[custom_field_values][<parent id>]` | active child when `tag_name =~ /\A(.+)\[custom_field_values\]\[\d+\](\[\])?\z/` | yes. Without it the name is derived from the child's own name; an unparseable name means the field is ignored. |
-| `data-dcf-map` | JSON object: `Sanitizer.sanitize_dependencies(cf.value_dependencies)`, NOT pruned. Keys are strings. List child values are strings; enumeration child ids are JSON numbers when they match `/\A[1-9]\d*\z/`, otherwise strings. | active child; `{}` when empty | yes. Absent or invalid JSON means unfiltered; `{}` means no value is allowed. |
+| `data-dcf-map-ref` (WP-39, replaces `data-dcf-map`) | the key `dcf-map-<context>-<tag id>` of the field's mapping script `<script type="application/json" data-dcf-map-id="<key>">`, written right after the control (after core's hidden input of a multiple select; inside `label.cf-wizard-label` in the wizard). Its text is the former attribute JSON: `Sanitizer.sanitize_dependencies(cf.value_dependencies)`, NOT pruned, keys strings, list child values strings, enumeration child ids JSON numbers when they match `/\A[1-9]\d*\z/` (up to MAX_SAFE_INTEGER), otherwise strings, escaped for a script element (`ERB::Util.json_escape`). The script has no `id`: core's `custom_field_tag_with_label` takes label `for=` from the tag's only id. | active child; `{}` when empty | yes. Read with `textContent` and `JSON.parse` from the script after the control, else in the control's scope (form, `.cf-wizard`, document). No reference, an empty text or invalid JSON means unfiltered; a reference whose script is missing and `{}` mean no value is allowed. |
 | `data-dcf-defaults` | JSON object, parent key to child value or array, same number rule | active child with non-empty sanitized defaults | yes |
 | `data-dcf-hide` | `1` | active child with `hide_when_disabled` true (both contexts) | yes in form context; ignored in `bulk` (D3) |
 | `data-dcf-parent-values` | JSON array of the parent's CURRENT keys on the record (strings); `[]` when blank or when the parent is not available on the record (`ParentState.available == false`) | form context, active child, `customized.respond_to?(:custom_field_values)` | only when the parent control is absent from the scope (workflow read-only, not available for the tracker) |
@@ -273,9 +273,10 @@ Notes:
 <select name="issue[custom_field_values][7]" id="issue_custom_field_values_7" class="depending_list_cf cf_7"
   data-dcf-field="7" data-dcf-parent="5" data-dcf-context="form" data-dcf-kind="list"
   data-dcf-parent-name="issue[custom_field_values][5]"
-  data-dcf-map="{&quot;A&quot;:[&quot;a1&quot;,&quot;a2&quot;],&quot;B&quot;:[&quot;b1&quot;]}"
+  data-dcf-map-ref="dcf-map-form-issue_custom_field_values_7"
   data-dcf-parent-values="[&quot;A&quot;]" data-dcf-parent-label="Country"
-  data-dcf-stored="{&quot;child&quot;:[&quot;b1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">...</select></p>
+  data-dcf-stored="{&quot;child&quot;:[&quot;b1&quot;],&quot;parent&quot;:[&quot;A&quot;]}">...</select><script
+  type="application/json" data-dcf-map-id="dcf-map-form-issue_custom_field_values_7">{"A":["a1","a2"],"B":["b1"]}</script></p>
 ```
 
 ## 4. Rules (pure part, `window.DependingCustomFields.rules` / `module.exports`)
@@ -349,7 +350,7 @@ optionEnabled(filter, value), orderByDepth(nodes) (cycle-safe), interpolate(text
 | bulk | concrete value(s); a mixed `['__none__','A']` counts as concrete | `values` | union |
 | bulk | `__none__` only | `none` | empty |
 | bulk | `''` (no change), nothing selected, or absent (not common to the selection) | `unfiltered` | none |
-| any | `data-dcf-map` absent or invalid | `unfiltered` | none |
+| any | no mapping: no `data-dcf-map-ref`, or its script text empty or not a JSON object (WP-39; was `data-dcf-map` absent or invalid) | `unfiltered` | none |
 
 - `sig = kind + '|' + key`.
 - An evaluation whose `sig` is unchanged is a no-op. That makes `init` idempotent and cascades cheap.
@@ -518,7 +519,7 @@ Grandchild cascades follow naturally:
    - The body is unchanged (`URLSearchParams(new FormData(form))` with the form's `authenticity_token`).
    - Non-2xx with a JSON body: alert `errors.join('\n')`. A non-JSON body (403/422 HTML, 500): alert `saveFailed + ' (' + status + ')'`.
    - The rejection is caught in `onSubmit`; the wizard stays open on error.
-2. **`openWizard`:** after cloning the template, call `window.DependingCustomFields.init(container)` synchronously. The observer pass that follows is a no-op. WP-36 (UD-13 changed by the owner): there is no template any more; the click shows the announced loading text (`role=status`, `aria-busy`, meta key `wizardLoading`) at once, resolves the entry's `data-wizard-url` attribute against the page URL (same origin only, as the save action), fetches the body (GET, `credentials: 'same-origin'`, `cache: 'no-store'`, `X-Requested-With`, `Accept: text/html`, an `AbortController` per open), accepts only `res.ok && !res.redirected` with a `text/html` type, parses it with `DOMParser`, imports its single `form.cf-wizard-form` without scripts and `on*` attributes, then calls `init(container)` synchronously as before. Any failure shows one generic message (`role=alert`, meta key `wizardLoadFailed`), never server text. Each open fetches again; closing aborts a pending load and a late answer for a closed, replaced or disconnected entry is dropped. Escape (document keydown) and the form's Cancel button close the wizard and give the focus back to the entry; after the load the focus moves to the first field.
+2. **`openWizard`:** after cloning the template, call `window.DependingCustomFields.init(container)` synchronously. The observer pass that follows is a no-op. WP-36 (UD-13 changed by the owner): there is no template any more; the click shows the announced loading text (`role=status`, `aria-busy`, meta key `wizardLoading`) at once, resolves the entry's `data-wizard-url` attribute against the page URL (same origin only, as the save action), fetches the body (GET, `credentials: 'same-origin'`, `cache: 'no-store'`, `X-Requested-With`, `Accept: text/html`, an `AbortController` per open), accepts only `res.ok && !res.redirected` with a `text/html` type, parses it with `DOMParser`, imports its single `form.cf-wizard-form` without scripts and `on*` attributes, then calls `init(container)` synchronously as before. Any failure shows one generic message (`role=alert`, meta key `wizardLoadFailed`), never server text. Each open fetches again; closing aborts a pending load and a late answer for a closed, replaced or disconnected entry is dropped. Escape (document keydown) and the form's Cancel button close the wizard and give the focus back to the entry; after the load the focus moves to the first field. WP-39 (owner, WP-37 R1 and R5(a)): the import keeps a `<script type="application/json">` whose `data-dcf-map-id` a field of the form names in `data-dcf-map-ref` (every other script still goes), and `labelText` strips scripts from the cloned label, since the mapping script sits inside `label.cf-wizard-label`. The entry prefetches its body: `mouseover` into `li.cf-parent` (or `focusin` on its `a.submenu`) starts a 150 ms timer, leaving with neither pointer nor focus on the entry cancels it, and when it fires the same request is sent with an `AbortController` of the prefetch; the parsed form is held in a Map keyed by the li (with the URL computed when it started). A click while it runs adopts the request (a close does not abort it; a failure makes the click fetch with its own request), a click after it opens with the form, and a shown body is used once (a later open fetches again). A removed li (core empties the menu before every show, seen by the observer) or a document click outside an `a.submenu` (core hides the menu then) drops it and aborts its request; a hidden menu starts nothing; at most one prefetch per li.
 3. **i18n:** parse `meta[name="dcf-i18n"]` itself (flat object, key `saveFailed`; compat section 2.4), with the English fallback "The change could not be saved.".
 4. **Observer hygiene:** replace the body-wide `{attributes: true, attributeFilter: ['style']}` observer with a `childList` subtree observer filtered on added `li.cf-parent`. Create `#cf-wizard-container` lazily.
 
@@ -637,7 +638,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 7. The `change` event fires only when a value changes. Listen to `dcf:updated` for option changes.
 8. Fields rendered without Redmine's custom field helpers (custom `select_tag` in third-party views) are no longer filtered in the browser. See README Integration; the server still validates.
 9. Without JavaScript, Key/Value list (depending) fields show all active values. The server still rejects invalid combinations.
-10. (UD-13) Context-menu responses carry dependency data for the wizard fields and can be larger for very big mappings. Changed by WP-36 (UD-13 changed by the owner): the menu carries the entry only; the wizard body, fetched when the wizard opens, carries that data.
+10. (UD-13) Context-menu responses carry dependency data for the wizard fields and can be larger for very big mappings. Changed by WP-36 (UD-13 changed by the owner): the menu carries the entry only; the wizard body, fetched when the wizard opens, carries that data. WP-39: the body carries each mapping as a JSON script (no entity per quote) and is prefetched when the pointer rests on the entry.
 11. Fields that are part of a circular configuration (stored cycle) show as plain lists in the browser, as the server treats them as unconstrained until the cycle is fixed (UD-08).
 
 **Removed:**
@@ -713,7 +714,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - dangling parent and self-parent (only the every-field attributes);
 - issue copy with a legacy value under the unchanged parent (`data-dcf-stored` = copy source baseline, UD-06, gap 6);
 - plain new record with a disallowed value (no `data-dcf-stored`);
-- inactive values (QA-21, WP-16): a stored inactive child id, a stored inactive parent value, a per-parent default on an inactive id, and inactive ids in `data-dcf-map` without a matching option;
+- inactive values (QA-21, WP-16): a stored inactive child id, a stored inactive parent value, a per-parent default on an inactive id, and inactive ids in the mapping script (`data-dcf-map` before WP-39) without a matching option;
 - issue plus time_entry prefixes;
 - project form, user form;
 - bulk single, bulk multi, bulk required (core's options without `__none__` since WP-34; with the marked `__none__` from WP-19 to WP-34), bulk chain, time-entry bulk;

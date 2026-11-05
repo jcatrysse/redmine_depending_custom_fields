@@ -44,6 +44,15 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     client.attributes_for(field, context: :bulk, objects: objects, tag_name: tag_name_for(field), user: user)
   end
 
+  # WP-39 (R1): the parsed JSON of the mapping script of the form context
+  # (ClientData.field_data), nil when the field gets none; was data[:dcf_map].
+  def form_map(record, field, user: dcf_admin)
+    cv = value_of(record, field)
+    _data, json = client.field_data(cv.custom_field, context: :form, customized: record, custom_value: cv,
+                                                     tag_name: tag_name_for(field), tag_id: 'tag', user: user)
+    json && JSON.parse(json)
+  end
+
   def every_field(field, context = 'form')
     data = { dcf_field: field.id, dcf_context: context, dcf_kind: rules.kind(field) }
     data[:dcf_multiple] = 1 if field.multiple?
@@ -85,7 +94,7 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
           issue = kit_issue(project, parent => 'A', child => 'a1')
           data = form_data(issue, child)
 
-          expect(data.keys).to eq([:dcf_field, :dcf_context, :dcf_kind, :dcf_parent, :dcf_parent_name, :dcf_map,
+          expect(data.keys).to eq([:dcf_field, :dcf_context, :dcf_kind, :dcf_parent, :dcf_parent_name, :dcf_map_ref,
                                    :dcf_defaults, :dcf_parent_values, :dcf_parent_label, :dcf_stored])
           expect(data[:dcf_parent]).to eq(parent.id)
           expect(data[:dcf_parent_name]).to eq("issue[custom_field_values][#{parent.id}]")
@@ -104,8 +113,9 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
             kind == :list ? values : values.map(&:to_i)
           end
 
-          expect(data[:dcf_map]).to eq(expected)
-          expect(data[:dcf_map].keys).to all(be_a(String))
+          # Changed by WP-39 (R1): the JSON of the mapping script, was data[:dcf_map].
+          expect(form_map(issue, child)).to eq(expected)
+          expect(data).not_to have_key(:dcf_map)
           expect(data[:dcf_defaults]).to eq(kit_key(parent, 'A') => (kind == :list ? 'a2' : kit_key(child, 'a2').to_i))
         end
 
@@ -125,7 +135,8 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
           issue = kit_issue(project, parent => 'A', child => [])
           data = form_data(issue, child)
 
-          expect(data[:dcf_map]).to eq({})
+          expect(form_map(issue, child)).to eq({})
+          expect(data[:dcf_map_ref]).to be_present
           expect(data).not_to have_key(:dcf_defaults)
         end
 
@@ -354,7 +365,7 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
         table.each do |tag_name, expected|
           data = form_data(issue, child, tag_name: tag_name)
           expect(data[:dcf_parent_name]).to eq(expected), tag_name
-          expect(data[:dcf_map]).not_to be_nil
+          expect(data[:dcf_map_ref]).not_to be_nil
         end
       end
     end
@@ -370,10 +381,10 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
         issue = kit_issue(project, parent => 'A', child => [])
         data = form_data(issue, child)
 
-        expect(data[:dcf_map]).to eq('1' => [12, '007', '0', '-1', ' 12', '12.0', 'abc', 9_007_199_254_740_991,
-                                             '9007199254740992'])
+        # Changed by WP-39 (R1): the parsed mapping script, was data[:dcf_map].
+        expect(form_map(issue, child)).to eq('1' => [12, '007', '0', '-1', ' 12', '12.0', 'abc', 9_007_199_254_740_991,
+                                                     '9007199254740992'])
         expect(data[:dcf_defaults]).to eq('1' => [12, '007'], '2' => 13)
-        expect(JSON.parse(data[:dcf_map].to_json)).to eq(data[:dcf_map])
       end
 
       it 'keeps numeric list values as strings' do
@@ -384,7 +395,7 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
         issue = kit_issue(project, parent => '1', child => '12')
         data = form_data(issue, child)
 
-        expect(data[:dcf_map]).to eq('1' => %w[12 02])
+        expect(form_map(issue, child)).to eq('1' => %w[12 02])
         expect(data[:dcf_defaults]).to eq('1' => '12')
         expect(data[:dcf_stored]).to eq('child' => ['12'], 'parent' => ['1'])
         expect(data[:dcf_parent_values]).to eq(['1'])
@@ -410,7 +421,7 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
         issue = kit_issue(project, parent => 'A', child => 'a1')
         data = bulk_data([issue, kit_issue(project, parent => 'B', child => 'b1')], child)
 
-        expect(data.keys).to eq([:dcf_field, :dcf_context, :dcf_kind, :dcf_parent, :dcf_parent_name, :dcf_map,
+        expect(data.keys).to eq([:dcf_field, :dcf_context, :dcf_kind, :dcf_parent, :dcf_parent_name, :dcf_map_ref,
                                  :dcf_defaults])
         expect(data[:dcf_context]).to eq('bulk')
       end
@@ -535,9 +546,10 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
       restricted = restrict(parent)
       issue = kit_issue(project, restricted => 'A', child => 'a1')
 
-      expect(form_data(issue, child, user: dcf_admin)).to have_key(:dcf_map)
-      expect(form_data(issue, child, user: member)).not_to have_key(:dcf_map)
-      expect(form_data(issue, child, user: dcf_admin)).to have_key(:dcf_map)
+      expect(form_data(issue, child, user: dcf_admin)).to have_key(:dcf_map_ref)
+      expect(form_data(issue, child, user: member)).not_to have_key(:dcf_map_ref)
+      expect(form_map(issue, child, user: member)).to be_nil
+      expect(form_data(issue, child, user: dcf_admin)).to have_key(:dcf_map_ref)
     end
 
     it 'accepts a custom value without a record' do
@@ -547,6 +559,43 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
 
       expect(data[:dcf_parent]).to eq(parent.id)
       expect(data.keys & [:dcf_parent_values, :dcf_parent_label, :dcf_stored]).to eq([])
+    end
+
+    # WP-39 (R1): field_data gives the attributes plus the JSON text of the
+    # mapping script; the control names the script in dcf_map_ref.
+    it 'gives the reference and the script-escaped JSON the former attribute held' do
+      parent, child = build_kit(:list)
+      vd = { kit_key(parent, 'A') => ['</script><!--', "l s ", '&"\'\\'] }
+      child.update_column(:format_store, child.format_store.merge('value_dependencies' => vd))
+      child = CustomField.find(child.id)
+      issue = kit_issue(project, parent => 'A', child => [])
+      cv = value_of(issue, child)
+      options = { context: :form, customized: issue, custom_value: cv, tag_name: tag_name_for(child),
+                  tag_id: "issue_custom_field_values_#{child.id}", user: dcf_admin }
+      data, json = client.field_data(child, **options)
+
+      expect(data[:dcf_map_ref]).to eq("dcf-map-form-issue_custom_field_values_#{child.id}")
+      expect(data.keys.index(:dcf_map_ref)).to eq(data.keys.index(:dcf_parent_name) + 1)
+      expect(json).to eq(ERB::Util.json_escape(rules.mapping(child).to_json))
+      expect(json).not_to match(/[<>&  ]/)
+      expect(JSON.parse(json)).to eq(vd)
+      expect(client.attributes_for(child, **options)).to eq(data)
+      bulk, bulk_json = client.field_data(child, context: :bulk, objects: [issue], tag_name: tag_name_for(child),
+                                                 tag_id: "issue_custom_field_values_#{child.id}", user: dcf_admin)
+      expect(bulk[:dcf_map_ref]).to eq("dcf-map-bulk-issue_custom_field_values_#{child.id}")
+      expect(bulk_json).to eq(json)
+    end
+
+    it 'gives neither reference nor JSON without parent data or on any error' do
+      parent, child = build_kit(:list)
+      restricted = restrict(parent)
+      issue = kit_issue(project, restricted => 'A', child => 'a1')
+      cv = value_of(issue, child)
+      options = { context: :form, customized: issue, custom_value: cv, tag_name: tag_name_for(child), tag_id: 'x' }
+
+      expect(client.field_data(child, **options, user: member)).to eq([every_field(child), nil])
+      allow(rules).to receive(:mapping).and_raise(RuntimeError)
+      expect(client.field_data(child, **options, user: dcf_admin)).to eq([{}, nil])
     end
 
     it 'keeps no state on the module' do
@@ -565,7 +614,7 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
   # WP-18: the legacy script is deleted (it read valueMap and fieldId), so
   # only context_menu_wizard.js is scanned.
   it 'uses no attribute name the wizard script reads or writes' do
-    names = %w[dcf_field dcf_context dcf_kind dcf_multiple dcf_parent dcf_parent_name dcf_map dcf_defaults dcf_hide
+    names = %w[dcf_field dcf_context dcf_kind dcf_multiple dcf_parent dcf_parent_name dcf_map_ref dcf_defaults dcf_hide
                dcf_parent_values dcf_parent_label dcf_stored dcf_locked_parent dcf_locked_stored dcf_locked_allowed_by]
     root = File.expand_path('../..', __dir__)
     expect(File).not_to exist(File.join(root, 'assets/javascripts/depending_custom_fields_legacy.js'))
@@ -579,9 +628,14 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     expect(keys).not_to include('templateId')
     expect(keys).not_to include('valueMap', 'fieldId')
 
+    # WP-39 (R1): the wizard reads data-dcf-map-ref (and the script's
+    # data-dcf-map-id) only to keep the mapping scripts of the body; it never
+    # writes either, and reads no other contract name.
+    expect(attributes & %w[dcf-map-ref dcf-map-id]).to eq(%w[dcf-map-ref dcf-map-id])
+    expect(legacy).not_to match(/setAttribute\('data-dcf-map|dataset\.dcfMap/)
     names.each do |name|
       expect(keys).not_to include(name.camelize(:lower)), name
-      expect(attributes).not_to include(name.dasherize), name
+      expect(attributes).not_to include(name.dasherize), name unless name == 'dcf_map_ref'
     end
     expect(names.map(&:dasherize) & %w[dcf-locked-parent]).to eq(['dcf-locked-parent'])
     expect(names.grep(/\Adcf_locked/).map(&:dasherize)).to all(satisfy { |n| !n.start_with?('dcf-parent') })
