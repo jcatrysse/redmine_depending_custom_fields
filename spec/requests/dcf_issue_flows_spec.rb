@@ -410,7 +410,9 @@ RSpec.describe 'Depending fields on issue updates (D1)', type: :request do
       post '/depending_custom_fields/save',
            params: { issue_ids: issue.id.to_s, issue: { custom_field_values: { child.id.to_s => 'b2' } } }
       expect(response).to have_http_status(422)
-      expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{invalid}"])
+      # Changed by the full review of 2026-11-05 (context-menu-4): each wizard
+      # error starts with its issue number (was the message alone).
+      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{child.name} #{invalid}"])
     end
   end
 

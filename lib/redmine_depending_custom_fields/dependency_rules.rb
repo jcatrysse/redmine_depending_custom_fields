@@ -225,11 +225,28 @@ module RedmineDependingCustomFields
 
       record = parent_record(cf, pid)
       return nil unless record
+
+      dropped = dropped_parent_values(customized, pid)
+      return ParentState.new(record, true, dropped, dropped) if dropped
       return ParentState.new(record, false, [], []) if customized.respond_to?(:custom_field_values)
 
       # Not reached by core or plugin callers: asks the object like 0.0.16
       # (NoMethodError for an object without custom fields).
       ParentState.new(record, true, string_values(customized.custom_field_value(record)), [])
+    end
+
+    # Full review of 2026-11-05 (rules-2): core 5.1 and 6.0
+    # TimeEntry#safe_attributes= remove the values of the fields the user
+    # cannot see from custom_field_values (6.1 and 7.0 keep them); the saved
+    # rows stay loaded. For a saved time entry that no longer lists parent
+    # +pid+ but has saved rows of it, their values as Strings (blanks kept):
+    # the parent nobody changed, so it is available and unchanged, never the
+    # unavailable parent of UD-05. nil otherwise (no query).
+    def dropped_parent_values(customized, pid)
+      return nil unless customized.is_a?(::TimeEntry) && customized.persisted?
+
+      rows = customized.custom_values.select { |cv| cv.custom_field_id == pid && cv.persisted? }
+      rows.empty? ? nil : rows.map { |cv| cv.value.to_s }
     end
 
     # The children the parent values of +state+ allow, as a Set of Strings:
@@ -261,16 +278,21 @@ module RedmineDependingCustomFields
       [allowed.empty?, bad.empty? ? [] : [::I18n.t('activerecord.errors.messages.invalid')]]
     end
 
-    # The issue a new record was copied from (UD-06): core keeps it in
-    # @copied_from without a reader (Issue#copy_from; pinned by
-    # spec/requests/dcf_issue_copy_spec.rb on every supported version). nil
-    # for persisted records, records that are no copy or have no copy? (only
-    # Issue defines it), and on any error, so validation stays strict.
+    # The record a new record was copied from (UD-06): for an issue core
+    # keeps it in @copied_from without a reader (Issue#copy_from; pinned by
+    # spec/requests/dcf_issue_copy_spec.rb on every supported version); for a
+    # project ProjectValidationPatch#copy keeps the source of Project#copy in
+    # @dcf_copied_from (full review of 2026-11-05, rules-5). nil for persisted
+    # records, issues that are no copy, other records, and on any error, so
+    # validation stays strict.
     def baseline_source(customized)
-      return nil unless customized.respond_to?(:new_record?) && customized.respond_to?(:copy?)
-      return nil unless customized.new_record? && customized.copy?
+      return nil unless customized.respond_to?(:new_record?) && customized.new_record?
 
-      source = customized.instance_variable_get(:@copied_from)
+      source = if customized.respond_to?(:copy?)
+                 customized.copy? ? customized.instance_variable_get(:@copied_from) : nil
+               elsif customized.is_a?(::Project)
+                 customized.instance_variable_get(:@dcf_copied_from)
+               end
       source.respond_to?(:custom_field_value) ? source : nil
     rescue StandardError
       nil
@@ -334,6 +356,13 @@ module RedmineDependingCustomFields
       end
     end
 
+    # allowed_set, allowed_values and default_values are the server reference
+    # of the shared rule cases (spec/lib/dependency_rules_spec.rb and the
+    # runtime's test/js rules tests read the same cases): the browser applies
+    # defaults and filters with the same union. Validation uses allowed_for
+    # (stored mapping read as is, as 0.0.16); nothing in lib or app calls
+    # these three.
+    #
     # The children linked to +parent_values+ (union), as a Set of Strings.
     def allowed_set(map, parent_values)
       Set.new(allowed_values(map, parent_values))
@@ -478,12 +507,6 @@ module RedmineDependingCustomFields
       CustomField.where(id: ids).sorted.order(:id).to_a
     end
 
-    def descendant_ids(cf, index: nil)
-      return [] if cf.new_record?
-
-      (index || FieldIndex.load).descendant_ids(cf.id)
-    end
-
     # The stored cycle +cf+ is a member of, ordered along the cycle from +cf+;
     # [] when cf is not on a cycle (also when its chain only reaches one) and,
     # without a query, for new records and non-depending fields.
@@ -492,10 +515,6 @@ module RedmineDependingCustomFields
 
       members = (index || FieldIndex.load).cycle_from(cf.id)
       members.include?(cf.id) ? members : []
-    end
-
-    def in_cycle?(cf, index: nil)
-      cycle_member_ids(cf, index: index).any?
     end
 
     # The fields the parent select may offer: same type and family, by
@@ -542,6 +561,6 @@ module RedmineDependingCustomFields
     end
 
     private_class_method :list_values, :enumerations_of, :key_set, :string_values, :stored_value,
-                         :read_parent_state
+                         :read_parent_state, :dropped_parent_values
   end
 end

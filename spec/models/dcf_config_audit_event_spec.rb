@@ -28,13 +28,16 @@ RSpec.describe RedmineDependingCustomFields::ConfigAuditEvent, type: :model do
     expect { event.destroy }.to raise_error(ActiveRecord::ReadOnlyRecord)
   end
 
-  it 'parses affected_child_field_ids JSON' do
+  # Full review of 2026-11-05 (project-pages-12): the readers project,
+  # custom_field, acting_user and affected_child_field_ids_list had no caller
+  # and are removed (was 'parses affected_child_field_ids JSON' and 'returns
+  # [] for blank affected_child_field_ids'); the column keeps the JSON text.
+  it 'stores affected_child_field_ids as JSON text and has no unused readers' do
     event.affected_child_field_ids = [7, 8].to_json
-    expect(event.affected_child_field_ids_list).to eq([7, 8])
-  end
-
-  it 'returns [] for blank affected_child_field_ids' do
-    event.affected_child_field_ids = nil
-    expect(event.affected_child_field_ids_list).to eq([])
+    event.save!
+    expect(described_class.find(event.id).affected_child_field_ids).to eq('[7,8]')
+    [:project, :custom_field, :acting_user, :affected_child_field_ids_list].each do |name|
+      expect(described_class.method_defined?(name)).to be(false), name.to_s
+    end
   end
 end

@@ -55,7 +55,11 @@ module RedmineDependingCustomFields
     # belong to, such as the Project core menus and query filters pass for an
     # issue field (WP-15; they read only label and value). Otherwise every
     # option is kept and the ones its parent value does not allow are hidden,
-    # so a stored legacy value stays visible.
+    # so a stored legacy value stays visible. Core 5.1 to 7.0 never pass an
+    # Issue, a TimeEntry or another record here (the formats override
+    # possible_custom_value_options and value_from_keyword); the record branch
+    # is kept, as in 0.0.15, for callers of CustomField#possible_values_options
+    # with a record (other plugins, scripts).
     def possible_values_options(custom_field, object = nil)
       single = object.is_a?(Array) ? object.first : object
       base = super(custom_field, single)
@@ -114,21 +118,17 @@ module RedmineDependingCustomFields
 
     # Matches labels of the full list, hidden values included: import and
     # email set the child before the parent. Case-insensitive (Unicode case
-    # folding, as casecmp?), the first label wins; one index per call.
+    # folding, as casecmp?), the first label wins. A multiple keyword is
+    # split on ';' first, then each part is matched longest label first, as
+    # core parse_keyword does with ',' (a label may contain a comma). The
+    # label index is built once per record (dcf_memo, rules-3 of the full
+    # review); an enumeration keyword is looked up with one query first, so
+    # an import row does not load every enumeration.
     def value_from_keyword(custom_field, keyword, customized = nil, **_options)
       return if keyword.blank?
+      return dcf_keyword_value(custom_field, keyword.strip) unless custom_field.multiple?
 
-      index = {}
-      possible_values_options(custom_field).each do |opt|
-        label, value = opt.is_a?(Array) ? opt.take(2) : [opt, opt]
-        key = label.to_s.strip.downcase(:fold)
-        index[key] = value unless index.key?(key)
-      end
-      return if index.empty?
-
-      keywords = custom_field.multiple? ? keyword.split(/[;,]/).map(&:strip).reject(&:blank?) : [keyword.strip]
-      matched = keywords.filter_map { |kw| index[kw.downcase(:fold)] }
-      custom_field.multiple? ? matched.presence : matched.first
+      keyword.split(';').flat_map { |part| dcf_longest_matches(custom_field, part) }.presence
     end
 
     # WP-16: core's tag plus the data-dcf-* attributes of ClientData (server
@@ -153,6 +153,68 @@ module RedmineDependingCustomFields
     def bulk_edit_tag(view, tag_id, tag_name, custom_field, objects, value, options = {})
       data = ClientData.attributes_for(custom_field, context: :bulk, objects: objects, tag_name: tag_name)
       super(view, tag_id, tag_name, custom_field, objects, value, ClientData.merge_options(options, data))
+    end
+
+    private
+
+    # The label index of value_from_keyword: folded label => value, first
+    # label kept. Memoized on the record.
+    def dcf_keyword_index(custom_field)
+      custom_field.dcf_memo(:dcf_keyword_index, nil) do
+        possible_values_options(custom_field).each_with_object({}) do |opt, index|
+          label, value = opt.is_a?(Array) ? opt.take(2) : [opt, opt]
+          key = label.to_s.strip.downcase(:fold)
+          index[key] = value unless index.key?(key)
+        end
+      end
+    end
+
+    # The value of one stripped keyword, or nil. An enumeration keyword is
+    # first looked up among the active names that equal it in SQL (LOWER and
+    # TRIM; a superset of the folded match on MySQL collations), checked
+    # with the folding of the index, first by position; the full index is
+    # built only when that finds nothing (folded forms SQL LOWER does not
+    # know, such as 'STRASSE' for 'Straße'), and once built it serves every
+    # later keyword of the record.
+    def dcf_keyword_value(custom_field, keyword)
+      return nil if keyword.blank?
+
+      key = keyword.downcase(:fold)
+      if DependencyRules.kind(custom_field) == 'enumeration' && custom_field.id &&
+         !custom_field.dcf_memoized?(:dcf_keyword_index, nil) && keyword.encoding == Encoding::UTF_8 &&
+         keyword.valid_encoding?
+        hit = custom_field.enumerations.where(active: true).where('LOWER(TRIM(name)) = LOWER(?)', keyword)
+                          .reorder(:position, :id).pluck(:id, :name)
+                          .detect { |_id, name| name.to_s.strip.downcase(:fold) == key }
+        return hit.first.to_s if hit
+      end
+      dcf_keyword_index(custom_field)[key]
+    end
+
+    # The values of one ';' part, as core parse_keyword reads a ',' list:
+    # the longest run of segments that names a label wins, an unknown first
+    # segment is skipped.
+    def dcf_longest_matches(custom_field, part)
+      segments = part.split(',', -1)
+      out = []
+      start = 0
+      while start < segments.size
+        stop = segments.size
+        found = nil
+        while stop > start
+          found = dcf_keyword_value(custom_field, segments[start...stop].join(',').strip)
+          break if found
+
+          stop -= 1
+        end
+        if found
+          out << found
+          start = stop
+        else
+          start += 1
+        end
+      end
+      out
     end
   end
 end

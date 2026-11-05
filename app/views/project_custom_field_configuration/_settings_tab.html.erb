@@ -1,4 +1,5 @@
 <% fields = dcf_relevant_custom_fields(@project) %>
+<% counts = dcf_overview_counts(fields, @project) %>
 <%# Core _tabs renders every tab partial inline, so content_for reaches the head. %>
 <% content_for :header_tags do %>
   <%= stylesheet_link_tag 'dcf_config', plugin: 'redmine_depending_custom_fields' %>
@@ -29,11 +30,11 @@
           <tr>
             <td><%= link_to field.name, custom_field_configuration_field_path(@project, field) %></td>
             <td><%= dcf_format_label(field) %></td>
-            <td><%= dcf_scope_badge(field, @project) %></td>
-            <td><%= dcf_project_usage_count(field) %></td>
-            <td><%= dcf_value_count(field) %></td>
+            <td><%= dcf_scope_badge(field, @project, counts) %></td>
+            <td><%= dcf_project_usage_count(field, counts) %></td>
+            <td><%= dcf_value_count(field, counts) %></td>
             <td>
-              <% unless dcf_field_scope(field, @project) == :project %>
+              <% unless dcf_field_scope(field, @project, counts) == :project %>
                 <span class="icon icon-warning" title="<%= l(:text_shared_field_warning) %>"></span>
               <% end %>
             </td>

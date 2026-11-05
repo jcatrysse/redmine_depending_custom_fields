@@ -247,6 +247,10 @@ RSpec.describe 'Admin dependency editor in the browser (WP-25)', type: :system d
     panel = find('details.dcf-dep-editor__import')
     expect(page).to have_css('details.dcf-dep-editor__export', visible: :hidden)
     expect(page).to have_css('.dcf-dep-editor__sections em.info', text: I18n.t(:text_dcf_editor_no_child_values))
+    # Full review of 2026-11-05 (admin-editor-1): the toolbar has the hidden
+    # attribute here, and its display: flex rule must not show it.
+    expect(page).to have_css('.dcf-dep-editor__toolbar', visible: :hidden)
+    expect(page).to have_no_css('.dcf-dep-editor__toolbar', visible: :visible)
     panel.find('summary').click
     expect(panel.find('input[type=checkbox][data-dcf-ed-import-add-missing]')).to be_checked
     panel.find('textarea[data-dcf-ed-import-text]').set("Belgium,Ghent\nGermany,Berlin\nGermany,Ghent")

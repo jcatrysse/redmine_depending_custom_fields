@@ -1,9 +1,14 @@
 module ProjectCustomFieldConfigurationHelper
-  # Overview rows: supported, project-relevant fields with :projects/:enumerations
-  # preloaded so the inline settings tab avoids N+1 (fix #13). Rendered via this
-  # helper because ProjectsController#settings does not set this feature's ivars.
+  # Overview rows: supported, project-relevant fields. Rendered via this
+  # helper because ProjectsController#settings does not set this feature's
+  # ivars. Their counts come from dcf_overview_counts (three grouped
+  # queries, full review of 2026-11-05: no rows preloaded).
   def dcf_relevant_custom_fields(project)
     RedmineDependingCustomFields::FieldRelevance.relevant_fields(project)
+  end
+
+  def dcf_overview_counts(fields, project)
+    RedmineDependingCustomFields::FieldRelevance.overview_counts(fields, project)
   end
 
   def dcf_dependency_capable?(field)
@@ -11,13 +16,13 @@ module ProjectCustomFieldConfigurationHelper
   end
 
   # Scope of a field relative to +project+: :global / :shared / :project
-  # (the one rule, FieldRelevance.scope).
-  def dcf_field_scope(field, project)
-    RedmineDependingCustomFields::FieldRelevance.scope(field, project)
+  # (the one rule, FieldRelevance.scope); +counts+ from dcf_overview_counts.
+  def dcf_field_scope(field, project, counts = nil)
+    RedmineDependingCustomFields::FieldRelevance.scope(field, project, shared_ids: counts&.shared)
   end
 
-  def dcf_scope_badge(field, project)
-    scope = dcf_field_scope(field, project)
+  def dcf_scope_badge(field, project, counts = nil)
+    scope = dcf_field_scope(field, project, counts)
     key = { global: :label_scope_global, shared: :label_scope_shared, project: :label_scope_project }[scope]
     css = { global: 'dcf-scope-global', shared: 'dcf-scope-shared', project: 'dcf-scope-project' }[scope]
     content_tag(:span, l(key), class: "dcf-scope-badge #{css}")
@@ -25,17 +30,17 @@ module ProjectCustomFieldConfigurationHelper
 
   # Project-usage count, reusing a single cached Project.active.count for every
   # is_for_all / project-custom-field row (fix #13 / T-USE-6).
-  def dcf_project_usage_count(field)
+  def dcf_project_usage_count(field, counts = nil)
     if field.is_a?(ProjectCustomField) || field.is_for_all?
       @dcf_active_project_count ||= Project.active.count
     else
-      field.projects.size
+      counts ? counts.project_counts.fetch(field.id, 0) : field.projects.count
     end
   end
 
-  def dcf_value_count(field)
+  def dcf_value_count(field, counts = nil)
     if RedmineDependingCustomFields::FieldRelevance.enum_family?(field)
-      field.enumerations.size
+      counts ? counts.value_counts.fetch(field.id, 0) : field.enumerations.count
     else
       Array(field.possible_values).size
     end
@@ -52,17 +57,6 @@ module ProjectCustomFieldConfigurationHelper
     l(label, default: label.to_s)
   end
 
-  # Names of projects sharing the field, filtered to those the viewer can see;
-  # the rest summarised as "+N other project(s)" (no name leakage — fix #3.8).
-  def dcf_visible_project_names(field, viewer = User.current)
-    projects = field.is_for_all? ? Project.active.to_a : field.projects.to_a
-    visible = projects.select { |p| p.visible?(viewer) }
-    hidden = projects.size - visible.size
-    names = visible.map(&:name)
-    names << l(:label_n_other_projects, count: hidden) if hidden.positive?
-    names
-  end
-
   # A core-like flash box for a page banner (UX-10): core's notice_icon on
   # 6.0 and later (it takes the type as a String), the class background
   # icon on 5.1. The text is escaped once; no id, core's own boxes carry
@@ -70,15 +64,6 @@ module ProjectCustomFieldConfigurationHelper
   def dcf_flash_box(type, text)
     icon = respond_to?(:notice_icon) ? notice_icon(type.to_s) : ''.html_safe
     content_tag(:div, icon + text, class: "flash #{type}")
-  end
-
-  # Icon helper guarded for Redmine 5.x (no sprite_icon) — falls back to icon-*.
-  def dcf_icon(name, label = nil)
-    if respond_to?(:sprite_icon)
-      sprite_icon(name, label)
-    else
-      content_tag(:span, '', class: "icon icon-#{name}") + (label ? label.to_s : '')
-    end
   end
 
   # Drag handle for the values table, markup-identical to core's

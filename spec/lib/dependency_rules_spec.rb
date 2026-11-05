@@ -1514,17 +1514,21 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       _root, field_a, field_b, field_c = chain
       field_x, field_y = stored_cycle
 
-      expect(described_class.descendant_ids(field_a)).to eq([field_b.id, field_c.id])
-      expect(described_class.descendant_ids(field_x)).to eq([field_y.id])
-      expect(dcf_count_queries { expect(described_class.descendant_ids(IssueCustomField.new)).to eq([]) }).to eq(0)
+      # Changed by the full review of 2026-11-05 (rules-7): DependencyRules
+      # .descendant_ids and .in_cycle? had no caller and are removed; the
+      # index and cycle_member_ids are checked instead.
+      index = RedmineDependingCustomFields::FieldIndex.load
+      expect(index.descendant_ids(field_a.id)).to eq([field_b.id, field_c.id])
+      expect(index.descendant_ids(field_x.id)).to eq([field_y.id])
+      expect(dcf_count_queries { expect(described_class.parent_candidates(IssueCustomField.new)).to eq([]) }).to eq(0)
     end
 
     it 'costs the same for 1 and for 25 depending fields' do
       root = dcf_list_field
       field = dcf_list_field(format: 'depending_list', parent: root)
-      one = dcf_count_queries { described_class.descendant_ids(field) && described_class.in_cycle?(field) }
+      one = dcf_count_queries { described_class.parent_candidates(field) && described_class.cycle_member_ids(field) }
       24.times { dcf_list_field(format: 'depending_list', parent: field) }
-      many = dcf_count_queries { described_class.descendant_ids(field) && described_class.in_cycle?(field) }
+      many = dcf_count_queries { described_class.parent_candidates(field) && described_class.cycle_member_ids(field) }
 
       expect(many).to eq(one)
     end
@@ -1537,22 +1541,22 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       point(self_parent, self_parent.id)
       _root, field_a, = chain
 
-      expect(described_class.in_cycle?(field_x)).to be(true)
+      expect(described_class.cycle_member_ids(field_x)).not_to be_empty
       expect(described_class.cycle_member_ids(field_x)).to eq([field_x.id, field_y.id])
       expect(described_class.cycle_member_ids(field_y)).to eq([field_y.id, field_x.id])
-      expect(described_class.in_cycle?(below)).to be(false)
+      expect(described_class.cycle_member_ids(below)).to be_empty
       expect(described_class.cycle_member_ids(below)).to eq([])
-      expect(described_class.in_cycle?(field_a)).to be(false)
+      expect(described_class.cycle_member_ids(field_a)).to be_empty
       expect(described_class.cycle_member_ids(self_parent)).to eq([self_parent.id])
-      expect(dcf_count_queries { expect(described_class.in_cycle?(IssueCustomField.new)).to be(false) }).to eq(0)
+      expect(dcf_count_queries { expect(described_class.cycle_member_ids(IssueCustomField.new)).to eq([]) }).to eq(0)
     end
 
     it 'uses a given index without a query' do
       field_x, = stored_cycle
       index = RedmineDependingCustomFields::FieldIndex.load
       queries = dcf_count_queries do
-        described_class.in_cycle?(field_x, index: index)
-        described_class.descendant_ids(field_x, index: index)
+        described_class.cycle_member_ids(field_x, index: index)
+        index.descendant_ids(field_x.id)
       end
 
       expect(queries).to eq(0)
@@ -1563,9 +1567,9 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       index = RedmineDependingCustomFields::FieldIndex.load
       load_cost = dcf_count_queries { RedmineDependingCustomFields::FieldIndex.load }
 
-      expect(dcf_count_queries { expect(described_class.in_cycle?(field_b, index: index)).to be(false) }).to eq(0)
+      expect(dcf_count_queries { expect(described_class.cycle_member_ids(field_b, index: index)).to eq([]) }).to eq(0)
       expect(dcf_count_queries { expect(described_class.cycle_member_ids(field_a, index: index)).to eq([]) }).to eq(0)
-      expect(dcf_count_queries { described_class.in_cycle?(field_b) }).to eq(load_cost)
+      expect(dcf_count_queries { described_class.cycle_member_ids(field_b) }).to eq(load_cost)
       expect(dcf_count_queries { expect(described_class.cycle_member_ids(root)).to eq([]) }).to eq(0)
     end
 
@@ -1670,7 +1674,11 @@ RSpec.describe RedmineDependingCustomFields::DependencyRules do
       expect(filters.select { |f| f.is_a?(Symbol) && own.include?(f) }).to eq([])
       expect(filters).not_to include(:dispatch_after_custom_field_save)
       expect(CustomField.private_method_defined?(:dispatch_after_custom_field_save)).to be(false)
-      expect(patch.public_instance_methods(false)).to match_array([:validate_custom_value, :dcf_memo])
+      # Changed by the full review of 2026-11-05: dcf_memoized? (rules-3) and
+      # copy_from (admin-editor-3) were added; was validate_custom_value and
+      # dcf_memo only. Neither is a callback.
+      expect(patch.public_instance_methods(false))
+        .to match_array([:validate_custom_value, :dcf_memo, :dcf_memoized?, :copy_from])
     end
   end
 end

@@ -24,6 +24,12 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     before do
       allow(relation).to receive(:find_each).and_yield(issue1).and_yield(issue2)
       allow(Issue).to receive(:where).and_return(relation)
+      # Full review of 2026-11-05 (context-menu-2): a journal first, as core
+      # bulk_update does.
+      allow(issue1).to receive(:init_journal)
+      allow(issue2).to receive(:init_journal)
+      allow(issue1).to receive(:id).and_return(1)
+      allow(issue2).to receive(:id).and_return(2)
       allow(issue1).to receive(:safe_attributes=)
       allow(issue1).to receive(:save)
       allow(issue1).to receive(:errors).and_return(double(any?: false, full_messages: []))
@@ -35,7 +41,8 @@ RSpec.describe ContextMenuWizardController, type: :controller do
     it 'sets the field value on each issue and saves them' do
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => 'foo' } } }
 
-      expect(issue1).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'foo' })
+      expect(issue1).to have_received(:init_journal).with(User.current).ordered
+      expect(issue1).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'foo' }).ordered
       expect(issue1).to have_received(:save)
       expect(issue2).to have_received(:safe_attributes=).with('custom_field_values' => { '5' => 'foo' })
       expect(issue2).to have_received(:save)
@@ -48,7 +55,9 @@ RSpec.describe ContextMenuWizardController, type: :controller do
       post :save, params: { issue_ids: '1,2', issue: { custom_field_values: { '5' => 'foo' } } }
 
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(JSON.parse(response.body)).to eq('errors' => ['oops'])
+      # Changed by the full review of 2026-11-05 (context-menu-4): the issue
+      # number first (was 'oops').
+      expect(JSON.parse(response.body)).to eq('errors' => ['#2: oops'])
     end
 
     it 'clears the value when __none__ is passed' do

@@ -79,11 +79,13 @@ module RedmineDependingCustomFields
     rescue ActiveRecord::RecordInvalid => e
       violation = storage_violation(e.record)
       if violation
-        error = storage_error(violation)
+        nameable = nameable_field?(e.record)
+        error = storage_error(violation, include_field: nameable)
         record_failure(error.audit_status, error.key.to_s, error.summary)
-        raise error if nameable_field?(e.record)
+        raise error if nameable
 
-        # A cascaded field the acting user cannot see is never named.
+        # A cascaded field the acting user cannot see is never named, and
+        # its id stays out of the audit row the manager reads.
         raise OperationError.new(:error_save_failed, summary: error.summary)
       end
       record_failure('save_failed', AuditPayload.error_message(e.message))
@@ -146,13 +148,16 @@ module RedmineDependingCustomFields
     end
 
     # Limits design 5.2: the flash names the field and both sizes; the audit
-    # summary holds only the column, the byte counts and the field id.
-    def storage_error(violation)
+    # summary holds only the column, the byte counts and the field id, the
+    # id only for a field the user may see (full review of 2026-11-05,
+    # project-pages-7).
+    def storage_error(violation, include_field: true)
       key = violation.column == 'possible_values' ? :error_dcf_values_too_large : :error_dcf_mapping_too_large
+      summary = "#{violation.column}: #{violation.bytes} bytes exceeds #{violation.limit}"
+      summary += " (custom field ##{violation.custom_field_id})" if include_field
       OperationError.new(
         key,
-        summary: "#{violation.column}: #{violation.bytes} bytes exceeds #{violation.limit} " \
-                 "(custom field ##{violation.custom_field_id})",
+        summary: summary,
         interpolations: { field: violation.custom_field_name.to_s,
                           size: StorageLimits.delimited(violation.bytes),
                           limit: StorageLimits.delimited(violation.limit) }
@@ -219,12 +224,18 @@ module RedmineDependingCustomFields
 
     # A new or renamed list value has at most LIST_VALUE_MAX_CHARS characters
     # (String#length, WP-31). The row and the flash never carry the value.
-    def check_value_length!(value)
-      max = ProjectStoragePolicy::LIST_VALUE_MAX_CHARS
+    def check_value_length!(value, max = ProjectStoragePolicy::LIST_VALUE_MAX_CHARS)
       return if value.length <= max
 
       raise OperationError.new(:error_dcf_value_length, summary: "value: #{value.length} characters exceeds #{max}",
                                                         interpolations: { max: max })
+    end
+
+    # A new or renamed enumeration name has at most core's 60 characters
+    # (full review of 2026-11-05, project-pages-4: core's own check gave the
+    # generic save error).
+    def check_enum_name_length!(name)
+      check_value_length!(name, ProjectStoragePolicy::ENUM_NAME_MAX_CHARS)
     end
 
     def capped(list)
@@ -350,12 +361,19 @@ module RedmineDependingCustomFields
       record.public_send("#{name}=", mapping)
     end
 
+    # The depending children of this field, loaded once per operation (full
+    # review of 2026-11-05, project-pages-9): the impact counts, the
+    # confirmation panel and the cascade share them.
+    def dependent_children
+      @dependent_children ||= FieldRelevance.children_of(field)
+    end
+
     # Rewrite/prune a parent key across every depending child of this field.
     # mode: :rename rewrites old->new; :remove deletes the key. Returns the ids
     # of children that were touched (for the audit row).
     def cascade_parent_key!(old_key, new_key, mode)
       touched = []
-      FieldRelevance.children_of(field).each do |child|
+      dependent_children.each do |child|
         changed = false
         vd = (child.value_dependencies || {}).deep_dup
         dd = (child.default_value_dependencies || {}).deep_dup

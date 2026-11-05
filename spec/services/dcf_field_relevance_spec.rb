@@ -66,17 +66,27 @@ RSpec.describe RedmineDependingCustomFields::FieldRelevance do
       expect(ids).to include(issue_field.id, project_field.id)
     end
 
-    it 'preloads :projects for issue fields without touching ProjectCustomField' do
-      dcf_list_field(format: 'list', name: 'IssueList', is_for_all: true)
+    # Changed by the full review of 2026-11-05 (project-pages-3): nothing is
+    # preloaded; the overview counts in three grouped queries whatever the
+    # number of fields (was: :projects preloaded, no query per field).
+    it 'counts the overview rows in a fixed number of queries, issue and project fields mixed' do
+      other = dcf_create_project(name: 'Other')
+      shared = dcf_list_field(format: 'list', name: 'Shared', is_for_all: false, projects: [project, other])
       dcf_list_field(format: 'list', name: 'ProjectList', type: ProjectCustomField)
+      enum = dcf_enum_field(names: %w[X Y Z])
 
-      # A ProjectCustomField in the set previously blew up the STI-base
-      # includes(:projects); assert the preload no longer issues per-row
-      # project queries either.
       fields = described_class.relevant_fields(project)
-      issue_field = fields.find { |f| f.is_a?(IssueCustomField) }
-      recorder = ActiveRecord::QueryRecorder.new { issue_field.projects.to_a }
-      expect(recorder.count).to eq(0)
+      counts = nil
+      few = dcf_count_queries { counts = described_class.overview_counts(fields, project) }
+      expect(counts.value_counts[enum.id]).to eq(3)
+      expect(counts.project_counts[shared.id]).to eq(2)
+      expect(counts.shared).to include(shared.id)
+      expect(described_class.scope(shared, project, shared_ids: counts.shared)).to eq(:shared)
+      expect(described_class.scope(shared, project)).to eq(:shared)
+      3.times { |i| dcf_enum_field(names: %W[A#{i} B#{i}]) }
+      2.times { |i| dcf_list_field(format: 'list', name: "More#{i}", is_for_all: false, projects: [project, other]) }
+      many_fields = described_class.relevant_fields(project)
+      expect(dcf_count_queries { described_class.overview_counts(many_fields, project) }).to eq(few)
     end
 
     it 'excludes standard formats when the kill-switch is off' do

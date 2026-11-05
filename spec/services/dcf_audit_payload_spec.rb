@@ -241,7 +241,10 @@ RSpec.describe 'RedmineDependingCustomFields::AuditPayload' do
       expect(row.before_value).to eq(json({ from: 'A' }))
       expect(row.after_value.bytesize).to be <= cap
       expect(JSON.parse(row.after_value)['payload_truncated']).to be(true)
-      expect(row.affected_child_field_ids_list).to eq((1..1_000).to_a)
+      # Changed by the full review of 2026-11-05 (project-pages-12): the
+      # unused reader affected_child_field_ids_list is removed; the column
+      # holds the JSON.
+      expect(JSON.parse(row.affected_child_field_ids)).to eq((1..1_000).to_a)
     end
 
     it 'caps a large before value as well' do

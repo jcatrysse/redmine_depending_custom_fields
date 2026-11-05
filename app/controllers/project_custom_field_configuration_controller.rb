@@ -228,8 +228,16 @@ class ProjectCustomFieldConfigurationController < ApplicationController
     @field.reload
     @state_hash = RedmineDependingCustomFields::BaseService.state_hash(@field)
     @parent = RedmineDependingCustomFields::DependencyRules.parent_of(@field)
-    @parent_available = @parent.present? &&
-                        RedmineDependingCustomFields::FieldRelevance.relevant?(@parent, @project)
+    # Full review of 2026-11-05: the parent is named, and its values sent,
+    # only to a user who may see it (project-pages-1, the naming rule of
+    # SD-16); it is available when it is used in the project, whatever the
+    # standard-field setting, which limits value operations only
+    # (project-pages-6). DependencyMappingService applies the same rule.
+    @parent_nameable = @parent.present? &&
+                       RedmineDependingCustomFields::UsageCalculator.nameable_child?(@parent, @field, @project,
+                                                                                    User.current)
+    @parent_available = @parent_nameable &&
+                        RedmineDependingCustomFields::FieldRelevance.in_project?(@parent, @project)
     @posted_payload = posted
     @conflict_payload = conflict
   end

@@ -24,7 +24,14 @@ module RedmineDependingCustomFields
     end
 
     def usage_other(field, value_key, project)
-      [usage_total(field, value_key) - usage_here(field, value_key, project), 0].max
+      usage_split(field, value_key, project).last
+    end
+
+    # [usage_here, usage_other] with one count each (full review of
+    # 2026-11-05, project-pages-9: usage_other used to count here again).
+    def usage_split(field, value_key, project)
+      here = usage_here(field, value_key, project)
+      [here, [usage_total(field, value_key) - here, 0].max]
     end
 
     def capped?(count)
@@ -57,10 +64,11 @@ module RedmineDependingCustomFields
     end
 
     # Parent-side: how many depending children reference this value as a parent
-    # key in value_dependencies and/or default_value_dependencies.
-    def parent_key_refs(field, parent_value)
+    # key in value_dependencies and/or default_value_dependencies. +children+
+    # (FieldRelevance.children_of(field)) when the caller loaded them.
+    def parent_key_refs(field, parent_value, children: nil)
       pv = parent_value.to_s
-      FieldRelevance.children_of(field).sum do |child|
+      (children || FieldRelevance.children_of(field)).sum do |child|
         refs = 0
         refs += 1 if (child.value_dependencies || {}).key?(pv)
         refs += 1 if (child.default_value_dependencies || {}).key?(pv)
@@ -68,9 +76,9 @@ module RedmineDependingCustomFields
       end
     end
 
-    def affected_child_fields(field, parent_value)
+    def affected_child_fields(field, parent_value, children: nil)
       pv = parent_value.to_s
-      FieldRelevance.children_of(field).select do |child|
+      (children || FieldRelevance.children_of(field)).select do |child|
         (child.value_dependencies || {}).key?(pv) ||
           (child.default_value_dependencies || {}).key?(pv)
       end

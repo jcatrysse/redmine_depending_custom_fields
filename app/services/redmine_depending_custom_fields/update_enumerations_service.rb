@@ -154,8 +154,12 @@ module RedmineDependingCustomFields
           .map(&:first)
     end
 
+    # A changed name has at most core's 60 characters (full review of
+    # 2026-11-05, project-pages-4); a stored name may stay.
     def validate_names!(rows)
       raise OperationError.new(:error_value_blank) if rows.any? { |r| r[:name].blank? }
+
+      rows.each { |r| check_enum_name_length!(r[:name]) unless r[:enum] && r[:name] == r[:enum].name }
     end
 
     # Checked against the RESULTING state, not the stored one: a save that
@@ -228,9 +232,12 @@ module RedmineDependingCustomFields
     end
 
     # Blast radius: stored values now pointing at a deactivated option. One
-    # capped COUNT per deactivated value (usually none or one).
+    # capped COUNT for all deactivated values (full review of 2026-11-05,
+    # project-pages-8: was one per value), capped like usage_total.
     def deactivated_usage(deactivated_ids)
-      deactivated_ids.sum { |id| UsageCalculator.usage_total(field, id) }
+      return 0 if deactivated_ids.empty?
+
+      UsageCalculator.value_rows(field, deactivated_ids.map(&:to_s)).limit(UsageCalculator::USAGE_CAP + 1).count
     end
 
     def summary_for(rows, delta)

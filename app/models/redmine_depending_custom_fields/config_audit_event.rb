@@ -18,26 +18,5 @@ module RedmineDependingCustomFields
     def readonly?
       !new_record?
     end
-
-    def project
-      @project ||= project_id && Project.find_by(id: project_id)
-    end
-
-    def custom_field
-      @custom_field ||= custom_field_id && CustomField.find_by(id: custom_field_id)
-    end
-
-    def acting_user
-      @acting_user ||= acting_user_id && User.find_by(id: acting_user_id)
-    end
-
-    def affected_child_field_ids_list
-      return [] if affected_child_field_ids.blank?
-
-      parsed = ActiveSupport::JSON.decode(affected_child_field_ids)
-      parsed.is_a?(Array) ? parsed : []
-    rescue ActiveSupport::JSON.parse_error
-      []
-    end
   end
 end

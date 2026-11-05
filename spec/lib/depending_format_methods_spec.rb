@@ -1171,20 +1171,43 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
 
   describe '#value_from_keyword' do
     # 0.0.16's algorithm over the core list (depending_list_format.rb before
-    # WP-06): a linear casecmp? search per keyword.
+    # WP-06): a linear casecmp? search per keyword. Changed by the full
+    # review of 2026-11-05 (rules-4): a multiple keyword is split on ';', and
+    # each part is read as core parse_keyword reads a ',' list, the longest
+    # run of segments that names a label first (was a split on ';' and ','),
+    # so a label with a comma matches.
     def keyword_oracle(field, keyword)
       return if keyword.blank?
 
       opts = core_base(field)
-      keywords = field.multiple? ? keyword.split(/[;,]/).map(&:strip).reject(&:blank?) : [keyword.strip]
-      matched = keywords.filter_map do |kw|
+      find = lambda do |kw|
+        next nil if kw.blank?
+
         hit = opts.find do |opt|
           label, _val = opt.is_a?(Array) ? opt.take(2) : [opt, opt]
           label.to_s.strip.casecmp?(kw)
         end
         hit.is_a?(Array) ? hit[1] : hit
       end
-      field.multiple? ? matched.presence : matched.first
+      return find.call(keyword.strip) unless field.multiple?
+
+      matched = keyword.split(';').flat_map do |part|
+        segments = part.split(',', -1)
+        out = []
+        start = 0
+        while start < segments.size
+          stop = segments.size
+          stop -= 1 while stop > start && find.call(segments[start...stop].join(',').strip).nil?
+          if stop > start
+            out << find.call(segments[start...stop].join(',').strip)
+            start = stop
+          else
+            start += 1
+          end
+        end
+        out
+      end
+      matched.presence
     end
 
     grid_names = ['a1', 'a2', 'b1', 'c,d', 'Straße', 'ÉCOLE', 'kilo', 'ΣΟΦΟΣ', 'office']
@@ -1218,10 +1241,16 @@ RSpec.describe RedmineDependingCustomFields::DependingFormatMethods do
         expect(overhead).to eq(0)
       end
 
-      it "reads the option list once per call for a #{kind} child" do
+      # Changed by the full review of 2026-11-05 (rules-3): the list is read
+      # at most once per record (dcf_memo), and an enumeration keyword is
+      # looked up with one query, so an enumeration that matches every
+      # keyword reads no list (was once per call for both kinds).
+      it "reads the option list at most once per record for a #{kind} child" do
         _parent, child = build_kit(kind, multiple: true)
-        expect(child.format).to receive(:possible_values_options).with(child).once.and_call_original
+        expect(child.format).to receive(:possible_values_options).with(child)
+                                                                  .exactly(kind == :list ? 1 : 0).times.and_call_original
         expect(child.format.value_from_keyword(child, 'a1;a2;b1;a1', nil).size).to eq(4)
+        expect(child.format.value_from_keyword(child, 'a2', nil)).to eq([kit_key(child, 'a2')])
       end
     end
 

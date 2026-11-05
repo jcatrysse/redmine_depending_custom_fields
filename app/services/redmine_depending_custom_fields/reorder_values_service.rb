@@ -15,7 +15,10 @@ module RedmineDependingCustomFields
 
       if list_family?
         current = possible_values.map(&:to_s)
-        validate_permutation!(submitted, current)
+        # Full review of 2026-11-05 (project-pages-5): the page lists a value
+        # stored twice once (DependencyRules.value_options), so the order is
+        # a permutation of the distinct values; the save drops the repeat.
+        validate_permutation!(submitted, current.uniq)
         field.possible_values = submitted
         save_field!(field)
       else

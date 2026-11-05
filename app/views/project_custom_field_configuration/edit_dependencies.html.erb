@@ -19,7 +19,8 @@
 <% if @parent.nil? %>
   <p class="nodata"><%= l(:text_dcf_parent_missing) %></p>
 <% elsif !@parent_available %>
-  <p class="warning"><%= l(:text_dcf_parent_not_available, name: @parent.name) %></p>
+  <%# Full review of 2026-11-05: a parent the user may not see is never named. -%>
+  <p class="warning"><%= @parent_nameable ? l(:text_dcf_parent_not_available, name: @parent.name) : l(:text_dcf_parent_not_available_generic) %></p>
 <% else %>
   <p class="info"><%= l(:field_parent_custom_field_id) %>: <strong><%= h(@parent.name) %></strong></p>
   <%= form_tag(custom_field_configuration_update_dependencies_path(@project, @field),

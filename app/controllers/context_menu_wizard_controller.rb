@@ -4,7 +4,8 @@
 # WP-36 (UD-13 changed by the owner): show answers the wizard body that
 # context_menu_wizard.js fetches when the wizard opens, with the rules of the
 # context menu: login (session only, no API key), every selected issue
-# visible (403, core find_issues), the edit permission on every project (the
+# visible (403, core find_issues), the edit permission for the attributes of
+# every issue (core's attributes_editable?, tracker permissions included, the
 # ContextMenuHook gate, 403), one SelectionGraph and ParentDetector for the
 # current user. A root it does not offer (not a root, hidden, unknown, no
 # levels) and malformed parameters get the same generic 404, so a hidden
@@ -39,7 +40,7 @@ class ContextMenuWizardController < ApplicationController
     return deny_access unless issues.all?(&:visible?)
 
     user = User.current
-    return deny_access unless issues.all? { |issue| user.allowed_to?(:edit_issues, issue.project) }
+    return deny_access unless issues.all? { |issue| issue.attributes_editable?(user) }
 
     detector = RedmineDependingCustomFields::ParentDetector
     graph = RedmineDependingCustomFields::SelectionGraph.new(issues)
@@ -69,12 +70,15 @@ class ContextMenuWizardController < ApplicationController
 
     errors = []
     @issues.find_each do |issue|
-      # Assign through safe_attributes= like core bulk_update does: it keeps
-      # only the custom fields the current user may edit on this issue
-      # (visible for the user's roles and not read-only by workflow).
+      # As core bulk_update does: a journal for the history and the
+      # notifications (full review of 2026-11-05, context-menu-2), then
+      # safe_attributes=, which keeps only the custom fields the current user
+      # may edit on this issue (visible for the user's roles and not
+      # read-only by workflow). Each error names its issue (context-menu-4).
+      issue.init_journal(User.current)
       issue.safe_attributes = { 'custom_field_values' => values }
       issue.save
-      errors.concat(issue.errors.full_messages) if issue.errors.any?
+      errors.concat(issue.errors.full_messages.map { |message| "##{issue.id}: #{message}" }) if issue.errors.any?
     end
 
     if errors.any?
@@ -125,10 +129,12 @@ class ContextMenuWizardController < ApplicationController
     permitted = params.permit(:fieldId, :value, issue: { custom_field_values: {} })
     raw_hash = permitted.dig(:issue, :custom_field_values)
 
+    # Only core's '__none__' marker clears a field; 'none' is an ordinary
+    # value (full review of 2026-11-05, context-menu-1).
     values = {}
     (raw_hash || {}).each do |fid, val|
       if val.is_a?(Array)
-        if val.delete('__none__') || val.delete('none')
+        if val.delete('__none__')
           values[fid.to_s] = ''
         else
           cleaned = val.reject(&:blank?)
@@ -136,7 +142,7 @@ class ContextMenuWizardController < ApplicationController
         end
       else
         next if val.blank?
-        values[fid.to_s] = (val == '__none__' || val == 'none') ? '' : val
+        values[fid.to_s] = val == '__none__' ? '' : val
       end
     end
 
@@ -144,7 +150,7 @@ class ContextMenuWizardController < ApplicationController
       fid = permitted[:fieldId].to_s
       val = permitted[:value]
       return {} if val.to_s.blank?
-      values[fid] = (val == '__none__' || val == 'none') ? '' : val
+      values[fid] = val == '__none__' ? '' : val
     end
 
     values

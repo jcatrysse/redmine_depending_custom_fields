@@ -6,6 +6,7 @@ require_relative 'lib/redmine_depending_custom_fields/patches/issue_import_patch
 require_relative 'lib/redmine_depending_custom_fields/patches/issue_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/project_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/time_entry_validation_patch'
+require_relative 'lib/redmine_depending_custom_fields/patches/hidden_dependencies_validation_patch'
 require_relative 'lib/redmine_depending_custom_fields/patches/projects_helper_patch'
 require_relative 'lib/redmine_depending_custom_fields/hooks/context_menu_hook'
 require_relative 'lib/redmine_depending_custom_fields/hooks/custom_field_storage_hook'
@@ -79,8 +80,12 @@ IssueImport.prepend RedmineDependingCustomFields::Patches::IssueImportPatch
 # everywhere). WP-38 (SD-22): TimeEntry does so on 6.1 and 7.0, and on 5.1
 # and 6.0 its safe_attributes= drops the values the user cannot see; its
 # patch gives the same result on all of them. The patches add the dependency
-# check for those values; the other customizables validate every value and
-# are not patched. A repeated prepend is a no-op.
+# check for those values. The other customizables validate every value; the
+# full review of 2026-11-05 (rules-1) gives them the placement of a value the
+# user cannot see, so core never names it. A repeated prepend is a no-op.
 Issue.prepend RedmineDependingCustomFields::Patches::IssueValidationPatch
 Project.prepend RedmineDependingCustomFields::Patches::ProjectValidationPatch
 TimeEntry.prepend RedmineDependingCustomFields::Patches::TimeEntryValidationPatch
+[Version, User, Group, Document, Enumeration].each do |customizable|
+  customizable.prepend RedmineDependingCustomFields::Patches::HiddenDependenciesValidationPatch
+end

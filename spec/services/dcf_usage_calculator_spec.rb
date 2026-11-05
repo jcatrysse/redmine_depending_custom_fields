@@ -240,7 +240,9 @@ RSpec.describe 'RedmineDependingCustomFields::UsageCalculator exact values (WP-3
   # any shape or file type, fails here until it goes through value_rows and
   # a reviewer adds its line. Changed by WP-38: the line of
   # time_entry_validation_patch.rb reads the rows the entry already loaded
-  # (no lookup by value).
+  # (no lookup by value). Changed by the full review of 2026-11-05 (rules-2):
+  # the line of dependency_rules.rb dropped_parent_values reads the rows a
+  # time entry already loaded too.
   it 'is the only lookup of stored values by value in app/ and lib/ (static)' do
     root = File.expand_path('../..', __dir__)
     pattern = Regexp.union(/\bvalue:/, /\[:value\]/, /\(\s*:value\b/, /\bcustom_values\b/, /\bCustomValue\b/,
@@ -264,6 +266,7 @@ RSpec.describe 'RedmineDependingCustomFields::UsageCalculator exact values (WP-3
       usage_calculator.rb: "CAST(CONVERT(#{CustomValue.table_name}.value USING utf8mb4) AS BINARY)"
       usage_calculator.rb: return scope.group(:value).count unless Redmine::Database.mysql?
       show.html.erb: params: { value: row.key, state_hash: @state_hash }.merge(list_state),
+      dependency_rules.rb: rows = customized.custom_values.select { |cv| cv.custom_field_id == pid && cv.persisted? }
       dependency_rules.rb: if customized.respond_to?(:custom_values)
       dependency_rules.rb: stored = customized.custom_values.any? { |cv| cv.custom_field_id == field_id && cv.persisted? }
       non_editable_dependencies.rb: def id_set(custom_values)

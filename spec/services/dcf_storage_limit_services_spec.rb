@@ -204,7 +204,9 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
     end
 
     # The flash is the generic text; the row keeps the storage key and the
-    # numeric summary, which holds the field id, not its name.
+    # numeric summary. Changed by the full review of 2026-11-05
+    # (project-pages-7): the summary no longer holds the id of the hidden
+    # field; was '... (custom field #<id>)'.
     it 'never names a child hidden from the manager role (security model 5)' do
       child = child_of(parent, name: 'Hidden-Child')
       child.update!(visible: false, role_ids: [other_role.id])
@@ -217,8 +219,9 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       row = events.order(:id).last
       expect([row.action, row.status, row.error_message])
         .to eq(%w[validation_failed validation_failed error_dcf_mapping_too_large])
-      expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds \d+ \(custom field ##{child.id}\)\z/)
+      expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds \d+\z/)
       expect(row_text(row)).not_to include('Hidden-Child')
+      expect(row_text(row)).not_to include("##{child.id}")
     end
 
     it 'never names a child that is not used in this project' do
@@ -229,6 +232,7 @@ RSpec.describe 'Service storage error mapping (WP-12)' do
       expect(error.key).to eq(:error_save_failed)
       expect(error.interpolations).to eq({})
       expect(events.order(:id).last.error_message).to eq('error_dcf_mapping_too_large')
+      expect(events.order(:id).last.changes_summary).not_to include("##{child.id}")
     end
 
     it 'names a child of another project to an administrator' do

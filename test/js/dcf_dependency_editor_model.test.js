@@ -197,10 +197,13 @@ test('fromWire: duplicates keep the first, blank keys are skipped, index and fol
   assert.equal(values.byKey.get('9200001').folded, 'emile');
   assert.equal(values.byKey.get('11').folded, '11');
   assert.deepEqual(values.keys(), ['11', '9200001']);
-  assert.equal(values.has('11'), true);
-  assert.equal(values.has(11), true);
-  assert.equal(values.has('x'), false);
-  assert.equal(values.get('9200001').label, '\u00c9mile');
+  // Full review of 2026-11-05 (admin-editor-4): has and get had no caller
+  // (the editor reads byKey); was values.has('11'), has(11) and get(key).
+  assert.equal(values.byKey.has('11'), true);
+  assert.equal(values.byKey.has('x'), false);
+  assert.equal(values.byKey.get('9200001').label, '\u00c9mile');
+  assert.equal(values.has, undefined);
+  assert.equal(values.get, undefined);
 });
 
 test('fromWire: keys such as __proto__ and hasOwnProperty are ordinary keys and the input is not changed', () => {
@@ -212,7 +215,7 @@ test('fromWire: keys such as __proto__ and hasOwnProperty are ordinary keys and 
   assert.equal(values.byKey.get('a').label, 'x');
   assert.equal(values.byKey.get('constructor').label, 'constructor');
   assert.equal(values.byKey.get('toString').active, false);
-  assert.equal(values.has('valueOf'), false);
+  assert.equal(values.byKey.has('valueOf'), false);
   assert.equal(JSON.stringify(input), copy);
 });
 

@@ -64,18 +64,4 @@ RSpec.describe ProjectCustomFieldConfigurationHelper, type: :helper do
       expect(helper.dcf_sort_handle).to match(%r{<span[^>]*></span>})
     end
   end
-
-  describe '#dcf_visible_project_names' do
-    it 'summarises invisible projects without leaking names (T-USE-3)' do
-      other = dcf_create_project(name: 'Secret')
-      field = dcf_list_field(is_for_all: false, projects: [project, other])
-      allow(project).to receive(:visible?).and_return(true)
-      allow(other).to receive(:visible?).and_return(false)
-      allow(field).to receive(:projects).and_return([project, other])
-      names = helper.dcf_visible_project_names(field, dcf_admin)
-      expect(names).to include('A')
-      expect(names).not_to include('Secret')
-      expect(names.join).to match(/other project/)
-    end
-  end
 end

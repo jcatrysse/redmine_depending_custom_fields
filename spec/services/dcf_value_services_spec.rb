@@ -1228,12 +1228,14 @@ RSpec.describe 'DCF value operation services' do
     end
 
     # A name the model rejects (max 60 chars) must roll the whole save back, not
-    # leave the rows before it in the loop already written.
+    # leave the rows before it in the loop already written. Changed by the
+    # full review of 2026-11-05 (project-pages-4): the length is checked
+    # before any write, with its own message (was error_save_failed).
     it 'rolls the whole save back when a row fails model validation (T-ACT-22)' do
       field = dcf_enum_field(names: %w[X Y])
       x, y = field.enumerations.order(:position).to_a
       expect { save_enums(field, x.id => { active: false }, y.id => { name: 'N' * 61 }) }
-        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_save_failed) }
+        .to raise_error(RedmineDependingCustomFields::OperationError) { |e| expect(e.key).to eq(:error_dcf_value_length) }
       expect(x.reload.active).to be true
       expect(y.reload.name).to eq('Y')
     end
@@ -1666,16 +1668,18 @@ RSpec.describe 'DCF value operation services' do
       expect([x.reload.name, y.reload.active]).to eq(['X', true])
     end
 
+    # Changed by the full review of 2026-11-05 (project-pages-4): the length
+    # error of the services (was error_save_failed).
     it 'rolls the whole page back when a row fails model validation' do
       field = dcf_enum_field(names: %w[X Y Z])
       x, y = ordered(field)
       expect { page_save(field, page_rows([x, y], x.id => { active: false }, y.id => { name: 'N' * 61 })) }
-        .to expect_refused(:error_save_failed)
+        .to expect_refused(:error_dcf_value_length)
       expect([x.reload.active, y.reload.name]).to eq([true, 'Y'])
       row = rows_of(field).last
-      expect([row.action, row.status]).to eq(%w[save_failed save_failed])
-      expect(row.error_message).not_to match(/UPDATE|INSERT|SELECT|N{61}/)
-      expect(row.changes_summary).to be_nil
+      expect([row.action, row.status]).to eq(%w[validation_failed validation_failed])
+      expect(row.error_message).to eq('error_dcf_value_length')
+      expect(row.changes_summary).to eq('value: 61 characters exceeds 60')
     end
 
     it 'refuses every scope but a blank one or exactly page, never storing it (T-ENP-5)' do
@@ -2400,7 +2404,9 @@ RSpec.describe 'DCF value operation services' do
         expect(error.interpolations).to eq({})
         row = events.order(:id).last
         expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
-        expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds #{raw_child.bytesize} \(custom field ##{child.id}\)\z/)
+        # Changed by the full review of 2026-11-05 (project-pages-7): no id of
+        # the hidden field; was '... (custom field #<id>)'.
+        expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds #{raw_child.bytesize}\z/)
         text = row.attributes.values.join(' ')
         expect(text).not_to include('HIDDEN-CEILING-CHILD')
         expect(text).not_to include('SECRET-V1')
@@ -2495,16 +2501,19 @@ RSpec.describe 'DCF value operation services' do
         expect(CustomField.find(field.id).possible_values).to eq(%w[Short B C])
       end
 
+      # Changed by the full review of 2026-11-05 (project-pages-4): the
+      # services check core's 60-character limit themselves and say so
+      # (error_dcf_value_length with max 60; was the generic error_save_failed).
       it 'keeps the core 60-character limit for enumeration names, never the list cap' do
         field = dcf_enum_field(names: %w[X])
         add(CustomField.find(field.id), value: 'e' * 60)
         [61, 256].each do |length|
           error = refusal { add(CustomField.find(field.id), value: 'f' * length) }
-          expect(error.key).to eq(:error_save_failed)
+          expect([error.key, error.interpolations]).to eq([:error_dcf_value_length, { max: 60 }])
         end
         enum = field.enumerations.find_by(name: 'X')
         error = refusal { rename(CustomField.find(field.id), enumeration_id: enum.id, new_value: 'g' * 256) }
-        expect(error.key).to eq(:error_save_failed)
+        expect([error.key, error.interpolations]).to eq([:error_dcf_value_length, { max: 60 }])
         expect(field.enumerations.pluck(:name)).to contain_exactly('X', 'e' * 60)
       end
     end

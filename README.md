@@ -11,7 +11,13 @@ This plugin provides depending / cascading custom field formats for Redmine. Two
    - Optionally exclude administrators
    - Choose to display active, registered and/or inactive users
    - Users are listed under headers for active, registered and inactive status in filters
-   - Issue import recognizes extended user values by full name and id
+   - Only the users you may see are offered, listed in filters and accepted
+     (the role setting *Users visibility*, as in Redmine); administrators see
+     every user, and a stored value is kept
+   - A field saved without the active option (for example through the API)
+     lists active users, as the administration form preselects it
+   - Issue import recognizes extended user values by login, email, full name
+     and id (a plain number only)
 2. `Depending` or `Cascading` custom fields
    - Both for `lists` as `key/value` pairs
    - New formats `List (depending)` and `Key/Value list (depending)` allow defining parent/child relationships
@@ -145,10 +151,12 @@ asks before a format change on a new field would discard them.
   parent values containing `[` or `]`, which were saved under corrupted keys
   and must be linked again once.
 - A copy of a `Key/Value list (depending)` field (Copy in the administration
-  or `copy_from`) keeps the links to the entries of the source field: the
-  entry ids are not remapped. The editor shows them as such links to values
-  that no longer exist and removes them at the first save from the editor.
-  A copy of a `List (depending)` field keeps its mapping.
+  or `copy_from`) starts without links: the copy gets new entries, and the
+  links of the source name the source's entries. Link the copy's entries in
+  the editor after the first save. A copy made by an earlier version keeps
+  the source's links; the editor shows them as links to values that no
+  longer exist and removes them at the first save from the editor. A copy of
+  a `List (depending)` field keeps its mapping.
 
 Sizes: the editor refuses to send a mapping above 4,194,304 bytes (4 MiB,
 the server limit) and a form above fixed bounds: 16,252,928 bytes (15.5 MiB)
@@ -235,8 +243,12 @@ Values that do not start that way are never changed.
 ## Context menu wizard
 
 Open the context menu on an issue list (right-click or the menu button) to
-access the wizard. It needs the **Edit issues** permission in the project of
-every selected issue, so a closed project gets no wizard. The menu shows one
+access the wizard. It needs the **Edit issues** permission for every selected
+issue, for its tracker too when the role limits that permission to some
+trackers (as the edit entries of Redmine's own menu), so a closed project gets
+no wizard. A save is recorded in the issue history and sends the usual
+notifications, as bulk edit does; each error names its issue (`#12: ...`). Only
+`__none__` clears a field, as in bulk edit, so a value named `none` is saved. The menu shows one
 wizard entry for each top-level parent field (a field other fields depend on
 that does not depend on another field itself) that you may edit on every
 selected issue: available for its tracker and project, visible for your role
@@ -330,7 +342,8 @@ holds are kept when they are copied unchanged and the parent value is the
 same as on the source; a changed parent value or an added value is checked
 strictly. Bulk copy, project copy and a copy made through the REST API
 (`copy_from`) keep such values, and a project copy no longer skips those
-issues. A field you cannot edit gets its default value on a copy instead
+issues. A project copy is checked against its source project the same way,
+so the project's own dependent fields keep such values too. A field you cannot edit gets its default value on a copy instead
 (see [Dependent fields you cannot edit](#dependent-fields-you-cannot-edit)).
 The copy form in the browser keeps such values too, marked (see above).
 
@@ -394,10 +407,11 @@ To get such a save through, ask someone who may edit that field to change or
 clear it first, or an administrator to fix a default value the parent value
 does not allow.
 
-On versions and other objects the plugin adds no such check: Redmine itself
-validates every custom field value there, so such a parent change was already
-refused. Redmine's error there names the dependent field, also one that is
-hidden for your role.
+On versions, users, groups, documents and enumerations Redmine itself
+validates every custom field value, so such a parent change was already
+refused there. A dependent field you cannot see is not named there either:
+the error is shown on the parent field, or as the general message above when
+you cannot see the parent field either or its value did not change.
 
 On Redmine 5.1 and 6.0, Redmine itself removes the values of time entry
 fields hidden for your role when you save a time entry from its form, from
@@ -1172,7 +1186,11 @@ on the administration form.
   without it comes back with your changes still in the editor and the
   confirmation text, and nothing is saved.
 - When the parent field no longer exists, or is not available in the
-  project, a notice replaces the editor.
+  project, a notice replaces the editor. A parent field you cannot see (not
+  used in the project, or hidden for your role) is not named there and its
+  values are not sent to the browser; an administrator sees its name. A
+  standard List or Key/Value list parent counts here whatever the setting
+  for standard fields says (that setting limits their value pages).
 - The storage setting of the plugin applies (see [Settings](#settings)).
 - Every save, and every refused attempt, writes an audit row with a compact
   summary: counts, a few samples and the SHA-256 of the mapping. A save that
@@ -1226,7 +1244,8 @@ on the administration form.
   characters, not bytes). Values stored before with more characters are kept:
   they can be removed, sorted, set as default or renamed to a value of at most
   255 characters.
-  Key/Value list entries keep Redmine's limit of 60 characters.
+  Key/Value list entries keep Redmine's limit of 60 characters, and a longer
+  name is refused with that limit in the message.
 
 ### Settings
 

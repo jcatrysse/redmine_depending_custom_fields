@@ -15,6 +15,8 @@ module RedmineDependingCustomFields
     MAX_CEILING_KIB = 1_048_576
     # New or renamed list values from project services (characters).
     LIST_VALUE_MAX_CHARS = 255
+    # Enumeration names, core's limit (CustomFieldEnumeration, 5.1 to 7.0).
+    ENUM_NAME_MAX_CHARS = 60
     SETTING = 'project_storage_ceiling_kib'
 
     module_function

@@ -50,30 +50,32 @@ module RedmineDependingCustomFields
         enum.destroy!
         after = { destroyed: enum.name }
       end
-      if depending?
-        prune_own_deps!(value_key)
-        save_field!(field)
-      end
+      # Full review of 2026-11-05 (project-pages-2): a default that names
+      # the removed value goes with it, as in remove_list! and the batch
+      # table (core accepts only an active default).
+      default_cleared = field.default_value.to_s == value_key
+      field.default_value = nil if default_cleared
+      prune_own_deps!(value_key) if depending?
+      save_field!(field) if depending? || default_cleared
 
       touched = cascade_parent_key!(value_key, nil, :remove)
 
       Outcome.new(before: { removed: enum.name }, after: after,
-                  summary: "Removed enumeration '#{enum.name}'",
+                  summary: "Removed enumeration '#{enum.name}'#{'; default value cleared' if default_cleared}",
                   affected_projects_count: affected_projects_count,
                   affected_values_count: impact[:total],
                   affected_child_field_ids: touched)
     end
 
     def gather_impact(value_key)
-      usage_here  = UsageCalculator.usage_here(field, value_key, project)
-      usage_other = UsageCalculator.usage_other(field, value_key, project)
+      usage_here, usage_other = UsageCalculator.usage_split(field, value_key, project)
       {
         usage_here:  usage_here,
         usage_other: usage_other,
         total:       usage_here + usage_other,
         own_refs:    UsageCalculator.own_dep_refs(field, value_key),
-        parent_refs: UsageCalculator.parent_key_refs(field, value_key),
-        affected:    UsageCalculator.affected_child_fields(field, value_key)
+        parent_refs: UsageCalculator.parent_key_refs(field, value_key, children: dependent_children),
+        affected:    UsageCalculator.affected_child_fields(field, value_key, children: dependent_children)
       }
     end
 

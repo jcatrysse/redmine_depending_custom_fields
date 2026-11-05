@@ -1,5 +1,6 @@
-# Extension for CustomField: the required bypass of depending fields and the
-# per-record memo. Registers no callback (server design 11; new CustomField
+# Extension for CustomField: the required bypass of depending fields, the
+# per-record memo and the copy of a depending enumeration field. Registers no
+# callback (server design 11; new CustomField
 # callbacks go into CustomFieldValidationPatch).
 
 module RedmineDependingCustomFields
@@ -33,6 +34,25 @@ module RedmineDependingCustomFields
         return memo[memo_key] if memo.key?(memo_key)
 
         memo[memo_key] = yield
+      end
+
+      # True when dcf_memo holds a result for (name, key).
+      def dcf_memoized?(name, key)
+        (@dcf_memo || {}).key?([name, key])
+      end
+
+      # Full review of 2026-11-05 (admin-editor-3): core copies format_store,
+      # so the links of a Key/Value list (depending) field, and builds new
+      # entries for the copy; the source's links name the source's entries,
+      # so the copy starts without links (a List copy keeps its values and
+      # its links). The admin form posts no links for a new enumeration.
+      def copy_from(arg, options = {})
+        copied = super
+        if copied && DependencyRules.depending?(self) && DependencyRules.kind(self) == 'enumeration'
+          self.value_dependencies = {}
+          self.default_value_dependencies = {}
+        end
+        copied
       end
     end
   end

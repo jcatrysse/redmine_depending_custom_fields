@@ -35,6 +35,7 @@ module RedmineDependingCustomFields
     end
 
     def add_enum_value!(v)
+      check_enum_name_length!(v)
       active_names = field.enumerations.where(active: true).pluck(:name)
       raise OperationError.new(:error_value_duplicate) if active_names.include?(v)
 

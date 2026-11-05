@@ -4,7 +4,10 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
   let(:format) { described_class.instance }
 
   before do
-    user = instance_double(User, id: 1, name: 'User1', status: User::STATUS_ACTIVE)
+    # Changed by the full review of 2026-11-05 (storage-api-boot-4): the
+    # current user is an administrator here, so the list is not limited by
+    # Users visibility (see spec/models/dcf_full_review_extended_user_spec.rb).
+    user = instance_double(User, id: 1, name: 'User1', status: User::STATUS_ACTIVE, admin?: true)
     relation = double('relation', first: user)
     allow(relation).to receive(:joins).and_return(relation)
     allow(relation).to receive(:where).and_return(relation)
@@ -84,9 +87,12 @@ RSpec.describe RedmineDependingCustomFields::ExtendedUserFormat do
       )
     end
 
-    it 'casts boolean attributes to false when nil' do
+    # Changed by the full review of 2026-11-05 (storage-api-boot-5): a
+    # missing show_active counts as true, as the admin form shows it (was
+    # false for all four).
+    it 'casts boolean attributes to false when nil, show_active to true' do
       format.before_custom_field_save(field)
-      expect(field.show_active).to eq(false)
+      expect(field.show_active).to eq(true)
       expect(field.show_registered).to eq(false)
       expect(field.show_locked).to eq(false)
       expect(field.exclude_admins).to eq(false)

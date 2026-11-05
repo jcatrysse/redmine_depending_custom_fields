@@ -119,8 +119,10 @@ RSpec.describe 'Depending formats (characterization)' do
           expect(fmt.value_from_keyword(child, 'a1,a1', issue)).to eq([kit_key(child, 'a1')] * 2)
         end
 
-        it 'cannot import a value that contains a comma' do
-          expect(fmt.value_from_keyword(child, 'c,d', issue)).to be_nil
+        # Flipped by the full review of 2026-11-05 (rules-4): the longest
+        # label first, as core parse_keyword; was nil.
+        it 'imports a value that contains a comma (Flipped by the full review)' do
+          expect(fmt.value_from_keyword(child, 'c,d', issue)).to eq([kit_key(child, 'c,d')])
         end
 
         it 'returns nil when nothing matches' do

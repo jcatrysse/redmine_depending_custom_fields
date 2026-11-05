@@ -1,6 +1,6 @@
 # View hook that injects a mini wizard for depending custom fields into the
-# issue context menu. Only shown when the current user is allowed to edit all
-# selected issues, and only for fields the user may edit on all of them.
+# issue context menu. Only shown when the current user may edit the attributes
+# of all selected issues, and only for fields the user may edit on all of them.
 # The listener is a process-wide singleton: it keeps nothing between calls.
 
 module RedmineDependingCustomFields
@@ -10,7 +10,10 @@ module RedmineDependingCustomFields
         issues  = Array(ctx[:issues])
         user    = ctx[:controller].try(:current_user) || User.current
 
-        return if issues.any? {|issue| !user.allowed_to?(:edit_issues, issue.project)}
+        # Core's edit gate of the menu (@can[:edit]): the attributes of every
+        # issue, tracker permissions included (full review of 2026-11-05,
+        # context-menu-3); false on a closed project.
+        return if issues.any? { |issue| !issue.attributes_editable?(user) }
 
         render_wizard(ctx[:controller], issues, user)
       rescue StandardError => e

@@ -20,6 +20,9 @@ class DcfConfigAuditController < ApplicationController
     @paginator = Redmine::Pagination::Paginator.new(@event_count, 50, page)
     @events = scope.select(ProjectCustomFieldConfigurationController::AUDIT_COLUMNS)
                    .limit(@paginator.per_page).offset(@paginator.offset).to_a
+    # One query for the project names of the page (full review of
+    # 2026-11-05, project-pages-10: was one lookup per row).
+    @project_names = Project.where(id: @events.filter_map(&:project_id).uniq).pluck(:id, :name).to_h
   end
 
   private

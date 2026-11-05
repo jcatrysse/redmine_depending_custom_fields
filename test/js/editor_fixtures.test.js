@@ -132,7 +132,7 @@ test('value_options.json holds the compact wire shape of a list and an enumerati
   assert.deepEqual(Object.keys(data).sort(), ['enumeration', 'list']);
   const list = M.ValueList.fromWire(data.list);
   assert.ok(data.list.every((v) => Object.keys(v).join() === 'key'));
-  assert.ok(list.has('__proto__') && list.has('constructor') && list.has('</script>'));
+  assert.ok(list.byKey.has('__proto__') && list.byKey.has('constructor') && list.byKey.has('</script>'));
   const enumeration = M.ValueList.fromWire(data.enumeration);
   assert.deepEqual(enumeration.items.map((i) => i.active), [true, true, false, true]);
   assert.equal(enumeration.items[3].label, enumeration.items[3].key);

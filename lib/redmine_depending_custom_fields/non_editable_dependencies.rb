@@ -32,6 +32,12 @@ module RedmineDependingCustomFields
   # with User.current). There editable means visible, so only the hidden
   # placements occur, and the formats leave the D1 error of a hidden value
   # to this check on cores that still validate it (judged_by_record?).
+  #
+  # Full review of 2026-11-05 (rules-1): core validates every value of the
+  # other customizables (versions, users, groups, documents, enumerations)
+  # and files an error under the field's own name, so a child User.current
+  # cannot see is judged here too (validate_hidden through
+  # HiddenDependenciesValidationPatch), with the same two placements.
   module NonEditableDependencies
     module_function
 
@@ -62,11 +68,31 @@ module RedmineDependingCustomFields
     # WP-38: true for a value of a time entry that User.current cannot see.
     # validate places its D1 error (TimeEntryValidationPatch), so the formats
     # leave that error out where core still validates such a value (5.1 and
-    # 6.0): one error, never under the child's name. False for any other
-    # record: Issue and Project core validate only the editable values.
+    # 6.0): one error, never under the child's name. False for issues and
+    # projects: their core validates only the editable values. Full review
+    # (rules-1): true as well for a value User.current cannot see on any
+    # other record with custom fields (validate_hidden places its error).
     def judged_by_record?(custom_value)
       record = custom_value.customized
-      record.is_a?(::TimeEntry) && !custom_value.custom_field.visible_by?(record.project, ::User.current)
+      return false if record.nil? || record.is_a?(::Issue) || record.is_a?(::Project)
+
+      !custom_value.custom_field.visible_by?(record.try(:project), ::User.current)
+    end
+
+    # Full review (rules-1): the D1 rule for the values of +record+ that
+    # User.current cannot see (judged_by_record?), on a record whose core
+    # validates every value (versions, users, groups, documents,
+    # enumerations). Never under the child's name: on the changed parent
+    # field when User.current can see it, else on base.
+    def validate_hidden(record, values = record.custom_field_values)
+      failing = failing_values(record, values).select { |custom_value, _state| judged_by_record?(custom_value) }
+      failing.map(&:last).each do |state|
+        if state.changed? && state.parent.visible_by?(record.try(:project), ::User.current)
+          add_once(record, state.parent.name, ::I18n.t('activerecord.errors.messages.dcf_hidden_child_conflict'))
+        else
+          add_once(record, :base, ::I18n.t('error_dcf_hidden_child_conflict'))
+        end
+      end
     end
 
     # [custom value, parent state] of each depending value of +values+ with

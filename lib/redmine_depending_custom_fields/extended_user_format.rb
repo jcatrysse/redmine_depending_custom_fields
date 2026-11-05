@@ -32,14 +32,10 @@ module RedmineDependingCustomFields
 
     def possible_values_options(custom_field, object = nil)
       users = filtered_users(custom_field)
-      show_active     = boolean(custom_field.show_active)
+      show_active     = show_active?(custom_field)
       show_registered = boolean(custom_field.show_registered)
       show_locked     = boolean(custom_field.show_locked)
-
-      statuses = []
-      statuses << User::STATUS_ACTIVE if show_active
-      statuses << User::STATUS_REGISTERED if show_registered
-      statuses << User::STATUS_LOCKED if show_locked
+      statuses = statuses(custom_field)
 
       visible_users = statuses.any? ? users.where(status: statuses).to_a : []
       users_by_status = visible_users.group_by(&:status)
@@ -63,14 +59,10 @@ module RedmineDependingCustomFields
 
     def query_filter_values(custom_field, query)
       users = filtered_users(custom_field)
-      show_active     = boolean(custom_field.show_active)
+      show_active     = show_active?(custom_field)
       show_registered = boolean(custom_field.show_registered)
       show_locked     = boolean(custom_field.show_locked)
-
-      statuses = []
-      statuses << User::STATUS_ACTIVE if show_active
-      statuses << User::STATUS_REGISTERED if show_registered
-      statuses << User::STATUS_LOCKED if show_locked
+      statuses = statuses(custom_field)
 
       visible_users = statuses.any? ? users.where(status: statuses).sorted.to_a : []
       users_by_status = visible_users.group_by(&:status)
@@ -91,37 +83,64 @@ module RedmineDependingCustomFields
       options
     end
 
+    # The ids core's RecordList#validate_custom_value would accept, checked
+    # with one query on the submitted ids instead of building every option
+    # (full review of 2026-11-05, storage-api-boot-3): a user the field
+    # offers (statuses, groups, administrators, visibility), or a stored
+    # value of an existing user (value_was, as core). Anything else, a group
+    # marker included, is 'is not included in the list'.
+    def validate_custom_value(custom_value)
+      values = Array.wrap(custom_value.value).map(&:to_s).reject(&:empty?)
+      return [] if values.empty?
+
+      cf = custom_value.custom_field
+      ids = values.grep(/\A\d+\z/).map(&:to_i)
+      allowed = statuses(cf).any? && ids.any? ? filtered_users(cf).where(status: statuses(cf), id: ids).pluck(:id) : []
+      allowed = allowed.map(&:to_s)
+      stored = Array.wrap(custom_value.value_was).map(&:to_s) & (values - allowed)
+      allowed += User.where(id: stored.map(&:to_i)).pluck(:id).map(&:to_s) if stored.any?
+      (values - allowed).empty? ? [] : [::I18n.t('activerecord.errors.messages.inclusion')]
+    end
+
+    # A missing show_active counts as true, as the admin form shows it
+    # (full review of 2026-11-05, storage-api-boot-5: a field created
+    # through the API without it listed nobody).
     def before_custom_field_save(custom_field)
       super
       custom_field.group_ids     = Array(custom_field.group_ids).reject(&:blank?).map(&:to_s)
       custom_field.exclude_admins = boolean(custom_field.exclude_admins)
-      custom_field.show_active     = boolean(custom_field.show_active)
+      custom_field.show_active     = show_active?(custom_field)
       custom_field.show_registered = boolean(custom_field.show_registered)
       custom_field.show_locked     = boolean(custom_field.show_locked)
     end
 
     private
 
-    def filtered_users(custom_field)
+    def show_active?(custom_field)
+      custom_field.show_active.nil? ? true : boolean(custom_field.show_active)
+    end
+
+    def statuses(custom_field)
+      statuses = []
+      statuses << User::STATUS_ACTIVE if show_active?(custom_field)
+      statuses << User::STATUS_REGISTERED if boolean(custom_field.show_registered)
+      statuses << User::STATUS_LOCKED if boolean(custom_field.show_locked)
+      statuses
+    end
+
+    # Full review of 2026-11-05 (storage-api-boot-4): a viewer who is not an
+    # administrator gets only the users core lets that viewer see (role
+    # setting 'Users visibility', Principal.visible); its status rule is left
+    # to the field, so locked and registered users stay as the field says.
+    def filtered_users(custom_field, viewer = User.current)
       users = User.all
       group_ids = Array(custom_field.group_ids).reject(&:blank?).map(&:to_i)
       users = users.joins(:groups).where(groups: { id: group_ids }).distinct if group_ids.any?
       users = users.where(admin: false) if boolean(custom_field.exclude_admins)
+      unless viewer.nil? || viewer.admin?
+        users = users.where(id: Principal.visible(viewer).unscope(where: :status).select(:id))
+      end
       users
-    end
-
-    def cast_single_value(custom_field, value, customized = nil)
-      User.find_by_id(value.to_i)
-    end
-
-    def validate_single_value(custom_field, value, customized)
-      u = cast_single_value(custom_field, value, customized)
-      u ? [] : [::I18n.t('activerecord.errors.messages.invalid')]
-    end
-
-    def value_to_s(custom_field, value, customized = nil)
-      user = cast_single_value(custom_field, value, customized)
-      user.nil? ? '' : user.name
     end
   end
 end

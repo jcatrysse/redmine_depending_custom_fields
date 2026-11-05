@@ -20,24 +20,15 @@ module RedmineDependingCustomFields
   # Anchored: value_dependencies and the other keys stay readable.
   LOG_FILTER = /\Adependencies_json\z/.freeze
 
+  # The format classes register themselves (add in their class bodies);
+  # this registers the same instances again, for a reload. Core's
+  # FieldFormat.add takes no block (5.1 to 7.0), so label, order and
+  # edit_as come from the classes (full review of 2026-11-05,
+  # storage-api-boot-6: the blocks never ran).
   def self.register_formats
-    Redmine::FieldFormat.add FIELD_FORMAT_EXTENDED_USER, ExtendedUserFormat do |format|
-      format.label = :label_extended_user
-      format.order = 8
-      format.edit_as = 'user'
-    end
-
-    Redmine::FieldFormat.add FIELD_FORMAT_DEPENDING_LIST, DependingListFormat do |format|
-      format.label = :label_depending_list
-      format.order = 9
-      format.edit_as = 'list'
-    end
-
-    Redmine::FieldFormat.add FIELD_FORMAT_DEPENDING_ENUMERATION, DependingEnumerationFormat do |format|
-      format.label = :label_depending_enumeration
-      format.order = 10
-      format.edit_as = 'enumeration'
-    end
+    Redmine::FieldFormat.add FIELD_FORMAT_EXTENDED_USER, ExtendedUserFormat
+    Redmine::FieldFormat.add FIELD_FORMAT_DEPENDING_LIST, DependingListFormat
+    Redmine::FieldFormat.add FIELD_FORMAT_DEPENDING_ENUMERATION, DependingEnumerationFormat
   end
 
   # Appends in place, because env_config keeps a reference to this Array, and

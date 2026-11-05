@@ -1,59 +1,55 @@
 require_relative '../rails_helper'
 
+# Changed by the full review of 2026-11-05 (storage-api-boot-1): the import
+# reads the users once per import instead of Principal.detect_by_keyword over
+# User.all per token, so this spec runs against a real IssueImport and real
+# users (was a stubbed User and Principal). The matching rules are core's.
 RSpec.describe RedmineDependingCustomFields::Patches::IssueImportPatch do
-  class DummyIssueImport
-    def initialize(project, cfv)
-      @project = project
-      @cfv = cfv
-    end
+  fixtures :users
 
-    def row_value(row, token)
-      row[token]
-    end
-
-    def user
-      nil
-    end
-
-    def build_object(_row, _item)
-      cfv = @cfv
-      issue = Struct.new(:project, :custom_field_values).new(@project, [cfv])
-      issue.define_singleton_method(:editable_custom_field_values) { |_user| [cfv] }
-      issue
-    end
+  let(:project) { dcf_create_project }
+  let(:role) { dcf_create_role(permissions: [:view_issues, :add_issues, :edit_issues, :import_issues]) }
+  let(:importer) do
+    member = dcf_create_user("importer-#{SecureRandom.hex(3)}")
+    dcf_add_member(member, project, role)
+    member
+  end
+  let(:tracker) { dcf_issue_infra(project).first }
+  let(:jane) do
+    user = User.new(login: "jdoe-#{SecureRandom.hex(2)}", firstname: 'Jane', lastname: 'Doe',
+                    status: User::STATUS_ACTIVE, admin: false)
+    user.mail = "jane-#{SecureRandom.hex(2)}@example.net"
+    user.save!(validate: false)
+    dcf_add_member(user, project, role)
+    user
+  end
+  let(:field) do
+    cf = IssueCustomField.new(name: "EU-#{SecureRandom.hex(3)}", field_format: 'extended_user', is_for_all: true,
+                              multiple: true)
+    cf.show_active = '1'
+    cf.save!
+    tracker.custom_fields << cf
+    tracker.save!
+    cf
   end
 
-  before do
-    DummyIssueImport.prepend described_class
+  def imported(cell)
+    mapping = { 'project_id' => project.id.to_s, 'tracker' => "value:#{tracker.id}", 'subject' => '0',
+                "cf_#{field.id}" => '1' }
+    import = IssueImport.new(user: importer)
+    import.settings = { 'mapping' => mapping }
+    allow(User).to receive(:current).and_return(importer)
+    import.send(:build_object, ['Imported subject', cell], 1).custom_field_value(field)
   end
 
-  it 'assigns extended user values outside the project based on full name' do
-    user = Struct.new(:id, :name).new(42, 'Jane Doe')
-    user_class = Class.new do
-      define_singleton_method(:all) do
-        [user]
-      end
-
-      define_singleton_method(:find_by_id) do |id|
-        id == 42 ? user : nil
-      end
-    end
-    stub_const('User', user_class)
-
-    principal_module = Module.new do
-      def self.detect_by_keyword(users, keyword)
-        users.find { |u| u.name == keyword }
-      end
-    end
-    stub_const('Principal', principal_module)
-
-    cf = instance_double('CustomField', id: 1, field_format: RedmineDependingCustomFields::FIELD_FORMAT_EXTENDED_USER, multiple?: false)
-    cfv = Struct.new(:custom_field, :value).new(cf, nil)
-    project = instance_double('Project', users: [])
-    importer = DummyIssueImport.new(project, cfv)
-
-    importer.build_object({ 'cf_1' => 'Jane Doe' }, nil)
-
-    expect(cfv.value).to eq('42')
+  it 'assigns extended user values by full name, login, mail and id, case-insensitively' do
+    jane
+    expect(imported('Jane Doe')).to eq([jane.id.to_s])
+    expect(imported('JANE doe')).to eq([jane.id.to_s])
+    expect(imported(jane.login.upcase)).to eq([jane.id.to_s])
+    expect(imported(jane.mail.upcase)).to eq([jane.id.to_s])
+    expect(imported(jane.id.to_s)).to eq([jane.id.to_s])
+    expect(imported("Jane Doe, #{importer.login}")).to eq([jane.id.to_s, importer.id.to_s])
+    expect(imported('Nobody Here').reject(&:blank?)).to eq([])
   end
 end

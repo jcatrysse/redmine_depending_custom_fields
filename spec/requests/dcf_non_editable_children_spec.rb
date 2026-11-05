@@ -179,6 +179,14 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       [Version, User, Group].each do |klass|
         expect(klass.ancestors & [issue_patch, project_patch, time_entry_patch]).to eq([]), klass.name
       end
+      # Full review of 2026-11-05 (rules-1): the customizables whose core
+      # validates every value get the placement of a value the user cannot see.
+      hidden_patch = RedmineDependingCustomFields::Patches::HiddenDependenciesValidationPatch
+      [Version, User, Group, Document, Enumeration].each do |klass|
+        expect(klass.instance_method(:validate_custom_field_values).owner).to eq(hidden_patch), klass.name
+        expect(klass.ancestors.count(hidden_patch)).to eq(1), klass.name
+      end
+      [Issue, Project, TimeEntry].each { |klass| expect(klass.ancestors).not_to include(hidden_patch) }
     end
   end
 
@@ -878,7 +886,9 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       issue = stored_issue
       wizard(issue, parent => 'B')
       expect(response).to have_http_status(422)
-      expect(JSON.parse(response.body)['errors']).to eq(["#{parent.name} #{hidden_message}"])
+      # Changed by the full review of 2026-11-05 (context-menu-4): each error
+      # names its issue (was the message alone).
+      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{parent.name} #{hidden_message}"])
       expect(leaks?(response.body, child)).to be(false), response.body
       expect(stored(issue, parent)).to eq('A')
     end
@@ -888,7 +898,7 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       read_only(issue, child)
       wizard(issue, parent => 'B')
       expect(response).to have_http_status(422)
-      expect(JSON.parse(response.body)['errors']).to eq(["#{child.name} #{invalid}"])
+      expect(JSON.parse(response.body)['errors']).to eq(["##{issue.id}: #{child.name} #{invalid}"])
     end
 
     it 'saves an unrelated value while the parent is unchanged and a hidden child holds a legacy value' do
@@ -1218,8 +1228,12 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
     end
   end
 
+  # Changed by the full review of 2026-11-05 (rules-1): a hidden child is
+  # never named on these records either; the error goes on the changed
+  # parent field (was 'is invalid' under the hidden child and nothing on the
+  # parent, accepted under UD-07).
   describe 'other customizables (core validates every value)' do
-    it 'names a hidden version child once and adds nothing on the parent' do
+    it 'never names a hidden version child and puts the error on the parent' do
       vparent, vchild = build_pair(type: VersionCustomField)
       vchild.update!(visible: false)
       allow(User).to receive(:current).and_return(user)
@@ -1230,7 +1244,7 @@ RSpec.describe 'Depending children the user cannot edit (WP-09b, UD-07)', type: 
       expect(version.editable_custom_field_values(user).map(&:custom_field_id)).not_to include(vchild.id)
       version.custom_field_values = { vparent.id.to_s => 'B' }
       expect(version.valid?).to be(false)
-      expect([version.errors[vchild.name], version.errors[vparent.name]]).to eq([[invalid], []])
+      expect([version.errors[vchild.name], version.errors[vparent.name]]).to eq([[], [hidden_message]])
     end
   end
 

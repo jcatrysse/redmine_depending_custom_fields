@@ -210,7 +210,7 @@ RSpec.describe 'Custom field cycle validation' do
           expect(field.save).to be(true), field.errors.full_messages.inspect
           field = CustomField.find(field.id)
           expect(rules.effective_parent_id(field)).to be_nil
-          expect(rules.in_cycle?(field)).to be(false)
+          expect(rules.cycle_member_ids(field)).to eq([])
         end
       end
 
@@ -238,13 +238,13 @@ RSpec.describe 'Custom field cycle validation' do
           x = CustomField.find(world.x.id)
           x.update!(parent_custom_field_id: root.id)
           expect(stored_parent(x)).to eq(root.id)
-          expect(rules.in_cycle?(CustomField.find(world.y.id))).to be(false)
+          expect(rules.cycle_member_ids(CustomField.find(world.y.id))).to eq([])
           expect(rules.effective_parent_id(CustomField.find(world.y.id))).to eq(world.x.id)
 
           b = CustomField.find(world.b.id)
           b.update!(parent_custom_field_id: '')
           expect(stored_parent(b)).to eq('')
-          expect(rules.in_cycle?(CustomField.find(world.a.id))).to be(false)
+          expect(rules.cycle_member_ids(CustomField.find(world.a.id))).to eq([])
         end
 
         it 'refuse a new parent among the descendants, the field itself included' do

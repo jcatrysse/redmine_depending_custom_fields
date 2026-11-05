@@ -1,3 +1,5 @@
+require 'set'
+
 module RedmineDependingCustomFields
   # Single source of truth for which custom fields a project may configure, the
   # supported-format set, the standard-format kill-switch read rule, and the
@@ -54,11 +56,14 @@ module RedmineDependingCustomFields
     # :project. The one rule of the scope banner and badge, the dependency
     # page checkbox, the sort buttons and the services' confirmation
     # (UD-23, WP-34).
-    def scope(field, project)
+    # +shared_ids+ (OverviewCounts#shared) when the caller counted them; one
+    # exists? query otherwise (full review of 2026-11-05, project-pages-3:
+    # was every enabled project loaded).
+    def scope(field, project, shared_ids: nil)
       return :global if field.is_a?(ProjectCustomField) || field.is_for_all?
 
-      others = field.projects.reject { |p| p.id == project.id }
-      others.any? ? :shared : :project
+      shared = shared_ids ? shared_ids.include?(field.id) : field.projects.where.not(id: project.id).exists?
+      shared ? :shared : :project
     end
 
     # Type + project-scope membership, ignoring format. Used by the controller
@@ -75,35 +80,48 @@ module RedmineDependingCustomFields
       in_project?(field, project) && supported_format?(field)
     end
 
-    # All supported, project-relevant fields, with :projects and :enumerations
-    # preloaded so the overview avoids N+1 (independent-review fix #13).
-    #
-    # The two field types are queried separately on purpose: +:projects+ is a
-    # habtm defined only on IssueCustomField, so preloading it on the STI base
-    # (a mix of IssueCustomField and ProjectCustomField) raises
-    # AssociationNotFoundError under Rails 7 / Redmine 6, where the preloader
-    # groups records by concrete class and requires the association on each
-    # (GitHub #13). +:enumerations+ lives on the CustomField base, so both
-    # queries can preload it.
+    # All supported, project-relevant fields, by position and id. Nothing is
+    # preloaded (full review of 2026-11-05, project-pages-3): the overview
+    # tab, which core renders on every settings page, needs counts only
+    # (overview_counts), never every enumeration or enabled project.
     def relevant_fields(project)
       issue_ids = project.all_issue_custom_fields.map(&:id)
 
       issue_fields = if issue_ids.any?
-                       IssueCustomField.where(id: issue_ids)
-                                       .where(field_format: SUPPORTED_VALUE_FORMATS)
-                                       .includes(:projects, :enumerations).to_a
+                       IssueCustomField.where(id: issue_ids).where(field_format: SUPPORTED_VALUE_FORMATS).to_a
                      else
                        []
                      end
 
       # Project custom fields are not per-project scoped, so every one is a
       # candidate; query them directly by format (no id round trip).
-      project_fields = ProjectCustomField.where(field_format: SUPPORTED_VALUE_FORMATS)
-                                         .includes(:enumerations).to_a
+      project_fields = ProjectCustomField.where(field_format: SUPPORTED_VALUE_FORMATS).to_a
 
       (issue_fields + project_fields)
         .select { |f| supported_format?(f) }
         .sort_by { |f| [f.position || 0, f.id] }
+    end
+
+    # The counts of the overview rows of +fields+ in three grouped queries:
+    # value_counts (enumeration rows per field), project_counts (enabled
+    # projects per issue field, any status) and shared (issue fields enabled
+    # in a project other than +project+).
+    OverviewCounts = Struct.new(:value_counts, :project_counts, :shared, keyword_init: true)
+
+    def overview_counts(fields, project)
+      ids = fields.map(&:id)
+      issue_ids = fields.grep(IssueCustomField).map(&:id)
+      enum_ids = fields.select { |f| enum_family?(f) }.map(&:id)
+      values = enum_ids.empty? ? {} : CustomFieldEnumeration.where(custom_field_id: enum_ids).group(:custom_field_id).count
+      projects = {}
+      shared = Set.new
+      unless issue_ids.empty?
+        enabled = IssueCustomField.where(id: issue_ids).joins(:projects)
+        projects = enabled.group("#{CustomField.table_name}.id").count
+        shared = Set.new(enabled.where.not(Project.table_name => { id: project.id }).distinct
+                                .pluck("#{CustomField.table_name}.id"))
+      end
+      OverviewCounts.new(value_counts: values.slice(*ids), project_counts: projects, shared: shared)
     end
 
     # Depending child fields that name +field+ as their parent. Applies to

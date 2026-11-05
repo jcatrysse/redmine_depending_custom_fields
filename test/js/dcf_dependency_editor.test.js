@@ -527,6 +527,44 @@ test('per-parent default: disabled without links, enabled after a tick, multiple
   assert.deepEqual(p.payload().default_value_dependencies, { Belgium: ['Brussels'] });
 });
 
+// Full review of 2026-11-05 (admin-editor-2): a link toggle changes one
+// option of the per-parent default select in place, in child order; the
+// select is not rebuilt (a rebuild is one option per linked child per click).
+test('a link toggle adds or removes one default option in place, in child order', async () => {
+  for (const multiple of [false, true]) {
+    const p = await E.load('admin_list');
+    if (multiple) {
+      const box = p.document.querySelector('#custom_field_multiple');
+      box.checked = true;
+      p.fire(box, 'change');
+    }
+    const belgium = p.open(p.section('Belgium'));
+    const select = belgium.querySelector('select[data-dcf-ed-default]');
+    const values = () => Array.from(select.options).map((o) => o.value).filter((v) => v !== '');
+    assert.deepEqual(values(), ['Antwerp', 'Brussels']);
+    p.tick(belgium, 'Lyon');
+    assert.equal(belgium.querySelector('select[data-dcf-ed-default]'), select, 'same select after a tick');
+    assert.deepEqual(values(), ['Antwerp', 'Brussels', 'Lyon']);
+    p.tick(belgium, 'Paris');
+    assert.deepEqual(values(), ['Antwerp', 'Brussels', 'Paris', 'Lyon']);
+    p.tick(belgium, 'Brussels', false);
+    assert.equal(belgium.querySelector('select[data-dcf-ed-default]'), select, 'same select after an untick');
+    assert.deepEqual(values(), ['Antwerp', 'Paris', 'Lyon']);
+    assert.deepEqual(Array.from(select.selectedOptions).map((o) => o.value).filter((v) => v !== ''), []);
+    const shown = belgium.querySelector('.dcf-dep-section__default');
+    assert.ok(!shown || shown.textContent === '', 'no default shown');
+    p.clock.tick(150);
+    assert.equal(p.payload().default_value_dependencies.Belgium, undefined);
+    ['Antwerp', 'Paris', 'Lyon'].forEach((key) => p.tick(belgium, key, false));
+    assert.equal(select.disabled, true);
+    if (multiple) assert.equal(belgium.querySelector('button[data-dcf-ed-clear-default]').disabled, true);
+    p.tick(belgium, 'Paris');
+    assert.equal(select.disabled, false);
+    assert.deepEqual(values(), ['Paris']);
+    if (multiple) assert.equal(belgium.querySelector('button[data-dcf-ed-clear-default]').disabled, false);
+  }
+});
+
 test('inactive values carry a badge and keep their links; enumeration hint (admin_enumeration)', async () => {
   for (const variant of VARIANTS) {
     const p = await E.load('admin_enumeration', { variant });

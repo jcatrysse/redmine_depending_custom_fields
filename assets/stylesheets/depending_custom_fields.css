@@ -1,4 +1,4 @@
-.depending-child { margin-left: 20px; }
+.depending-child { margin-inline-start: 20px; }
 
 /* Issue-form runtime (frontend design 8). Core's em.info and
    .check_box_group label set display:block, which beats [hidden]. */
@@ -49,7 +49,7 @@ label.dcf-legacy-option { font-style: italic; }
 }
 
 .cf-wizard .cf-col {
-  margin-right: 10px;
+  margin-inline-end: 10px;
   display: flex;
   flex-direction: column;
 }

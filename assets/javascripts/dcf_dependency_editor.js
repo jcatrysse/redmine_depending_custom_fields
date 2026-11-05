@@ -811,12 +811,53 @@
     }
   };
 
+  // One link of an open section changed (full review of 2026-11-05,
+  // admin-editor-2): adds or removes that child's option of the default
+  // select in place, in child order, instead of rebuilding the select (one
+  // option per linked child per click on a large list). Unlinking also
+  // dropped it from the defaults (State#link), so a removed option is never
+  // left chosen. Without the select the whole control is built.
+  Editor.prototype.defaultOption = function (entry, key, on) {
+    var select = entry.defaultRow.querySelector('select[data-dcf-ed-default]');
+    var item = this.children.byKey.get(key);
+    if (!select || !item) {
+      this.defaultControl(entry);
+      return;
+    }
+    var options = select.options;
+    var existing = null;
+    var before = null;
+    for (var i = 0; i < options.length; i++) {
+      var value = options[i].value;
+      if (value === '') continue;
+      if (value === key) {
+        existing = options[i];
+        break;
+      }
+      var other = this.children.byKey.get(value);
+      if (!before && other && other.index > item.index) before = options[i];
+    }
+    if (on && !existing) {
+      var option = el('option', null, item.label);
+      option.value = item.key;
+      select.insertBefore(option, before);
+    } else if (!on && existing) {
+      select.removeChild(existing);
+    }
+    var linked = options.length - (this.multiple ? 0 : 1);
+    select.disabled = linked === 0;
+    var clear = entry.defaultRow.querySelector('button[data-dcf-ed-clear-default]');
+    if (clear) clear.disabled = linked === 0;
+  };
+
   // Refreshes a section after its links changed (summary, defaults,
-  // checkboxes, button counts).
-  Editor.prototype.refreshSection = function (entry, rows) {
+  // checkboxes, button counts). +toggled+ (one child key) and +on+: only
+  // that link changed, so the default select changes in place.
+  Editor.prototype.refreshSection = function (entry, rows, toggled, on) {
     this.summary(entry);
     if (!entry.body) return;
-    this.defaultControl(entry);
+    if (toggled === undefined) this.defaultControl(entry);
+    else this.defaultOption(entry, toggled, on);
     if (rows) {
       var state = this.state;
       var pk = entry.item.key;
@@ -1224,8 +1265,9 @@
     if (target.hasAttribute('data-dcf-ed-child-key')) {
       var entry = this.entryFor(target);
       if (!entry) return;
-      this.state.link(entry.item.key, target.getAttribute('data-dcf-ed-child-key'), target.checked);
-      this.refreshSection(entry, false);
+      var childKey = target.getAttribute('data-dcf-ed-child-key');
+      this.state.link(entry.item.key, childKey, target.checked);
+      this.refreshSection(entry, false, childKey, target.checked);
       this.changed();
     } else if (target.hasAttribute('data-dcf-ed-default')) {
       var section = this.entryFor(target);

@@ -23,7 +23,7 @@
       <% @events.each do |event| %>
         <tr>
           <td><%= format_time(event.created_at) %></td>
-          <td><%= h(event.project&.name || event.project_id) %></td>
+          <td><%= h(@project_names[event.project_id] || event.project_id) %></td>
           <td><%= h(event.acting_user_name) %></td>
           <td><%= h(event.custom_field_name) %></td>
           <td><%= h(event.action) %></td>

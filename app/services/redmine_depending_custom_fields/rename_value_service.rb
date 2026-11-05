@@ -26,11 +26,10 @@ module RedmineDependingCustomFields
       raise OperationError.new(:error_field_not_found, http_status: :not_found) unless possible_values.include?(old)
       raise OperationError.new(:error_value_duplicate) if nv != old && possible_values.include?(nv)
 
-      usage_here  = UsageCalculator.usage_here(field, old, project)
-      usage_other = UsageCalculator.usage_other(field, old, project)
+      usage_here, usage_other = UsageCalculator.usage_split(field, old, project)
       own_refs    = UsageCalculator.own_dep_refs(field, old)
-      parent_refs = UsageCalculator.parent_key_refs(field, old)
-      affected    = UsageCalculator.affected_child_fields(field, old)
+      parent_refs = UsageCalculator.parent_key_refs(field, old, children: dependent_children)
+      affected    = UsageCalculator.affected_child_fields(field, old, children: dependent_children)
 
       if !confirmed? && (usage_other.positive? || shared_or_global? || own_refs.positive? || parent_refs.positive?)
         raise ConfirmationRequired.new(build_impact(old, usage_here, usage_other, own_refs, parent_refs, affected))
@@ -58,6 +57,7 @@ module RedmineDependingCustomFields
       nv = normalize(@params[:new_value])
       raise OperationError.new(:error_value_blank) if nv.blank?
 
+      check_enum_name_length!(nv) unless nv == enum.name
       dup = field.enumerations.where(active: true).where.not(id: enum.id).pluck(:name)
       raise OperationError.new(:error_value_duplicate) if dup.include?(nv)
 

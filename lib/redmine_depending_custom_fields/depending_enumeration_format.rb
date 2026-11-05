@@ -38,10 +38,14 @@ module RedmineDependingCustomFields
     # project when that maps a non-empty set, all values otherwise. Without
     # an effective parent (in or below a stored cycle, a self-parent, another
     # type or family, dangling) the field is unconstrained, as in
-    # validation (UD-08, UD-35). No parent lookup without a project.
+    # validation (UD-08, UD-35). Only a project field can be restricted (its
+    # parent is a project field the project carries); for an issue or time
+    # entry field, and without a project, nothing of the project is read
+    # (full review of 2026-11-05, rules-6).
     def query_filter_values(custom_field, query = nil)
       raw = super(custom_field, query)
       project = query&.project
+      project = nil unless project && DependencyRules.carries?(custom_field, project)
       parent_id = project && DependencyRules.effective_parent_id(custom_field, DependencyRules.lookup_records(project))
       parent_values = parent_id ? Array(project.custom_field_value(parent_id)).map(&:to_s) : []
       mapping = custom_field.value_dependencies || {}

@@ -40,14 +40,17 @@ RSpec.describe RedmineDependingCustomFields::Hooks::ContextMenuHook do
     klass.new(controller_graph, view_context)
   end
 
-  def allow_edit(on = [project1, project2])
-    on.each { |project| allow(user).to receive(:allowed_to?).with(:edit_issues, project).and_return(true) }
+  # Changed by the full review of 2026-11-05 (context-menu-3): the gate is
+  # core's Issue#attributes_editable? (tracker permissions included), as the
+  # edit entries of core's menu; was user.allowed_to?(:edit_issues, project).
+  def allow_edit(on = [issue1, issue2])
+    on.each { |issue| allow(issue).to receive(:attributes_editable?).with(user).and_return(true) }
   end
 
   context 'when the user lacks the edit permission on one issue' do
     before do
-      allow(user).to receive(:allowed_to?).with(:edit_issues, project1).and_return(true)
-      allow(user).to receive(:allowed_to?).with(:edit_issues, project2).and_return(false)
+      allow(issue1).to receive(:attributes_editable?).with(user).and_return(true)
+      allow(issue2).to receive(:attributes_editable?).with(user).and_return(false)
     end
 
     it 'builds nothing and renders nothing' do

@@ -171,8 +171,6 @@
     this.byKey = new Map();
     this.labelIndex = null;
   }
-  ValueList.prototype.has = function (key) { return this.byKey.has(String(key)); };
-  ValueList.prototype.get = function (key) { return this.byKey.get(String(key)); };
   ValueList.prototype.keys = function () { return this.items.map(function (item) { return item.key; }); };
 
   // The compact wire shape of DependencyEditorConfig.wire_values (editor
@@ -754,6 +752,8 @@
   }
 
   // kind 'enumeration' turns the '#<id>' step on; any other kind is names only.
+  // The public seam of candidates for tests and integrators: the import
+  // (parseImport) calls candidates itself, so the two cannot differ.
   ValueList.prototype.match = function (cell, kind) {
     return candidates(this, cell, kind === 'enumeration').slice();
   };

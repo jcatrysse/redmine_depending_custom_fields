@@ -1152,6 +1152,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         expect(response.body).not_to include(I18n.t(:text_dcf_parent_missing))
       end
 
+      # Changed by the full review of 2026-11-05 (project-pages-1): a parent
+      # that is not used in the project is named to an administrator only;
+      # the manager gets text_dcf_parent_not_available_generic (was the
+      # named notice for the manager too).
       it 'renders text_dcf_parent_not_available with the parent name escaped once; a PATCH gives 404 (T-DEPJ-12)' do
         other = dcf_create_project(name: 'Other')
         away = dcf_list_field(name: "Away <b>#{SecureRandom.hex(3)}</b>", values: %w[A], is_for_all: false,
@@ -1163,12 +1167,19 @@ RSpec.describe 'Project custom field configuration', type: :request do
         get page_path(field)
 
         expect(response).to have_http_status(200)
+        expect(doc.at_css('p.warning').text.strip).to eq(I18n.t(:text_dcf_parent_not_available_generic))
+        expect(response.body).not_to include(ERB::Util.html_escape(away.name))
+        expect(doc.css('fieldset[data-dcf-editor], [data-dcf-editor-submit]')).to be_empty
+
+        as(dcf_admin)
+        get page_path(field)
         notice = doc.at_css('p.warning')
         expect(notice.text.strip).to eq(I18n.t(:text_dcf_parent_not_available, name: away.name))
         expect(notice.css('b')).to be_empty
         expect(notice.inner_html).to include(ERB::Util.html_escape(away.name))
         expect(response.body).not_to include('&amp;lt;')
         expect(doc.css('fieldset[data-dcf-editor], [data-dcf-editor-submit]')).to be_empty
+        as(manager)
 
         save(field, '{')
         expect(response).to have_http_status(404)
@@ -1195,9 +1206,11 @@ RSpec.describe 'Project custom field configuration', type: :request do
             expect(doc.at_css('div.flash.warning').text.strip).to eq(I18n.t(:text_global_field_warning, locale: lang))
             get page_path(missing)
             expect(doc.at_css('p.nodata').text.strip).to eq(I18n.t(:text_dcf_parent_missing, locale: lang))
+            # Changed by the full review of 2026-11-05 (project-pages-1): the
+            # generic notice for the manager; was the named one.
             get page_path(unavailable)
             expect(doc.at_css('p.warning').text.strip)
-              .to eq(I18n.t(:text_dcf_parent_not_available, locale: lang, name: away.name))
+              .to eq(I18n.t(:text_dcf_parent_not_available_generic, locale: lang))
             expect(response.body).not_to match(/translation[ _]missing/i)
           end
         end
@@ -4024,7 +4037,10 @@ RSpec.describe 'Project custom field configuration', type: :request do
         end
         row = rows(parent).last
         expect([row.status, row.error_message]).to eq(%w[validation_failed error_dcf_mapping_too_large])
-        expect(row.changes_summary).to include("custom field ##{child.id}")
+        # Changed by the full review of 2026-11-05 (project-pages-7): no id of
+        # the hidden field (was 'custom field #<id>' in the summary).
+        expect(row.changes_summary).to match(/\Aformat_store: \d+ bytes exceeds \d+\z/)
+        expect(row.changes_summary).not_to include("##{child.id}")
         expect(parent.reload.possible_values).to eq(%w[A B])
       end
     end

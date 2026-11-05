@@ -22,11 +22,17 @@ RSpec.describe 'Format singleton state' do
   scanned = %w[depending_format_methods.rb depending_list_format.rb depending_enumeration_format.rb
                dependency_rules.rb extended_user_format.rb non_editable_dependencies.rb
                patches/issue_validation_patch.rb patches/project_validation_patch.rb
+               patches/hidden_dependencies_validation_patch.rb
                client_data.rb hooks/read_only_carrier_hook.rb
                client_config.rb hooks/view_layouts_base_html_head_hook.rb
                dependency_payload.rb dependency_editor_config.rb]
             .map { |name| File.join(lib_dir, name) }
-  allowed_writes = { 'dependency_payload.rb' => %w[@reason @bytes] }
+  # Full review of 2026-11-05 (rules-5): ProjectValidationPatch#copy keeps
+  # the source of Project#copy on that project record for its first save,
+  # as core's Issue#copy_from keeps @copied_from (record state, not format
+  # or module state).
+  allowed_writes = { 'dependency_payload.rb' => %w[@reason @bytes],
+                     'project_validation_patch.rb' => %w[@dcf_copied_from] }
 
   # Names of the instance, class and global variables the source assigns
   # (=, op-assign, multiple assignment, rescue =>, inside blocks), plus the

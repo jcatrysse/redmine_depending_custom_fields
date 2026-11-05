@@ -20,6 +20,9 @@
 }
 .dcf-dep-editor .dcf-hidden,
 .tabular p.dcf-hidden { display: none !important; }
+/* The editor hides parts with the hidden attribute; the flex rules below
+   would beat the browser's [hidden] rule, and Redmine has no global one. */
+.dcf-dep-editor [hidden] { display: none !important; }
 .dcf-dep-editor__toolbar,
 .dcf-dep-section__tools,
 .dcf-dep-editor__options {

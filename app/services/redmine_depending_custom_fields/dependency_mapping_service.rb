@@ -36,7 +36,13 @@ module RedmineDependingCustomFields
     def perform!
       parent = DependencyRules.parent_of(field)
       raise OperationError.new(:error_invalid_dependency) unless parent
-      raise OperationError.new(:error_field_not_found, http_status: :not_found) unless FieldRelevance.relevant?(parent, project)
+      # Full review of 2026-11-05: a parent the user may not see is never
+      # read (its labels would reach the audit summary), and a standard
+      # parent counts whatever the standard-field setting says; the page
+      # uses the same rule (prepare_dependencies).
+      unless FieldRelevance.in_project?(parent, project) && nameable_field?(parent)
+        raise OperationError.new(:error_field_not_found, http_status: :not_found)
+      end
 
       input = read_input!
       parent_labels = labels(parent)
