@@ -1,4 +1,8 @@
 RedmineApp::Application.routes.draw do
+  # Context menu wizard body (WP-36, HTML, session only). Declared before
+  # depending_custom_fields/:id, which would take it as the API show; the
+  # optional format is matched here only so that the action refuses it.
+  get 'depending_custom_fields/wizard(.:format)', to: 'context_menu_wizard#show', as: 'depending_custom_fields_wizard'
   match 'depending_custom_fields', :to => 'depending_custom_fields_api#index', :via => :get, :format => 'json'
   match 'depending_custom_fields/:id', :to => 'depending_custom_fields_api#show', :via => :get, :format => 'json'
   match 'depending_custom_fields', :to => 'depending_custom_fields_api#create', :via => :post, :format => 'json'

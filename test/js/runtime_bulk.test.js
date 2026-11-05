@@ -412,20 +412,27 @@ test('bulk multi child: a user pick of __none__ plus values is left as is', asyn
   invariants(pg);
 });
 
-// The wizard template is inert; cloned into the container as
-// context_menu_wizard.js does, it is a bulk form of its own.
+// The fetched wizard body, inserted into the container as
+// context_menu_wizard.js does, is a bulk form of its own.
 // WP-18: the regenerated fixture (implicit labels, data-dcf-wizard-field,
 // no data-field-id, root on '(no change)'); W1..W6 are in runtime_wizard.test.js.
-test('wizard template: inert until cloned, then bulk context scoped to its form', async () => {
-  const pg = await load(`${F.read('list_single')}${F.read('wizard_template')}`);
+// Changed by WP-36 (UD-13 changed by the owner): the GET body (wizard_body)
+// parsed and imported into the container; was the inline template, inert
+// until cloned.
+function insertBody(pg, container) {
+  const parsed = new pg.window.DOMParser().parseFromString(F.read('wizard_body'), 'text/html');
+  container.appendChild(pg.document.importNode(parsed.querySelector('form'), true));
+}
+
+test('wizard body: inert until inserted, then bulk context scoped to its form', async () => {
+  const pg = await load(`${F.read('list_single')}${F.read('wizard_entry')}`);
   const issueChild = pg.document.querySelector('#issue-form [data-dcf-field="9100002"]');
-  assert.equal(pg.document.querySelectorAll('#context-menu [data-dcf-state]').length, 0);
-  assert.equal(pg.document.querySelector('template').content.querySelectorAll('[data-dcf-state]').length, 0);
+  assert.equal(pg.document.querySelectorAll('#context-menu [data-dcf-state], #context-menu select').length, 0);
   const container = pg.document.createElement('div');
   container.id = 'cf-wizard-container';
   container.className = 'context-menu cf-wizard';
   pg.document.body.appendChild(container);
-  container.appendChild(pg.document.querySelector('template').content.cloneNode(true));
+  insertBody(pg, container);
   await D.microtask();
   const form = container.querySelector('form.cf-wizard-form');
   const middle = D.control(form, '9100002');
@@ -497,14 +504,15 @@ test('bulk re-dispatch: a listener that re-dispatches runtime changes keeps the 
 });
 
 // WP-18 makes context_menu_wizard.js call init(container) right after the
-// clone; the observer pass that follows must then be a no-op.
-test('wizard: init(container) right after cloning, then the observer pass writes and dispatches nothing', async () => {
-  const pg = await load(F.read('wizard_template'));
+// clone; the observer pass that follows must then be a no-op. Changed by
+// WP-36: right after the fetched body is inserted; was the clone.
+test('wizard: init(container) right after inserting the body, then the observer pass writes and dispatches nothing', async () => {
+  const pg = await load(F.read('wizard_entry'));
   const container = pg.document.createElement('div');
   container.id = 'cf-wizard-container';
   container.className = 'context-menu cf-wizard';
   pg.document.body.appendChild(container);
-  container.appendChild(pg.document.querySelector('template').content.cloneNode(true));
+  insertBody(pg, container);
   pg.window.DependingCustomFields.init(container);
   const form = container.querySelector('form');
   assert.equal(D.state(D.control(form, '9100002')), 'unfiltered');

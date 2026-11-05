@@ -202,7 +202,9 @@ RSpec.describe 'Bulk updates of depending fields (WP-19)', type: :request do
       issue = kit_issue(project, root => 'A', CustomField.find(middle.id) => 'a1', leaf => 'x1')
       post '/issues/context_menu', params: { ids: [issue.id] }
       expect(response).to have_http_status(200)
-      template = doc.at_css("template#cf-wizard-#{root.id}")
+      # Changed by WP-36 (UD-13 changed by the owner): the fetched body of the
+      # menu entry; was the inline template of the menu.
+      template = dcf_wizard_form(doc, root)
       select = template.at_css("select[name='issue[custom_field_values][#{middle.id}]']")
 
       expect(options_of(select)).to eq([['', nil], ['a1', nil], ['a2', nil], ['b1', nil]])

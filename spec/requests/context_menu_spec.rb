@@ -84,18 +84,23 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
     menu.css('li.folder.cf-parent').map { |li| li['data-parent-id'].to_i }
   end
 
-  # Ids of the fields in each data-level column of the wizard template.
+  # Ids of the fields in each data-level column of the wizard. Changed by
+  # WP-36 (UD-13 changed by the owner): the body is fetched for the menu
+  # entry (dcf_wizard_form); was the inline template#cf-wizard-<id>.
   def wizard_levels(menu, parent_field)
-    template = menu.at_css("template#cf-wizard-#{parent_field.id}")
-    return nil unless template
+    form = dcf_wizard_form(menu, parent_field)
+    return nil unless form
 
-    template.css('div.cf-col').map do |col|
+    form.css('div.cf-col').map do |col|
       col.css('select').map { |s| s['name'][/\[(\d+)\]\z/, 1].to_i }
     end
   end
 
+  # Changed by WP-36: the selects of the menu and of the fetched body of
+  # every wizard entry (the menu holds none since WP-36); was the menu only.
   def select_names(menu)
-    menu.css('select').map { |s| s['name'] }
+    forms = wizard_roots(menu).filter_map { |id| dcf_wizard_form(menu, id) }
+    (menu.css('select').to_a + forms.flat_map { |form| form.css('select').to_a }).map { |s| s['name'] }
   end
 
   def none
@@ -274,9 +279,11 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(wizard_roots(open_menu([issue_on(tracker), issue_on(tracker)]))).to eq([parent.id])
     end
 
+    # Changed by WP-36: twice, once for the menu entry and once for the
+    # fetched body (each request checks the levels itself); was once.
     it 'checks the wizard levels for the user of the edit gate' do
       expect(RedmineDependingCustomFields::ParentDetector).to receive(:wizard_levels)
-        .with(parent, kind_of(Array), graph: kind_of(graph_class), user: dcf_admin).and_call_original
+        .with(parent, kind_of(Array), graph: kind_of(graph_class), user: dcf_admin).twice.and_call_original
 
       expect(wizard_levels(open_menu([issue_on(tracker)]), parent)).to eq([[parent.id], [child.id]])
     end
@@ -314,8 +321,10 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
 
     before { as(dcf_admin) }
 
-    def form_of(menu)
-      menu.at_css("template#cf-wizard-#{parent.id} form.cf-wizard-form")
+    # Changed by WP-36: the form of the fetched body (dcf_wizard_form); was
+    # the form inside the inline template of the menu.
+    def form_of(menu, env: {})
+      dcf_wizard_form(menu, parent, env: env)
     end
 
     it 'posts to the named save route' do
@@ -327,7 +336,8 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
     end
 
     it 'prefixes the form action with the relative URL root' do
-      form = form_of(open_menu([issue_on(tracker)], env: { 'SCRIPT_NAME' => '/redmine' }))
+      env = { 'SCRIPT_NAME' => '/redmine' }
+      form = form_of(open_menu([issue_on(tracker)], env: env), env: env)
 
       expect(form['action']).to eq('/redmine/depending_custom_fields/save')
     end
@@ -336,21 +346,27 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
     # the carriers with each other. Flipped by WP-18: was 'keeps the markup
     # the legacy wizard script reads' with a data-field-id on the select and
     # the span beside it; now data-dcf-wizard-field wraps an implicit label
-    # (UX-13) and the select opens on '(no change)' (UD-11).
-    it 'keeps the entry and form markup and wraps each field in an implicit label' do
+    # (UX-13) and the select opens on '(no change)' (UD-11). Flipped by WP-36
+    # (UD-13 changed by the owner): the entry carries the wizard URL and no
+    # data-template-id, the menu holds no template, form or select, and the
+    # form is the fetched body; was the entry and the template with their
+    # data-template-id.
+    it 'keeps the entry markup with the wizard URL, and the fetched form wraps each field in an implicit label' do
       issues = [issue_on(tracker), issue_on(tracker)]
       ids = issues.map { |i| i.id.to_s }
       menu = open_menu(issues)
       entry = menu.at_css("li.folder.cf-parent[data-parent-id='#{parent.id}']")
-      form = form_of(menu)
       joined = entry['data-issue-ids']
 
       expect(joined.split(',')).to match_array(ids)
-      expect(entry['data-template-id']).to eq("cf-wizard-#{parent.id}")
-      expect(entry.at_css('a.submenu')['data-template-id']).to eq("cf-wizard-#{parent.id}")
-      expect([form['data-parent-id'], form['data-issue-ids']]).to eq([parent.id.to_s, joined])
-      expect(form.css("input[type=hidden][name='ids[]']").map { |i| i['value'] }).to eq(joined.split(','))
-      expect(form.at_css("input[type=hidden][name='issue_ids']")['value']).to eq(joined)
+      expect(entry['data-wizard-url']).to eq('/depending_custom_fields/wizard')
+      expect(entry['data-template-id']).to be_nil
+      expect(entry.at_css('a.submenu').attribute_nodes.map(&:name)).to eq(%w[href class])
+      expect(menu.css('template, form, select, option, input')).to be_empty
+      form = form_of(menu)
+      expect([form['data-parent-id'], form['data-issue-ids'].split(',')]).to match([parent.id.to_s, match_array(ids)])
+      expect(form.css("input[type=hidden][name='ids[]']").map { |i| i['value'] }).to eq(form['data-issue-ids'].split(','))
+      expect(form.at_css("input[type=hidden][name='issue_ids']")['value']).to eq(form['data-issue-ids'])
       expect(form.at_css("input[type=hidden][name='authenticity_token']")).not_to be_nil
       expect(form.css('div.cf-cols > div.cf-col').map { |col| col['data-level'] }).to eq(%w[0 1])
       fields = form.css('div.cf-col > div.cf-wizard-field')
@@ -364,6 +380,9 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(form.css('option[selected]')).to be_empty
     end
 
+    # Changed by WP-36: the menu holds the name in the entry only, the
+    # description and the label are checked in the fetched body; was both in
+    # the menu.
     it 'escapes field names and descriptions exactly once' do
       raw = '<b>"x"&'
       parent.update!(name: raw, description: raw)
@@ -374,7 +393,33 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(response.body).not_to include('&amp;lt;')
       expect(response.body).not_to include('&amp;quot;')
       expect(menu.at_css("li.cf-parent[data-parent-id='#{parent.id}'] a.submenu").text).to eq(raw)
-      expect(form_of(menu).at_css('span.field-description')['title']).to eq(raw)
+      form = form_of(menu)
+      expect(response.body).not_to include(raw)
+      expect(response.body).not_to include('&amp;lt;')
+      expect(form.at_css('span.field-description')['title']).to eq(raw)
+      expect(form.at_css('span.field-description').text).to eq(raw)
+    end
+  end
+
+  # WP-36 (UD-13 changed by the owner): the menu carries the entry only, so
+  # its size does not depend on the number of values of any field.
+  describe 'menu entry size' do
+    before { as(dcf_admin) }
+
+    it 'renders the same entry for a child of 2 and of 300 values, apart from ids and the root name' do
+      parts = [2, 300].map do |n|
+        root = dcf_list_field(values: %w[A B], name: "SizeRoot-#{SecureRandom.hex(3)}")
+        kid = depending(root, values: Array.new(n) { |i| "value-#{i}" })
+        post_menu([issue_on(tracker_with(root, kid))])
+        body = response.body
+        start = body.index('<li class="folder cf-parent"')
+        finish = body.index('</li>', start) + '</li>'.size
+        expect(body[finish..]).not_to include('cf-parent')
+        body[start...finish].sub(root.name, 'ROOT').gsub(/\d+/, 'N')
+      end
+
+      expect(parts.uniq.size).to eq(1)
+      expect(parts.first.bytesize).to be <= 1024
     end
   end
 
@@ -433,13 +478,17 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       read_only(grandchild, other_status)
       selection = [first, second]
       menu = open_menu(selection)
-      offered = menu.css('template select').map { |s| s['name'][/\[(\d+)\]\z/, 1].to_i }.uniq
+      # Changed by WP-36: the selects of the fetched body; was the template.
+      offered = dcf_wizard_form(menu, parent).css('select').map { |s| s['name'][/\[(\d+)\]\z/, 1].to_i }.uniq
 
       editable = selection.map { |i| Issue.find(i.id).editable_custom_fields(member).map(&:id) }.reduce(:&)
       expect(offered).to eq([parent.id, child.id])
       expect(offered - editable).to eq([])
     end
 
+    # Changed by WP-36: the menu and the fetched body are both checked, and
+    # the menu names no field of the chain besides the root in its entry;
+    # was the menu with the inline template.
     it 'never names a dependent field hidden for the member role, nor its values' do
       secret = depending(parent, values: %w[zz-secret], name: 'SecretChildZz')
       secret.update!(visible: false, role_ids: [other_role.id])
@@ -449,15 +498,21 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       visible_child = depending(hidden_root)
       [secret, below, hidden_root, visible_child].each { |field| tracker.custom_fields << field }
       menu = open_menu([first, Issue.find(second.id)])
+      menu_body = response.body
 
       expect(wizard_roots(menu)).to eq([parent.id])
+      expect(menu_body).not_to include(child.name)
+      expect(menu_body).not_to include(grandchild.name)
       expect(wizard_levels(menu, parent)).to eq([[parent.id], [child.id], [grandchild.id]])
-      [secret, hidden_root].each do |field|
-        ["cf_#{field.id}", "cf-wizard-#{field.id}", "[#{field.id}]", "data-parent-id=\"#{field.id}\""].each do |text|
-          expect(response.body).not_to include(text)
+      secret_texts = %w[SecretChildZz zz-secret SecretRootZz zz-root]
+      [menu_body, response.body].each do |body|
+        [secret, hidden_root].each do |field|
+          ["cf_#{field.id}", "cf-wizard-#{field.id}", "[#{field.id}]", "data-parent-id=\"#{field.id}\""].each do |text|
+            expect(body).not_to include(text)
+          end
         end
+        secret_texts.each { |text| expect(body).not_to include(text) }
       end
-      %w[SecretChildZz zz-secret SecretRootZz zz-root].each { |text| expect(response.body).not_to include(text) }
       expect(select_names(menu) & names_of(below, visible_child)).to eq([])
     end
   end
@@ -482,6 +537,8 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
 
       menu = open_menu(issues)
       expect(wizard_roots(menu)).to eq([parent.id])
+      # WP-36: the fetched body as well.
+      expect(wizard_levels(menu, parent)).to eq([[parent.id], [child.id]])
       plugin_root = File.expand_path('../..', __dir__)
       offending = calls.select do |_method, key, paths|
         key.match?(/depending_custom_fields|dcf/) || paths.any? { |path| path.start_with?(plugin_root) && !path.include?('/spec/') }
@@ -591,7 +648,9 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
          lib/redmine_depending_custom_fields/hooks/context_menu_hook.rb
          app/models/redmine_depending_custom_fields/parent_detector.rb
          app/models/redmine_depending_custom_fields/selection_graph.rb
-         app/views/depending_custom_fields/_context_menu_wizard.html.erb].each do |path|
+         app/views/depending_custom_fields/_context_menu_wizard.html.erb
+         app/views/depending_custom_fields/_context_menu_wizard_form.html.erb
+         app/controllers/context_menu_wizard_controller.rb].each do |path|
         expect(source(path)).not_to match(/Rails\.cache|MappingBuilder|ParentMenuBuilder|CustomFieldVisibility|CustomField\.where/), path
       end
       expect(File).not_to exist(File.join(root, 'app/services/redmine_depending_custom_fields/parent_menu_builder.rb'))
@@ -616,6 +675,18 @@ RSpec.describe 'Issue context menu without cache (WP-15)', type: :request do
       expect(assets).not_to include('depending_custom_fields_legacy.js')
       wizard = File.read(File.join(root, 'assets', 'javascripts', 'context_menu_wizard.js'))
       expect(wizard).not_to match(/DependingCustomFieldData|ContextMenuWizardConfig|basePath|requestSetup/)
+    end
+
+    # WP-36: the wizard body action is session only (no API auth), adds no
+    # cache or conditional GET and no forgery skip; the menu partial renders
+    # the entry only.
+    it 'keeps the wizard body action session only and the menu partial entry only' do
+      controller = source('app/controllers/context_menu_wizard_controller.rb')
+      expect(controller).not_to match(/accept_api_auth|skip_before_action|skip_forgery_protection|protect_from_forgery|
+                                        Rails\.cache|fresh_when|stale\?|expires_in|caches_/x)
+      entry = source('app/views/depending_custom_fields/_context_menu_wizard.html.erb')
+      expect(entry).not_to match(/<template|<form|<select|render_custom_field|form_authenticity_token|data-template-id/)
+      expect(source('app/views/depending_custom_fields/_context_menu_wizard_form.html.erb')).not_to match(/<script|Rails\.cache/)
     end
 
     it 'keeps CustomFieldVisibility loaded, with no caller in app or lib' do

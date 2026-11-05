@@ -88,7 +88,10 @@ const EXPECTED = {
   bulk_chain: { controls: [ctl('9100002', 'unfiltered', ['', '__none__', 'Ant', 'Ape', 'Bee'], ['']),
     ctl('9100003', 'unfiltered', ['', '__none__', 'Cub', 'Calf', 'Colt'], [''])], entries: [`${P}=`, `${C}=`, `${L3}=`] },
   time_entry_bulk: bulkSingle('time_entry'),
-  wizard_template: { wizard: true },
+  // WP-36 (UD-13 changed by the owner): the menu entry alone (no template,
+  // no field) and the GET wizard body; was wizard_template with both.
+  wizard_entry: unmanaged,
+  wizard_body: { wizard: true },
   tricky_values: { controls: [ctl('9100002', 'ok', ['', 'a]', 'say "hi"'], ['say "hi"'])], entries: [`${P}=[x]`, `${C}=say "hi"`] },
   // UD-37 (WP-18): was unmanaged (untouched also after changes).
   read_only_child_carrier: { carrier: true },
@@ -135,7 +138,9 @@ function writtenOnly(before, after) {
 test('every fixture has an expectation and every expectation a fixture (the WP-16 scenario list)', () => {
   const spec = fs.readFileSync(path.join(__dirname, '..', '..', 'spec', 'frontend', 'markup_fixtures_spec.rb'), 'utf8');
   const listed = /def self\.scenarios\s+%w\[([^\]]*)\]/.exec(spec)[1].split(/\s+/).filter(Boolean).sort();
-  assert.equal(F.files().length, 36);
+  // Changed by WP-36: 37 (wizard_entry and wizard_body replace
+  // wizard_template); was 36.
+  assert.equal(F.files().length, 37);
   assert.deepEqual(F.scenarios(), listed);
   assert.deepEqual(Object.keys(EXPECTED).sort(), F.scenarios());
 });
@@ -184,23 +189,18 @@ Object.keys(EXPECTED).forEach((scenario) => {
       assert.deepEqual(pg.errors, []);
       return;
     }
+    // Changed by WP-36: the fetched body is the page's only form (the wizard
+    // script inserts it as it is); was the template, inert until cloned into
+    // the container.
     if (want.wizard) {
-      assert.equal(doc.querySelectorAll('[data-dcf-state]').length, 0, 'the template is inert');
-      const template = doc.querySelector('template');
-      assert.equal(template.content.querySelectorAll('[data-dcf-state]').length, 0);
-      const container = doc.createElement('div');
-      container.id = 'cf-wizard-container';
-      container.className = 'context-menu cf-wizard';
-      doc.body.appendChild(container);
-      container.appendChild(template.content.cloneNode(true));
-      await D.microtask();
-      const form = container.querySelector('form');
+      const form = doc.querySelector('form.cf-wizard-form');
+      assert.equal(doc.querySelectorAll('template, script').length, 0);
       ['9100002', '9100003'].forEach((id) => assert.equal(D.state(D.control(form, id)), 'unfiltered', id));
       // UD-11 (WP-18): every field, the root with a default included, on '(no change)'.
       assert.deepEqual(Array.from(form.querySelectorAll('select')).map((sel) => sel.value), ['', '', '']);
       assert.equal(form.querySelectorAll('[data-field-id]').length, 0);
       assert.equal(form.querySelectorAll('div.cf-wizard-field[data-dcf-wizard-field] > label.cf-wizard-label > select').length, 3);
-      const rendered = plain(`<div>${template.innerHTML}</div>`).querySelector('form');
+      const rendered = plain(html).querySelector('form');
       assert.deepEqual(E.entries(form), E.entries(rendered));
       assert.deepEqual(E.entries(form), E.serialized(pg.window, form));
       return;

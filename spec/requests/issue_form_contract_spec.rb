@@ -181,7 +181,11 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
       post '/issues/context_menu', params: { ids: [issue.id] }
       expect(response).to have_http_status(200)
       menu = doc
-      template = menu.at_css("template#cf-wizard-#{root.id}")
+      expect(response.body).not_to include("#{tag}H")
+      expect(response.body).not_to include("#{tag}Hidden")
+      # Changed by WP-36 (UD-13 changed by the owner): the fetched body of the
+      # menu entry (dcf_wizard_form); was the inline template of the menu.
+      template = dcf_wizard_form(menu, root)
       wizard_select = template.at_css("select[data-dcf-field='#{visible.id}']")
       expect(wizard_select['data-dcf-context']).to eq('bulk')
       expect(wizard_select['data-dcf-parent']).to eq(root.id.to_s)
@@ -195,7 +199,7 @@ RSpec.describe 'Issue-form data contract (WP-16)', type: :request do
 
       as(dcf_admin)
       post '/issues/context_menu', params: { ids: [issue.id] }
-      template = doc.at_css("template#cf-wizard-#{root.id}")
+      template = dcf_wizard_form(doc, root)
       # WP-18: one wrapper per field instead of one data-field-id per select.
       expect(template.css("[data-dcf-wizard-field='#{visible.id}']").size).to eq(1)
       expect(response.body).not_to include('data-field-id')

@@ -270,7 +270,7 @@ i18n constant names (gap 5): the meta map is `RedmineDependingCustomFields::Clie
   - bulk required (core's options; the required-none option of WP-19 was removed by WP-34);
   - bulk chain;
   - time-entry bulk edit;
-  - wizard template;
+  - wizard template (since WP-36 the menu entry and the GET wizard body);
   - tricky values (`[ ] < & "` in keys and values);
   - head hook in en and de.
 - **Rules cases.** `test/js/fixtures/shared/rules_cases.json` (allowed and default cases; D1 rows added in WP-09) is read by both `spec/lib/dependency_rules_spec.rb` and the JS rules tests. The path follows compat section 2.4 ("Shared rules case table path"). Nothing new goes under `spec/fixtures` (rails_helper loads `spec/fixtures/*.yml` as DB fixtures).
@@ -753,6 +753,7 @@ end
 - **Partial.** Locals `parent_field`, `issues`, `graph`. `levels = ParentDetector.wizard_levels(...)`. Form markup as in 2.3 (form action and method from the named route in WP-15; the `data-dcf-wizard-field` wrappers and the removal of `data-field-id` in WP-18).
 - **Route.** `match 'depending_custom_fields/save', to: 'context_menu_wizard#save', via: :post, as: 'depending_custom_fields_save'`. The name equals today's auto name. The `options` line is deleted. GET `/depending_custom_fields/options` keeps reaching API#show (404 JSON for admins, 403 otherwise), as today. API routes are untouched.
 - **ContextMenuWizardController.** Delete `include ContextMenuWizardHelper`, `options`, `parent_options` and `child_options`. Keep `before_action :find_issues, only: :save`. `save` is otherwise unchanged; see SP-07 in section 20 (SD-01, UD-03).
+- **WP-36 (UD-13 changed by the owner).** The partial `_context_menu_wizard` renders the entry only (with `data-wizard-url` from the named route `depending_custom_fields_wizard`, no `data-template-id`, no template); the form moved unchanged to `_context_menu_wizard_form` (locals `parent_field`, `issues`, `fields_hierarchy`), plus a Cancel button (`button.cf-wizard-cancel`, core `button_cancel`). `ContextMenuWizardController#show` renders it for `GET /depending_custom_fields/wizard` (section 7.7); `save`, its callbacks and the save route are unchanged.
 - **ContextMenuWizardHelper.** Delete `intersect_allowed_values` (WP-15). `render_custom_field(cf, issues)` returns `custom_field_tag_for_bulk_edit('issue', cf, issues, nil)` without regex injection (0.1.0 (M2), WP-18). The value is nil, not `cf.default_value` as in revision 2, so every wizard field, including the root, opens on '(no change)' and a save without a choice changes nothing (UD-11).
 
 ### 7.7 Cost and size per right-click
@@ -762,6 +763,7 @@ end
 - **Response size (SP-08, QA-22):** the wizard template already renders full bulk selects today. The added bytes are the per-field `data-dcf-map`, about 140 KB for an S1 list child and about 40 KB for an S1 enumeration child.
   - Declared budget, asserted by spec with S1 data (root of 27 values, one child of 5,570): the whole `/issues/context_menu` response is at most 512 KB, and the plugin-added part is at most `sum(rendered select markup + data-dcf-map) + 16 KB`.
   - A lazily loaded wizard body is a user decision (UD-13, recommended: keep the template inline with this budget; the budget spec ships in WP-18), not part of the default plan (D4).
+  - Changed by WP-36 (UD-13 changed by the owner on 2026-11-02): the menu renders the entry only (`li.cf-parent` with `data-parent-id`, `data-issue-ids` and `data-wizard-url`, still only when `ParentDetector.wizard_levels` is non-empty for the gate user). `GET /depending_custom_fields/wizard` (`ContextMenuWizardController#show`, declared before `depending_custom_fields/:id`, a format extension refused with 404 before any callback) renders `_context_menu_wizard_form` without layout: `require_login` (session only, no API key), ids from `ids[]` or a comma string (canonical digits up to 2,147,483,647, deduplicated, anything else 404), core find_issues semantics (no id found 404, an invisible issue 403, unknown ids next to known ones ignored), the hook gate (`edit_issues` on every project, 403), one `SelectionGraph`, `ParentDetector.for_issues` and `wizard_levels` for `User.current`; a root it does not offer (not a root, hidden, unknown, no levels) and a malformed `parent_id` get the same generic 404; any error is logged with its class only and answered 500 without text. Every answer of the action carries `Cache-Control: no-store`. The S1 budget applies to the body (at most 512 KiB and the selects plus 16 KiB); the menu entry is at most 1 KiB.
 
 ## 8. Validation algorithm (points 5 and 6, D1)
 
@@ -1111,4 +1113,4 @@ These were proposals for the consolidated plan. The owner area is named for each
 - the `copy_from` enumeration-id remap;
 - unifying `query_filter_values`;
 - a report of stored invalid combinations and cycles;
-- an optional lazily loaded wizard body (UD-13; recommended: not done, the template stays inline).
+- an optional lazily loaded wizard body (UD-13; recommended: not done, the template stays inline). Done by WP-36 (UD-13 changed by the owner), section 7.7.

@@ -184,10 +184,12 @@ RSpec.describe 'Context menu wizard save', type: :request do
 
     before { allow(User).to receive(:current).and_return(dcf_admin) }
 
+    # Changed by WP-36 (UD-13 changed by the owner): the form of the body
+    # fetched for the menu entry; was the form of the inline template.
     def wizard_form(issues, env: {})
       post '/issues/context_menu', params: { ids: issues.map(&:id) }, env: env
       expect(response).to have_http_status(:ok)
-      Nokogiri::HTML(response.body).at_css("template#cf-wizard-#{root.id} form.cf-wizard-form")
+      dcf_wizard_form(Nokogiri::HTML(response.body), root, env: env)
     end
 
     # The entries a browser submits: hidden inputs, and per select the

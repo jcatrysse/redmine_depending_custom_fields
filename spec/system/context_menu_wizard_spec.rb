@@ -9,18 +9,42 @@ require 'timeout'
 # field opens on '(no change)' (UD-11), this example picks both values.
 # WP-34 (UD-10 changed by the owner on 2026-11-02): a required descendant gets
 # no (none) option and stays on '(No change)' when the root is set to (none)
-# (screenshots in tmp/capybara/dcf/wp-34/).
+# (screenshots in tmp/capybara/dcf/wp-34/). WP-36 (UD-13 changed by the
+# owner): the menu holds the entry only and the body is fetched on open: a
+# loading state, a Cancel button and Escape, and a generic message for a
+# failed fetch that a second click retries (screenshots in
+# tmp/capybara/dcf/wp-36/).
 RSpec.describe 'Context menu wizard', type: :system do
   fixtures :users
 
   let(:version) { "#{Redmine::VERSION::MAJOR}.#{Redmine::VERSION::MINOR}" }
 
-  def shot(name)
-    dir = Rails.root.join('tmp', 'capybara', 'dcf', 'wp-34')
+  def shot(name, wp: 'wp-34')
+    dir = Rails.root.join('tmp', 'capybara', 'dcf', wp)
     FileUtils.mkdir_p(dir)
     path = dir.join("#{name}-#{version}.png").to_s
     page.driver.browser.save_screenshot(path)
     expect(File.size(path)).to be > 0
+  end
+
+  def wizard_world(name)
+    project = dcf_create_project(name: name)
+    project.enabled_module_names = %w[issue_tracking]
+    parent = dcf_list_field(name: "#{name}Parent", values: %w[A B])
+    child = dcf_list_field(format: 'depending_list', name: "#{name}Child", values: %w[a1 b1], parent: parent)
+    dcf_set_dependencies(child, value_dependencies: { 'A' => %w[a1], 'B' => %w[b1] })
+    issue = dcf_real_issue(project.reload, parent => 'A', child => 'a1')
+    [project, parent, child, issue]
+  end
+
+  def open_entry(project, issue, parent)
+    visit "/projects/#{project.identifier}/issues"
+    find("tr#issue-#{issue.id} td.subject").right_click
+    entry = find("#context-menu li.cf-parent[data-parent-id='#{parent.id}']")
+    # WP-36: the menu carries the entry only.
+    expect(entry).to have_no_css('select, form, template', visible: :all)
+    expect(page).to have_no_css('#context-menu template', visible: :all)
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu").click
   end
 
   it 'opens from the issue list and saves the chosen values' do
@@ -39,6 +63,7 @@ RSpec.describe 'Context menu wizard', type: :system do
     within('#cf-wizard-container') do
       find("select[name='issue[custom_field_values][#{parent.id}]'] option[value='B']").select_option
       find("select[name='issue[custom_field_values][#{child.id}]'] option[value='b1']").select_option
+      shot('wizard-open', wp: 'wp-36')
       find('form.cf-wizard-form button[type=submit]').click
     end
 
@@ -81,5 +106,85 @@ RSpec.describe 'Context menu wizard', type: :system do
       expect(find(leaf_select).value).to eq('')
     end
     shot('wizard-required-descendant')
+  end
+
+  # WP-36: the loading state is visible until the body arrives (the server
+  # answer is held back), then the form; Cancel and Escape close it and
+  # store nothing.
+  it 'shows a loading state, then closes with Cancel and with Escape without saving (WP-36)' do
+    project, parent, child, issue = wizard_world('WizCancel')
+    dcf_login
+    visit "/projects/#{project.identifier}/issues"
+    # Hold the answer back in the page (fetch wrapped) to see the loading state.
+    page.execute_script(<<~JS)
+      window.dcfHold = [];
+      var realFetch = window.fetch;
+      window.fetch = function (url, init) {
+        if (init && init.method === 'GET') {
+          return new Promise(function (resolve) { window.dcfHold.push(function () { resolve(realFetch(url, init)); }); });
+        }
+        return realFetch(url, init);
+      };
+    JS
+    find("tr#issue-#{issue.id} td.subject").right_click
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu").click
+    expect(page).to have_css('#cf-wizard-container [role=status]', text: 'Loading...')
+    expect(page).to have_no_css('#cf-wizard-container form')
+    shot('wizard-loading', wp: 'wp-36')
+    page.execute_script('window.dcfHold.forEach(function (go) { go(); });')
+    within('#cf-wizard-container') do
+      find("select[name='issue[custom_field_values][#{parent.id}]'] option[value='B']").select_option
+      click_button 'Cancel'
+    end
+    expect(page).to have_no_css('#cf-wizard-container form', visible: :all)
+    expect(page).to have_css('#cf-wizard-container', visible: :hidden)
+
+    visit "/projects/#{project.identifier}/issues"
+    open_entry(project, issue, parent)
+    within('#cf-wizard-container') do
+      find("select[name='issue[custom_field_values][#{parent.id}]'] option[value='B']").select_option
+    end
+    find("select[name='issue[custom_field_values][#{parent.id}]']").send_keys(:escape)
+    expect(page).to have_no_css('#cf-wizard-container form', visible: :all)
+    expect(issue.reload.custom_field_value(parent)).to eq('A')
+    expect(issue.reload.custom_field_value(child)).to eq('a1')
+  end
+
+  it 'shows a generic message when the body cannot be loaded, and a second click retries (WP-36)' do
+    project, parent, _child, issue = wizard_world('WizFail')
+    role = dcf_create_role(permissions: [:view_issues, :edit_issues])
+    hidden = dcf_list_field(format: 'depending_list', name: 'WizFailHiddenZz', values: %w[h1], parent: parent)
+    hidden.update!(visible: false, role_ids: [dcf_create_role(permissions: [:view_issues]).id])
+    issue.tracker.custom_fields << hidden
+    member = User.new(login: "wizfail#{SecureRandom.hex(3)}", firstname: 'Wiz', lastname: 'Fail',
+                      mail: "wizfail#{SecureRandom.hex(3)}@example.net", status: User::STATUS_ACTIVE, language: 'en')
+    member.password = 'secret-12345'
+    member.password_confirmation = 'secret-12345'
+    member.save!
+    dcf_add_member(member, project, role)
+    dcf_login(member.login, 'secret-12345')
+    visit "/projects/#{project.identifier}/issues"
+    find("tr#issue-#{issue.id} td.subject").right_click
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}']")
+    # A missing issue id: the server answers 404.
+    page.execute_script(<<~JS, parent.id, Issue.maximum(:id).to_i + 1_000)
+      document.querySelector('#context-menu li.cf-parent[data-parent-id="' + arguments[0] + '"]')
+        .setAttribute('data-issue-ids', String(arguments[1]));
+    JS
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu").click
+    expect(page).to have_css('#cf-wizard-container [role=alert]', text: 'The wizard could not be loaded.')
+    expect(page).to have_no_css('#cf-wizard-container form')
+    expect(page).not_to have_text('WizFailHiddenZz')
+    shot('wizard-load-failed', wp: 'wp-36')
+    page.execute_script(<<~JS, parent.id, issue.id)
+      document.querySelector('#context-menu li.cf-parent[data-parent-id="' + arguments[0] + '"]')
+        .setAttribute('data-issue-ids', String(arguments[1]));
+    JS
+    find("#context-menu li.cf-parent[data-parent-id='#{parent.id}'] > a.submenu").click
+    within('#cf-wizard-container') do
+      expect(page).to have_css("select[name='issue[custom_field_values][#{parent.id}]']")
+      expect(page).to have_no_css('[role=alert]')
+    end
+    expect(page).not_to have_text('WizFailHiddenZz')
   end
 end

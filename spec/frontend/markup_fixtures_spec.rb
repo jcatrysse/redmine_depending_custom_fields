@@ -15,7 +15,9 @@ require 'tmpdir'
 # these files in jsdom; WP-18 and WP-19 regenerate them with this spec.
 # WP-18: the legacy mappings (test/js/fixtures/legacy_mapping) are deleted
 # with the legacy script; wizard_template (UD-11, implicit labels, no
-# data-field-id) and my_account (UD-39) were regenerated.
+# data-field-id) and my_account (UD-39) were regenerated. WP-36 (UD-13
+# changed by the owner): wizard_template is replaced by wizard_entry (the
+# menu entry, no template) and wizard_body (the GET wizard response).
 RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   include DcfJsFixtures
   include DcfStoredCycle
@@ -35,7 +37,7 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
        enumeration_inactive_child enumeration_inactive_parent chain_of_three read_only_parent role_invisible_parent
        parent_unavailable stored_cycle self_parent dangling_parent legacy_value legacy_value_multi
        legacy_parent_value issue_copy new_issue issue_time_entry_prefixes project_form user_form my_account
-       bulk_single bulk_multi bulk_required bulk_chain time_entry_bulk wizard_template tricky_values
+       bulk_single bulk_multi bulk_required bulk_chain time_entry_bulk wizard_entry wizard_body tricky_values
        read_only_child_carrier role_invisible_child hide_when_disabled bulk_hide_when_disabled]
   end
 
@@ -455,16 +457,27 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
   end
 
   # UD-11 (WP-18): the root has a default value; the wizard still opens it
-  # on '(No change)'.
-  def scenario_wizard_template
+  # on '(No change)'. WP-36: the menu holds the entry only (wizard_entry);
+  # the body is the GET wizard response (wizard_body), the form that was
+  # inside the template before.
+  def wizard_world
     world = fx_world
     root, middle, leaf = fx_chain(world)
     root.update!(default_value: 'Beta')
-    issue = fx_issue(world, root => 'Alpha', middle => 'Ant', leaf => 'Cub')
+    [root, fx_issue(world, root => 'Alpha', middle => 'Ant', leaf => 'Cub')]
+  end
+
+  def scenario_wizard_entry
+    root, issue = wizard_world
     page = fetch(:post, '/issues/context_menu', admin, ids: [issue.id])
     entry = page.at_css("li.cf-parent[data-parent-id='#{root.id}']")
-    template = page.at_css("template#cf-wizard-#{root.id}")
-    "<div id=\"context-menu\"><ul>\n#{serialize_all([entry, template])}</ul></div>\n"
+    "<div id=\"context-menu\"><ul>\n#{serialize_all([entry])}</ul></div>\n"
+  end
+
+  def scenario_wizard_body
+    root, issue = wizard_world
+    page = fetch(:get, '/depending_custom_fields/wizard', admin, parent_id: root.id.to_s, ids: [issue.id.to_s])
+    serialize_all(page.css('form.cf-wizard-form'))
   end
 
   def scenario_tricky_values
@@ -720,16 +733,21 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
       'multi_checkbox' => ->(fragment) { expect(fragment.css('[data-dcf-blank]')).to be_empty },
       # WP-18: implicit labels and data-dcf-wizard-field (UX-13), no
       # data-field-id, every field on '(No change)' (UD-11, the root has the
-      # default Beta); was a data-field-id on every select.
-      'wizard_template' => lambda do |fragment|
-        selects = fragment.css('template select')
+      # default Beta); was a data-field-id on every select. Changed by WP-36:
+      # the fetched form (wizard_body) without the template around it.
+      'wizard_body' => lambda do |fragment|
+        expect(fragment.css('template, li, script')).to be_empty
+        expect(fragment.css('form').size).to eq(1)
+        expect(fragment.at_css('form')['class']).to eq('cf-wizard-form')
+        expect(fragment.css("input[name='authenticity_token']").size).to eq(1)
+        selects = fragment.css('select')
         expect(selects.size).to eq(3)
         expect(selects.first['data-dcf-field']).to be_nil # the root is a plain list
         expect(selects.drop(1).pluck('data-dcf-context')).to eq(%w[bulk bulk])
         expect(selects.drop(1).pluck('data-dcf-parent')).to all(be_present)
         expect(fragment.css('[data-field-id]')).to be_empty
-        expect(fragment.css('template option[selected]')).to be_empty
-        wrappers = fragment.css('template div.cf-wizard-field[data-dcf-wizard-field]')
+        expect(fragment.css('option[selected]')).to be_empty
+        wrappers = fragment.css('div.cf-wizard-field[data-dcf-wizard-field]')
         expect(wrappers.size).to eq(3)
         wrappers.zip(selects).each do |wrapper, select|
           expect(wrapper['data-dcf-wizard-field']).to eq(select['name'][/\[(\d+)\]\z/, 1])
@@ -738,6 +756,16 @@ RSpec.describe 'Issue-form markup fixtures (WP-16)', type: :request do
           expect(label.at_css('> span.field-description')).not_to be_nil
           expect(label.at_css('> select')).to eq(select)
         end
+      end,
+      # WP-36: the menu entry only, with the wizard URL and no template,
+      # form, field or value.
+      'wizard_entry' => lambda do |fragment|
+        entry = fragment.at_css('li.folder.cf-parent')
+        expect(entry.attribute_nodes.map(&:name)).to eq(%w[class data-parent-id data-issue-ids data-wizard-url])
+        expect(entry['data-wizard-url']).to eq('/depending_custom_fields/wizard')
+        expect(entry.at_css('a.submenu').text).to eq('Root field')
+        expect(fragment.css('template, form, select, option, input, script')).to be_empty
+        expect(fragment.to_html).not_to match(/Middle field|Leaf field|Alpha|Ant/)
       end,
       'tricky_values' => lambda do |fragment|
         node = field_named(fragment, 'Child')

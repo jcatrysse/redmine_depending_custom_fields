@@ -1,17 +1,33 @@
-// Context-menu wizard (WP-18, frontend design 7): opens the wizard template of
-// a li.cf-parent entry in #cf-wizard-container (created on the first open),
+// Context-menu wizard (WP-18, frontend design 7): opens the wizard of a
+// li.cf-parent entry in #cf-wizard-container (created on the first open),
 // initialises it with the runtime at once and posts the form to its own
-// action, same origin only (SP-15). Any error gives a localized alert and
-// keeps the wizard open. Texts come from <meta name="dcf-i18n">.
+// action, same origin only (SP-15). Any save error gives a localized alert
+// and keeps the wizard open. Texts come from <meta name="dcf-i18n">.
+// WP-36 (UD-13 changed by the owner): the menu holds the entry only; a click
+// shows a loading text at once and fetches the body from the entry's
+// data-wizard-url (same origin only, GET, no-store), parses it inertly
+// (DOMParser), imports its one form.cf-wizard-form without scripts or event
+// handler attributes, and initialises it. A failed load shows one generic
+// message. Each open fetches again; a closed or replaced wizard drops a late
+// answer. Escape and the Cancel button close it and give the focus back to
+// the entry.
 (function () {
   'use strict';
-  var SAVE_FAILED = 'The change could not be saved.';
+  var FALLBACK = {
+    saveFailed: 'The change could not be saved.',
+    wizardLoading: 'Loading...',
+    wizardLoadFailed: 'The wizard could not be loaded.'
+  };
   var ENTRY_SEL = 'li.cf-parent';
-  var current = null; // {container, outside, onSubmit, form, stopProp, menu, onMenuHover, item}
+  var FORM_SEL = 'form.cf-wizard-form';
+  var STOPPED = ['mousedown', 'mouseup', 'click', 'contextmenu'];
+  // {container, item, menu, outside, onKey, onMenuHover, stopProp, form,
+  //  onSubmit, onCancel, cancel, abort}
+  var current = null;
 
-  // The saveFailed text of the meta tag (a flat object of own strings), else
-  // the English fallback (en.yml error_save_failed).
-  function saveFailedText() {
+  // The text of key in the meta tag (a flat object of own strings), else the
+  // English fallback (en.yml).
+  function text(key) {
     var meta = document.querySelector('meta[name="dcf-i18n"]');
     var data = null;
     try {
@@ -20,8 +36,12 @@
       data = null;
     }
     var own = data && typeof data === 'object' && !Array.isArray(data) &&
-      Object.prototype.hasOwnProperty.call(data, 'saveFailed');
-    return own && typeof data.saveFailed === 'string' ? data.saveFailed : SAVE_FAILED;
+      Object.prototype.hasOwnProperty.call(data, key);
+    return own && typeof data[key] === 'string' ? data[key] : FALLBACK[key];
+  }
+
+  function saveFailedText() {
+    return text('saveFailed');
   }
 
   function ensureContainer() {
@@ -43,12 +63,9 @@
       const a = e.target.closest('li.cf-parent > a.submenu');
       if (!a) return;
       const li = a.closest(ENTRY_SEL);
-      const tId = li ? li.dataset.templateId : null;
-      if (!tId) return;
+      if (!li) return;
       e.preventDefault(); e.stopPropagation();
-      const tmpl = document.getElementById(tId);
-      if (!tmpl) return;
-      openWizard(menu, tmpl, li);
+      openWizard(menu, li);
     });
     menu.dataset.dcfInit = '1';
   }
@@ -59,46 +76,141 @@
     menu.style.maxWidth = 'none';
   }
 
-  function openWizard(menu, tmpl, item) {
-    closeWizard();
-    const container = ensureContainer();
+  // A status or alert line of the container (text only, no markup).
+  function message(container, role, className, value) {
+    const p = document.createElement('p');
+    p.className = className;
+    p.setAttribute('role', role);
+    p.textContent = value;
     container.textContent = '';
-    container.appendChild(tmpl.content.cloneNode(true));
-    // The container is connected: the runtime filters the clone at once
-    // (its observer pass that follows is a no-op).
-    const api = window.DependingCustomFields;
-    if (api && typeof api.init === 'function') api.init(container);
+    container.appendChild(p);
+  }
+
+  function openWizard(menu, item) {
+    closeWizard(false);
+    const container = ensureContainer();
+    message(container, 'status', 'cf-wizard-loading', text('wizardLoading'));
+    container.setAttribute('aria-busy', 'true');
     positionContainer(container, menu, item);
     container.style.display = 'block';
 
-    const form = container.querySelector('form');
-    const onMenuHover = e => {
-      if (!item.contains(e.target)) closeWizard();
+    const state = { container, item, menu, form: null, onSubmit: null, onCancel: null, cancel: null, abort: null };
+    state.onMenuHover = e => {
+      if (!item.contains(e.target)) closeWizard(false);
     };
-    menu.addEventListener('mouseover', onMenuHover);
+    menu.addEventListener('mouseover', state.onMenuHover);
+    state.outside = e => {
+      if (!container.contains(e.target)) closeWizard(false);
+    };
+    document.addEventListener('mousedown', state.outside);
+    state.onKey = e => {
+      if (e.key !== 'Escape' && e.key !== 'Esc') return;
+      e.preventDefault();
+      closeWizard(true);
+    };
+    document.addEventListener('keydown', state.onKey);
+    state.stopProp = e => e.stopPropagation();
+    STOPPED.forEach(ev => container.addEventListener(ev, state.stopProp));
+    current = state;
 
-    const outside = e => {
-      if (!container.contains(e.target)) {
-        closeWizard();
+    const url = wizardUrl(item);
+    if (!url) {
+      failed(state);
+      return;
+    }
+    const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+    state.abort = controller;
+    const init = {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' }
+    };
+    if (controller) init.signal = controller.signal;
+    let request;
+    try {
+      request = Promise.resolve(window.fetch(url, init));
+    } catch (e) {
+      request = Promise.reject(e);
+    }
+    request.then(res => {
+      if (current !== state) return null;
+      if (!res || !res.ok || res.redirected || !isHtml(res)) throw new Error('load');
+      return res.text();
+    }).then(body => {
+      if (current !== state || body === null) return;
+      if (!item.isConnected) {
+        closeWizard(false);
+        return;
       }
-    };
-    document.addEventListener('mousedown', outside);
+      const form = parseForm(body);
+      if (!form) throw new Error('load');
+      show(state, form);
+    }).catch(() => {
+      if (current === state) failed(state);
+    });
+  }
 
-    const stopProp = e => e.stopPropagation();
-    ['mousedown', 'mouseup', 'click', 'contextmenu']
-      .forEach(ev => container.addEventListener(ev, stopProp));
+  function isHtml(res) {
+    const headers = res.headers;
+    const type = headers && typeof headers.get === 'function' ? headers.get('Content-Type') : null;
+    return typeof type === 'string' && /^\s*text\/html\s*(;|$)/i.test(type);
+  }
 
-    const onSubmit = e => {
+  // The one form.cf-wizard-form of body, parsed in an inert document, with
+  // every script and event handler attribute removed; null when the body
+  // holds no form or more than one.
+  function parseForm(body) {
+    if (typeof body !== 'string' || typeof window.DOMParser !== 'function') return null;
+    const doc = new window.DOMParser().parseFromString(body, 'text/html');
+    const forms = doc.querySelectorAll('form');
+    if (forms.length !== 1 || !forms[0].matches(FORM_SEL)) return null;
+    const form = forms[0];
+    Array.prototype.forEach.call(form.querySelectorAll('script'), s => s.remove());
+    [form].concat(Array.prototype.slice.call(form.querySelectorAll('*'))).forEach(el => {
+      Array.prototype.slice.call(el.attributes).forEach(attr => {
+        if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+      });
+    });
+    return form;
+  }
+
+  function show(state, parsed) {
+    const container = state.container;
+    container.textContent = '';
+    container.removeAttribute('aria-busy');
+    const form = document.importNode(parsed, true);
+    container.appendChild(form);
+    // The container is connected: the runtime filters the form at once (its
+    // observer pass that follows is a no-op).
+    const api = window.DependingCustomFields;
+    if (api && typeof api.init === 'function') api.init(container);
+    positionContainer(container, state.menu, state.item);
+    container.style.display = 'block';
+
+    state.form = form;
+    state.onSubmit = e => {
       e.preventDefault();
       submitForm(form).then(saved => {
-        if (saved) closeWizard();
+        if (saved) closeWizard(false);
       }, () => {
         window.alert(saveFailedText());
       });
     };
-    if (form) form.addEventListener('submit', onSubmit);
+    form.addEventListener('submit', state.onSubmit);
+    state.cancel = form.querySelector('button.cf-wizard-cancel');
+    state.onCancel = e => {
+      e.preventDefault();
+      closeWizard(true);
+    };
+    if (state.cancel) state.cancel.addEventListener('click', state.onCancel);
+    const first = form.querySelector('select, input:not([type="hidden"]), button');
+    if (first && typeof first.focus === 'function') first.focus();
+  }
 
-    current = { container, outside, onSubmit, form, stopProp, menu, onMenuHover, item };
+  function failed(state) {
+    state.container.removeAttribute('aria-busy');
+    message(state.container, 'alert', 'cf-wizard-error', text('wizardLoadFailed'));
   }
 
   function positionContainer(container, menu, item) {
@@ -109,25 +221,33 @@
     container.style.left = (menuRect.right + window.scrollX + 2) + 'px';
   }
 
-  function closeWizard() {
+  // Closes the wizard, drops a pending load and removes every listener;
+  // refocus gives the focus back to the entry (Escape, Cancel).
+  function closeWizard(refocus) {
     if (!current) return;
-    const { container, outside, onSubmit, form, stopProp, menu, onMenuHover } = current;
-    container.style.display = 'none';
-    container.textContent = '';
-    document.removeEventListener('mousedown', outside);
-    if (form) form.removeEventListener('submit', onSubmit);
-    ['mousedown', 'mouseup', 'click', 'contextmenu']
-      .forEach(ev => container.removeEventListener(ev, stopProp));
-    if (menu) menu.removeEventListener('mouseover', onMenuHover);
+    const state = current;
     current = null;
+    const container = state.container;
+    if (state.abort) state.abort.abort();
+    container.style.display = 'none';
+    container.removeAttribute('aria-busy');
+    container.textContent = '';
+    document.removeEventListener('mousedown', state.outside);
+    document.removeEventListener('keydown', state.onKey);
+    if (state.form) state.form.removeEventListener('submit', state.onSubmit);
+    if (state.cancel) state.cancel.removeEventListener('click', state.onCancel);
+    STOPPED.forEach(ev => container.removeEventListener(ev, state.stopProp));
+    if (state.menu) state.menu.removeEventListener('mouseover', state.onMenuHover);
+    if (refocus) {
+      const link = state.item.querySelector('a.submenu');
+      if (link && link.isConnected && typeof link.focus === 'function') link.focus();
+    }
   }
 
-  // The form's action attribute resolved against the page URL, or null when
-  // it is missing or blank or names another origin (SP-15). The attribute,
-  // never the action property: a control named action or a <base> element
-  // cannot redirect it.
-  function actionUrl(form) {
-    const raw = form ? form.getAttribute('action') : null;
+  // An attribute URL resolved against the page URL, or null when it is
+  // missing or blank or names another origin (SP-15). The attribute, never a
+  // property: a control named action or a <base> element cannot redirect it.
+  function sameOrigin(raw) {
     if (raw === null || !raw.trim()) return null;
     let url = null;
     try {
@@ -137,7 +257,29 @@
     }
     const origin = window.location.origin;
     if (!origin || origin === 'null' || url.origin !== origin) return null;
+    return url;
+  }
+
+  // The wizard URL of the entry with parent_id and ids[] of its selection.
+  function wizardUrl(item) {
+    const url = sameOrigin(item.getAttribute('data-wizard-url'));
+    if (!url) return null;
+    const query = new URLSearchParams();
+    query.append('parent_id', item.getAttribute('data-parent-id') || '');
+    (item.getAttribute('data-issue-ids') || '').split(',').filter(id => id !== '')
+      .forEach(id => query.append('ids[]', id));
+    url.search = query.toString();
+    url.hash = '';
     return url.href;
+  }
+
+  // The form's action attribute resolved against the page URL, or null when
+  // it is missing or blank or names another origin (SP-15). The attribute,
+  // never the action property: a control named action or a <base> element
+  // cannot redirect it.
+  function actionUrl(form) {
+    const url = sameOrigin(form ? form.getAttribute('action') : null);
+    return url ? url.href : null;
   }
 
   // Resolves true after a successful save (the page reloads), false after

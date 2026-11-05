@@ -6,7 +6,9 @@ module RedmineDependingCustomFields
   # object of JS key => text in the current locale. I18N is the single i18n
   # map of that tag (gap 5); the frontend owns the key list. lockedRefused
   # is the warning for a parent change the server will refuse because of a
-  # visible read-only dependent field (UD-37).
+  # visible read-only dependent field (UD-37). wizardLoading and
+  # wizardLoadFailed are the loading and load failure texts of the context
+  # menu wizard, which fetches its body when it opens (WP-36).
   #
   # module_function and stateless: the payload is built per call.
   module ClientConfig
@@ -22,7 +24,9 @@ module RedmineDependingCustomFields
       'bulkCleared' => :text_dcf_hint_bulk_cleared,
       'liveMessage' => :text_dcf_live_message,
       'saveFailed' => :error_save_failed,
-      'lockedRefused' => :text_dcf_hint_locked_refused
+      'lockedRefused' => :text_dcf_hint_locked_refused,
+      'wizardLoading' => :text_dcf_wizard_loading,
+      'wizardLoadFailed' => :text_dcf_wizard_load_failed
     }.freeze
     # Compared with controller.class.name; nothing is constantized.
     EDITOR_CONTROLLERS = %w[CustomFieldsController ProjectCustomFieldConfigurationController].freeze

@@ -518,7 +518,7 @@ Grandchild cascades follow naturally:
    - The body is unchanged (`URLSearchParams(new FormData(form))` with the form's `authenticity_token`).
    - Non-2xx with a JSON body: alert `errors.join('\n')`. A non-JSON body (403/422 HTML, 500): alert `saveFailed + ' (' + status + ')'`.
    - The rejection is caught in `onSubmit`; the wizard stays open on error.
-2. **`openWizard`:** after cloning the template, call `window.DependingCustomFields.init(container)` synchronously. The observer pass that follows is a no-op.
+2. **`openWizard`:** after cloning the template, call `window.DependingCustomFields.init(container)` synchronously. The observer pass that follows is a no-op. WP-36 (UD-13 changed by the owner): there is no template any more; the click shows the announced loading text (`role=status`, `aria-busy`, meta key `wizardLoading`) at once, resolves the entry's `data-wizard-url` attribute against the page URL (same origin only, as the save action), fetches the body (GET, `credentials: 'same-origin'`, `cache: 'no-store'`, `X-Requested-With`, `Accept: text/html`, an `AbortController` per open), accepts only `res.ok && !res.redirected` with a `text/html` type, parses it with `DOMParser`, imports its single `form.cf-wizard-form` without scripts and `on*` attributes, then calls `init(container)` synchronously as before. Any failure shows one generic message (`role=alert`, meta key `wizardLoadFailed`), never server text. Each open fetches again; closing aborts a pending load and a late answer for a closed, replaced or disconnected entry is dropped. Escape (document keydown) and the form's Cancel button close the wizard and give the focus back to the entry; after the load the focus moves to the first field.
 3. **i18n:** parse `meta[name="dcf-i18n"]` itself (flat object, key `saveFailed`; compat section 2.4), with the English fallback "The change could not be saved.".
 4. **Observer hygiene:** replace the body-wide `{attributes: true, attributeFilter: ['style']}` observer with a `childList` subtree observer filtered on added `li.cf-parent`. Create `#cf-wizard-container` lazily.
 
@@ -637,7 +637,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 7. The `change` event fires only when a value changes. Listen to `dcf:updated` for option changes.
 8. Fields rendered without Redmine's custom field helpers (custom `select_tag` in third-party views) are no longer filtered in the browser. See README Integration; the server still validates.
 9. Without JavaScript, Key/Value list (depending) fields show all active values. The server still rejects invalid combinations.
-10. (UD-13) Context-menu responses carry dependency data for the wizard fields and can be larger for very big mappings.
+10. (UD-13) Context-menu responses carry dependency data for the wizard fields and can be larger for very big mappings. Changed by WP-36 (UD-13 changed by the owner): the menu carries the entry only; the wizard body, fetched when the wizard opens, carries that data.
 11. Fields that are part of a circular configuration (stored cycle) show as plain lists in the browser, as the server treats them as unconstrained until the cycle is fixed (UD-08).
 
 **Removed:**
@@ -689,7 +689,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
   - `GET /issues/:id/edit` and `GET /issues/new` (extract `#all_attributes`);
   - `GET /issues/:id/copy`;
   - `GET /issues/bulk_edit?ids[]=` and time-entry bulk edit (extract the custom field paragraphs);
-  - `POST /issues/context_menu` (extract the wizard template);
+  - `POST /issues/context_menu` (extract the wizard entry, `wizard_entry`) and, since WP-36, `GET /depending_custom_fields/wizard` (the body, `wizard_body`; was the template of the menu, `wizard_template`);
   - `GET /projects/:id/settings` and `GET /users/:id/edit` as admin.
 - It writes `test/js/fixtures/markup/<scenario>.html`.
 - **Deterministic ids.** Every record the scenario creates (custom fields, enumerations, project, issue, tracker, status, role, member) is created with an explicit id in the fixed per-kind id ranges from WP-02 (binding, compat section 2.4; this revision originally proposed one reserved range 91000-91999). The fixture spec runs under two seeds (`--seed 1` and `--seed 4242`) and must compare clean under both (WP-16). `spec/support/dcf_js_fixtures.rb` (WP-16, shared with the editor fixtures) does the rest: it scrubs authenticity tokens, state hashes, asset digests and timestamps; it keeps the fixed-range ids verbatim (no placeholders, compat section 2.4 "Fixture ids"); it fails on any id-bearing number outside the fixed ranges (a leaked sequence id).
@@ -717,7 +717,7 @@ All lines below belong to the 0.1.0 (M2) CHANGELOG (WP-20) unless marked otherwi
 - issue plus time_entry prefixes;
 - project form, user form;
 - bulk single, bulk multi, bulk required (core's options without `__none__` since WP-34; with the marked `__none__` from WP-19 to WP-34), bulk chain, time-entry bulk;
-- wizard template (root on "(no change)", implicit labels, named-route action).
+- wizard entry and wizard body (WP-36; root on "(no change)", implicit labels, named-route action; was the wizard template).
 
 `test/js/contract_fixtures.test.js` asserts the filtering outcome for each scenario on the generated markup (expected `data-dcf-state`, enabled options and the spec-compliant entry list, WP-17).
 - **Copy expectation (gap 6, updated).** For the issue-copy scenario the test expects the legacy value to stay selected and enabled, marked (`dcf-legacy-option`, `data-dcf-state="legacy"`, legacy hint) and present in the entry list (row F6b-a); a request spec in the server area confirms that posting it creates the copy (UD-06, WP-09). For the plain new-record scenario it expects the disallowed value to be dropped and absent from the entry list (row F6b-b). The earlier expectation "issue copy: disallowed value dropped at load" is removed.

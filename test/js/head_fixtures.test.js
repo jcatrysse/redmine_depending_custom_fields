@@ -87,16 +87,26 @@ test('the runtime and the wizard read the texts of the head they are loaded afte
     const head = read(locale);
     const payload = parsed(locale).payload;
     const alerts = [];
-    const body = F.tweak('wizard_template', (doc) => {
-      doc.querySelector('template').content.querySelector('form').setAttribute('action', 'https://evil.example/');
+    // Changed by WP-36: the body is fetched (one GET, answered here with the
+    // wizard_body fixture whose action names another origin); was the
+    // inline template and no request at all.
+    const form = F.tweak('wizard_body', (doc) => {
+      doc.querySelector('form').setAttribute('action', 'https://evil.example/');
     });
-    const pg = await D.page(`${F.read('list_single')}${body}`, {
+    const requests = [];
+    let loading = null;
+    const pg = await D.page(`${F.read('list_single')}${F.read('wizard_entry')}`, {
       headHtml: head,
       url: 'https://redmine.example/issues/1',
       scripts: [D.WIZARD],
       before(w) {
         w.alert = (text) => alerts.push(text);
-        w.fetch = () => { throw new Error('no request expected'); };
+        w.fetch = (url, init) => {
+          requests.push(init.method);
+          if (init.method !== 'GET') throw new Error('no save expected');
+          loading = w.document.getElementById('cf-wizard-container').textContent;
+          return Promise.resolve({ ok: true, status: 200, redirected: false, headers: { get: () => 'text/html' }, text: () => Promise.resolve(form) });
+        };
       }
     });
     const t = pg.window.DependingCustomFields.t;
@@ -110,10 +120,14 @@ test('the runtime and the wizard read the texts of the head they are loaded afte
     assert.equal(hint, payload.selectParent.replace('%{parent}', 'Parent field'), locale);
     pg.document.querySelector('#context-menu li.cf-parent > a.submenu')
       .dispatchEvent(new pg.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.equal(loading, payload.wizardLoading, locale);
+    for (let i = 0; i < 5; i += 1) await D.flush();
     pg.document.querySelector('#cf-wizard-container form')
       .dispatchEvent(new pg.window.Event('submit', { bubbles: true, cancelable: true }));
     await D.flush();
     assert.deepEqual(alerts, [payload.saveFailed], locale);
+    assert.deepEqual(requests, ['GET'], locale);
+    assert.equal(pg.document.querySelector('#cf-wizard-container .cf-wizard-cancel').textContent.length > 0, true);
     assert.deepEqual(pg.errors, [], locale);
   }
 });

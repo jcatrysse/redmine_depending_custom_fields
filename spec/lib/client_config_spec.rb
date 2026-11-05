@@ -32,9 +32,13 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       'bulkCleared' => :text_dcf_hint_bulk_cleared,
       'liveMessage' => :text_dcf_live_message,
       'saveFailed' => :error_save_failed,
-      'lockedRefused' => :text_dcf_hint_locked_refused
+      'lockedRefused' => :text_dcf_hint_locked_refused,
+      'wizardLoading' => :text_dcf_wizard_loading,
+      'wizardLoadFailed' => :text_dcf_wizard_load_failed
     )
-    expect(described_class::I18N.keys.last).to eq('lockedRefused')
+    # Changed by WP-36: the wizard's loading and load failure texts follow
+    # lockedRefused; was lockedRefused last.
+    expect(described_class::I18N.keys.last(3)).to eq(%w[lockedRefused wizardLoading wizardLoadFailed])
     expect(described_class::I18N).to be_frozen
   end
 
@@ -111,7 +115,8 @@ RSpec.describe RedmineDependingCustomFields::ClientConfig do
       expect(srcs[1]).to match(asset.call('dcf_dependency_editor', 'js'))
       expect(fragment.at_css('link')['href']).to match(asset.call('dcf_dependency_editor', 'css'))
       expect(described_class.instance_variables).to eq([])
-      expect(described_class::I18N.size).to eq(11)
+      # Changed by WP-36: 13 (wizardLoading, wizardLoadFailed); was 11.
+      expect(described_class::I18N.size).to eq(13)
     end
   end
 end

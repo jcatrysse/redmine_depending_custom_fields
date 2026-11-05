@@ -217,6 +217,7 @@
 * Changed: On the admin form of a List (depending) field without values yet, the dependency editor offers the CSV import (not the export) with 'Add missing child values' ticked, so a new field can be filled from a file.
 * Changed: In bulk edit and the context-menu wizard, required dependent fields offer no '(none)', as in Redmine, and are not cleared when the parent is set to '(none)' or to a value that allows nothing; an issue whose required dependent field keeps a value the new parent value does not allow is not saved (is invalid), one where that field is blank is saved.
 * Changed: In project settings, saving the dependencies (replace imports included) and sorting the values of a field shared with other projects or global need the confirmation checkbox, as rename and removal do; scripts post confirm=1.
+* Changed: The context menu holds only the wizard entry; the wizard loads its fields when you open it, shows a loading text meanwhile and a short message when they cannot be loaded, and closes with Escape or its Cancel button.
 * Fixed: Key/Value list (depending): a disallowed new value gives one error instead of two, and the edit form no longer shows the stored value twice.
 * Fixed: On MySQL/MariaDB, a value list or dependency mapping that is too large gives a clear validation error (HTTP 422 in the APIs, audited error in project settings) instead of an internal error or silent truncation.
 * Fixed: A large mapping save on widened MySQL columns no longer rolls back because its audit row overflowed.

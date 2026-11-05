@@ -607,14 +607,17 @@ test('i18n: English fallbacks without a meta tag, the meta texts when given, fal
 });
 
 // WP-18: 11 keys (UD-37 adds lockedRefused); the key set equals the meta
-// keys of the en head fixture (ClientConfig::I18N).
-test('i18n: the 11 English fallbacks equal the en texts of the registry and en.yml error_save_failed', async () => {
+// keys of the en head fixture (ClientConfig::I18N). Changed by WP-36: 13
+// keys, the wizard's loading and load failure texts (wizardLoading,
+// wizardLoadFailed) added; was 11.
+test('i18n: the 13 English fallbacks equal the en texts of the registry and en.yml error_save_failed', async () => {
   const keys = {
     selectParent: 'text_dcf_hint_select_parent', noOptions: 'text_dcf_hint_no_options',
     noOptionsGeneric: 'text_dcf_hint_no_options_generic', legacy: 'text_dcf_hint_legacy',
     legacyLocked: 'text_dcf_hint_legacy_locked', legacyGeneric: 'text_dcf_hint_legacy_generic',
     bulkDefault: 'text_dcf_hint_bulk_default', bulkCleared: 'text_dcf_hint_bulk_cleared',
-    liveMessage: 'text_dcf_live_message', lockedRefused: 'text_dcf_hint_locked_refused'
+    liveMessage: 'text_dcf_live_message', lockedRefused: 'text_dcf_hint_locked_refused',
+    wizardLoading: 'text_dcf_wizard_loading', wizardLoadFailed: 'text_dcf_wizard_load_failed'
   };
   const head = fs.readFileSync(path.join(ROOT, 'test', 'js', 'fixtures', 'head', 'en.html'), 'utf8');
   const meta = new JSDOM(`<!doctype html><html><head>${head}</head></html>`).window.document.querySelector('meta[name="dcf-i18n"]');

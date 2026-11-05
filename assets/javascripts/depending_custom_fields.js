@@ -383,7 +383,11 @@
       bulkCleared: 'Cleared because the current choice for %{parent} allows no values for this field.',
       liveMessage: '%{field}: %{message}',
       saveFailed: 'The change could not be saved.',
-      lockedRefused: 'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.'
+      lockedRefused: 'A dependent field that you cannot edit has a value that this choice does not allow; saving will be refused.',
+      // WP-36: read by context_menu_wizard.js (its own copy), kept here so the
+      // key set equals the meta tag's.
+      wizardLoading: 'Loading...',
+      wizardLoadFailed: 'The wizard could not be loaded.'
     };
     var states = new WeakMap();
     var configs = new WeakMap();

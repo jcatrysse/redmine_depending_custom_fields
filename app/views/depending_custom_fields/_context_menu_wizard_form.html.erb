@@ -1,0 +1,31 @@
+<%# frozen_string_literal: true %>
+<%# The wizard body (WP-36): ContextMenuWizardController#show renders it without layout for the root and levels it checked (ParentDetector.wizard_levels for the current user); it was the inline template of the menu before (UD-13 changed by the owner). %>
+<%# Each field: an implicit label around its name and core's bulk select (no for, no new id: core ids repeat the issue form's on the issue page, UX-13). The Cancel button only closes the wizard (context_menu_wizard.js). %>
+<% issue_ids = Array(issues).map(&:id) %>
+  <form class="cf-wizard-form"
+        action="<%= depending_custom_fields_save_path %>"
+        method="post"
+        data-parent-id="<%= parent_field.id %>"
+        data-issue-ids="<%= issue_ids.join(',') %>">
+    <% issue_ids.each do |id| %>
+      <input type="hidden" name="ids[]" value="<%= id %>" />
+    <% end %>
+    <input type="hidden" name="issue_ids" value="<%= issue_ids.join(',') %>" />
+    <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
+    <div class="cf-cols">
+      <% fields_hierarchy.each_with_index do |field_level, index| %>
+        <div class="cf-col" data-level="<%= index %>">
+          <% field_level.each do |cf| %>
+            <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>">
+              <label class="cf-wizard-label"><span title="<%= cf.description.presence %>" class="field-description"><%= h(cf.name) %></span>
+              <%= render_custom_field(cf, issues) %></label>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+    <div class="cf-actions">
+      <button type="submit" class="icon icon-save"><%= l(:button_save) %></button>
+      <button type="button" class="cf-wizard-cancel"><%= l(:button_cancel) %></button>
+    </div>
+  </form>

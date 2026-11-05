@@ -168,6 +168,33 @@ module DcfConfigHelpers
     tracker.save!
     tracker
   end
+
+  # WP-36: the request headers of context_menu_wizard.js for the wizard body.
+  DCF_WIZARD_HEADERS = { 'X-Requested-With' => 'XMLHttpRequest', 'Accept' => 'text/html' }.freeze
+
+  # WP-36: GET of the wizard body as the script asks for it (parent_id and
+  # ids[] from the entry), in a request spec. Returns the response.
+  def dcf_get_wizard(parent_id, ids, env: {}, headers: DCF_WIZARD_HEADERS)
+    get '/depending_custom_fields/wizard', params: { parent_id: parent_id.to_s, ids: Array(ids).map(&:to_s) },
+                                           headers: headers, env: env
+    response
+  end
+
+  # WP-36: the wizard form the script fetches for the entry of +root+ (a
+  # field or its id) in the parsed context menu +menu+, or nil when the menu
+  # has no entry for it or the body is not a 200 with one form. The ids are
+  # the entry's.
+  def dcf_wizard_form(menu, root, env: {})
+    root_id = root.respond_to?(:id) ? root.id : root
+    entry = menu.at_css("li.folder.cf-parent[data-parent-id='#{root_id}']")
+    return nil unless entry
+
+    dcf_get_wizard(root_id, entry['data-issue-ids'].to_s.split(','), env: env)
+    return nil unless response.status == 200
+
+    forms = Nokogiri::HTML(response.body).css('form.cf-wizard-form')
+    forms.size == 1 ? forms.first : nil
+  end
 end
 
 RSpec.configure do |config|

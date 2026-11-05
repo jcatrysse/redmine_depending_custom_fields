@@ -1,9 +1,4 @@
-<div id="context-menu"><ul>
-<li class="folder cf-parent" data-parent-id="9100001" data-issue-ids="9300001" data-template-id="cf-wizard-9100001">
-  <a href="#" class="submenu" data-template-id="cf-wizard-9100001">Root field</a>
-</li>
-<template id="cf-wizard-9100001">
-  <form class="cf-wizard-form" action="/depending_custom_fields/save" method="post" data-parent-id="9100001" data-issue-ids="9300001">
+<form class="cf-wizard-form" action="/depending_custom_fields/save" method="post" data-parent-id="9100001" data-issue-ids="9300001">
       <input type="hidden" name="ids[]" value="9300001">
     <input type="hidden" name="issue_ids" value="9300001">
     <input type="hidden" name="authenticity_token" value="{{TOKEN}}">
@@ -40,7 +35,6 @@
     </div>
     <div class="cf-actions">
       <button type="submit" class="icon icon-save">Save</button>
+      <button type="button" class="cf-wizard-cancel">Cancel</button>
     </div>
   </form>
-</template>
-</ul></div>

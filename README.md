@@ -242,9 +242,18 @@ that does not depend on another field itself) that you may edit on every
 selected issue: available for its tracker and project, visible for your role
 and not read-only by workflow.
 
-Choosing an entry opens the wizard next to the menu, at the entry. It shows
-that field and the dependent fields below it, one column per level, each
-labelled with its field name, and a **Save** button. Only fields you may edit
+The context menu holds only these entries, so it stays small however many
+values the fields have. Choosing an entry opens the wizard next to the menu,
+at the entry: it shows "Loading..." while it fetches its fields from the
+server, with the same checks as the menu (the request needs your session; an
+API key is not accepted). If they cannot be loaded, for example after the
+session expired or when the selection changed meanwhile, the wizard shows
+"The wizard could not be loaded." and names no field; choose the entry again
+to retry. Every opening loads the fields again. **Escape**, the **Cancel**
+button, a click outside the wizard or moving to another menu entry closes it
+without saving. The wizard shows the top-level field and the dependent fields
+below it, one column per level, each labelled with its field name, and a
+**Save** and a **Cancel** button. Only fields you may edit
 on every selected issue are offered: a field that is read-only or hidden for
 you on one of them is not shown, and neither are the dependent fields below
 it, even those you may edit. Every field, the top-level one included, opens on

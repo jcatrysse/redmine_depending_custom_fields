@@ -572,7 +572,11 @@ RSpec.describe RedmineDependingCustomFields::ClientData do
     legacy = File.read(File.join(root, 'assets/javascripts/context_menu_wizard.js'))
     keys = legacy.scan(/dataset\.([A-Za-z]+)/).flatten.uniq
     attributes = legacy.scan(/data-([a-z-]+)/).flatten.uniq
-    expect(keys).to include('dcfInit', 'templateId')
+    # Changed by WP-36: the script reads the entry's attributes with
+    # getAttribute and no templateId any more; was include('dcfInit',
+    # 'templateId').
+    expect(keys).to include('dcfInit')
+    expect(keys).not_to include('templateId')
     expect(keys).not_to include('valueMap', 'fieldId')
 
     names.each do |name|

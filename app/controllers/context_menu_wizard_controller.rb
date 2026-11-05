@@ -1,9 +1,56 @@
 # Saves the values chosen in the context menu wizard. The former 'options'
 # action is removed (SD-14): no client used it and it had no visibility check.
+#
+# WP-36 (UD-13 changed by the owner): show answers the wizard body that
+# context_menu_wizard.js fetches when the wizard opens, with the rules of the
+# context menu: login (session only, no API key), every selected issue
+# visible (403, core find_issues), the edit permission on every project (the
+# ContextMenuHook gate, 403), one SelectionGraph and ParentDetector for the
+# current user. A root it does not offer (not a root, hidden, unknown, no
+# levels) and malformed parameters get the same generic 404, so a hidden
+# field cannot be told from a missing one. Never cached (no-store).
 class ContextMenuWizardController < ApplicationController
+  # Prepended: run before Redmine's own callbacks, so a format extension of
+  # the body path is refused before a session or an API key is read, and
+  # every answer of show (errors and the login redirect included) is no-store.
+  prepend_before_action :refuse_format, only: :show
+  prepend_before_action :no_store, only: :show
   before_action :require_login
   before_action :find_issues, only: :save
   before_action :check_edit_permission, only: :save
+
+  helper :custom_fields
+  helper :context_menu_wizard
+
+  # Issue ids are integer columns.
+  MAX_ID = 2_147_483_647
+
+  def show
+    ids = requested_ids
+    root_id = requested_parent_id
+    return render_404 unless ids && root_id
+
+    issues = Issue.where(id: ids).preload(:project, :tracker, :status).to_a
+    return render_404 if issues.empty?
+    return deny_access unless issues.all?(&:visible?)
+
+    user = User.current
+    return deny_access unless issues.all? { |issue| user.allowed_to?(:edit_issues, issue.project) }
+
+    detector = RedmineDependingCustomFields::ParentDetector
+    graph = RedmineDependingCustomFields::SelectionGraph.new(issues)
+    root = detector.for_issues(issues, graph: graph, user: user).detect { |cf| cf.id == root_id }
+    levels = root ? detector.wizard_levels(root, issues, graph: graph, user: user) : []
+    return render_404 if levels.empty?
+
+    render partial: 'depending_custom_fields/context_menu_wizard_form', formats: [:html], layout: false,
+           content_type: 'text/html',
+           locals: { parent_field: root, issues: issues, fields_hierarchy: levels }
+  rescue StandardError => e
+    # Fail closed as the menu hook does: the class only, never the message.
+    Rails.logger.warn("[DCF] context menu wizard failed: #{e.class}")
+    head :internal_server_error unless performed?
+  end
 
   def save
     values = extract_custom_field_values
@@ -34,6 +81,41 @@ class ContextMenuWizardController < ApplicationController
   end
 
   private
+
+  def no_store
+    response.headers['Cache-Control'] = 'no-store'
+  end
+
+  # The body path takes no format (the API formats belong to the API).
+  def refuse_format
+    head :not_found if params[:format].present?
+  end
+
+  # The ids as the core menu sends them (ids[]=1&ids[]=2) or a comma string,
+  # deduplicated; nil unless every element is a String of canonical digits
+  # within the id column (a Hash, nested Arrays, blanks, signs, separators
+  # and huge numbers included).
+  def requested_ids
+    raw = params[:ids]
+    list =
+      case raw
+      when Array then raw
+      when String then raw.split(',', -1)
+      end
+    return nil if list.blank? || !list.all? { |id| canonical_id?(id) }
+
+    list.map(&:to_i).uniq
+  end
+
+  def requested_parent_id
+    raw = params[:parent_id]
+    canonical_id?(raw) ? raw.to_i : nil
+  end
+
+  def canonical_id?(value)
+    value.is_a?(String) && value.length <= 10 &&
+      value.match?(RedmineDependingCustomFields::DependencyRules::CANONICAL_ID) && value.to_i <= MAX_ID
+  end
 
   def extract_custom_field_values
     permitted = params.permit(:fieldId, :value, issue: { custom_field_values: {} })

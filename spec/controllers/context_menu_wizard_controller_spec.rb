@@ -2,10 +2,12 @@ require_relative '../rails_helper'
 
 RSpec.describe ContextMenuWizardController, type: :controller do
   # WP-15: save is the only action (the options actions went with the SD-14
-  # fix) and the helper is not mixed into the controller.
+  # fix) and the helper is not mixed into the controller. Changed by WP-36:
+  # show (the wizard body, UD-13 changed by the owner) is the second action;
+  # the save callbacks are unchanged.
   describe 'actions' do
-    it 'offers only save, behind login, issue lookup and the edit permission check' do
-      expect((described_class.action_methods - ApplicationController.action_methods).to_a).to eq(['save'])
+    it 'offers save and show, save behind login, issue lookup and the edit permission check' do
+      expect((described_class.action_methods - ApplicationController.action_methods).to_a.sort).to eq(%w[save show])
       expect(described_class.include?(ContextMenuWizardHelper)).to be(false)
       callbacks = described_class._process_action_callbacks.select { |c| c.kind == :before }.map(&:filter)
       expect(callbacks).to include(:require_login, :find_issues, :check_edit_permission)

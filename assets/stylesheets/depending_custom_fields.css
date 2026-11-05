@@ -98,3 +98,10 @@ label.dcf-legacy-option { font-style: italic; }
   justify-content: flex-end;
   gap: 4px;
 }
+
+/* WP-36: the loading text and the load failure message of the wizard body. */
+.cf-wizard .cf-wizard-loading,
+.cf-wizard .cf-wizard-error {
+  margin: 4px 6px;
+  white-space: nowrap;
+}

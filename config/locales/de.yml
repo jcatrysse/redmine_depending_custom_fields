@@ -97,6 +97,8 @@ de:
   text_dcf_hint_bulk_cleared: "Geleert, weil die aktuelle Auswahl für %{parent} keine Werte für dieses Feld zulässt."
   text_dcf_live_message: "%{field}: %{message}"
   text_dcf_hint_locked_refused: "Ein abhängiges Feld, das Sie nicht bearbeiten können, hat einen Wert, den diese Auswahl nicht zulässt; das Speichern wird abgelehnt."
+  text_dcf_wizard_loading: "Wird geladen..."
+  text_dcf_wizard_load_failed: "Der Assistent konnte nicht geladen werden."
 
   # Abhängigkeitseditor (gemeinsames Partial, DependencyEditorConfig::I18N)
   text_dcf_editor_help: "Öffnen Sie einen übergeordneten Wert, um die damit erlaubten untergeordneten Werte und optional seinen untergeordneten Standardwert zu wählen. Mit den Filtern finden Sie Werte in langen Listen."

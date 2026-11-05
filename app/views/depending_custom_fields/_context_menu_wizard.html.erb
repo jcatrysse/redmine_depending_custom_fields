@@ -1,41 +1,13 @@
 <%# frozen_string_literal: true %>
-<%# One wizard entry per root (ContextMenuHook): the levels hold only fields the gate user (local user, default User.current) may edit on every selected issue (ParentDetector.wizard_levels). %>
-<%# Each field: an implicit label around its name and core's bulk select (no for, no new id: core ids repeat the issue form's on the issue page, UX-13). %>
+<%# One wizard entry per root (ContextMenuHook): listed only when the levels hold a field the gate user (local user, default User.current) may edit on every selected issue (ParentDetector.wizard_levels). %>
+<%# WP-36 (UD-13 changed by the owner): the entry only, with the URL of the wizard body; context_menu_wizard.js fetches the form (_context_menu_wizard_form) from ContextMenuWizardController#show when the wizard opens. %>
 <% issue_ids = Array(issues).map(&:id) %>
 <% fields_hierarchy = RedmineDependingCustomFields::ParentDetector.wizard_levels(parent_field, issues, graph: graph, user: local_assigns.fetch(:user, User.current)) %>
 <% if fields_hierarchy.any? %>
 <li class="folder cf-parent"
     data-parent-id="<%= parent_field.id %>"
     data-issue-ids="<%= issue_ids.join(',') %>"
-    data-template-id="cf-wizard-<%= parent_field.id %>">
-  <a href="#" class="submenu" data-template-id="cf-wizard-<%= parent_field.id %>"><%= h(parent_field.name) %></a>
+    data-wizard-url="<%= depending_custom_fields_wizard_path %>">
+  <a href="#" class="submenu"><%= h(parent_field.name) %></a>
 </li>
-<template id="cf-wizard-<%= parent_field.id %>">
-  <form class="cf-wizard-form"
-        action="<%= depending_custom_fields_save_path %>"
-        method="post"
-        data-parent-id="<%= parent_field.id %>"
-        data-issue-ids="<%= issue_ids.join(',') %>">
-    <% issue_ids.each do |id| %>
-      <input type="hidden" name="ids[]" value="<%= id %>" />
-    <% end %>
-    <input type="hidden" name="issue_ids" value="<%= issue_ids.join(',') %>" />
-    <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
-    <div class="cf-cols">
-      <% fields_hierarchy.each_with_index do |field_level, index| %>
-        <div class="cf-col" data-level="<%= index %>">
-          <% field_level.each do |cf| %>
-            <div class="cf-wizard-field" data-dcf-wizard-field="<%= cf.id %>">
-              <label class="cf-wizard-label"><span title="<%= cf.description.presence %>" class="field-description"><%= h(cf.name) %></span>
-              <%= render_custom_field(cf, issues) %></label>
-            </div>
-          <% end %>
-        </div>
-      <% end %>
-    </div>
-    <div class="cf-actions">
-      <button type="submit" class="icon icon-save"><%= l(:button_save) %></button>
-    </div>
-  </form>
-</template>
 <% end %>

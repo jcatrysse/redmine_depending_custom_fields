@@ -29,7 +29,7 @@ This register lists the decisions the owner must confirm, each with a recommenda
 | UD-10 | Changed (owner) | 0.1.0 (M2), 0.1.0 (M3) | WP-17, WP-19, WP-34 | Offer a marked '(none)' option for REQUIRED managed children in bulk edit and the wizard, enabled only while the parent selection allows no value? |
 | UD-11 | Resolved | 0.1.0 (M2) | WP-18, WP-20 | Open every wizard field, including the root, on '(No change)' (deviation from D4 'otherwise unchanged')? |
 | UD-12 | Resolved | 0.1.0 (M2) | WP-17 | Apply per-parent defaults at page load only to new records (always on parent changes)? |
-| UD-13 | Changed (owner) | 0.1.0 (M2) | WP-18 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
+| UD-13 | Changed (owner), implemented by WP-36 | 0.1.0 (M2) | WP-18, WP-36 | Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily? |
 | UD-14 | Resolved | 0.1.0 (M2) | WP-15, WP-18 | Delete MappingBuilder, ParentMenuBuilder and the after_custom_field_save dispatch outright (D5) instead of uncached deprecated shims? |
 | UD-15 | Resolved | 0.1.0 (M3) | WP-22 | Keep the admin safe attributes value_dependencies and default_value_dependencies permanently (deviation from D5's one-minor-version window)? |
 | UD-16 | Resolved | 0.1.0 (M3) | WP-25, WP-27 | Editors require JavaScript (admin: mapping unchanged on save without JS; project: Save disabled) and the admin form switches to multipart/form-data while the editor is active? |
@@ -240,7 +240,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 ### UD-13
 
-**Changed by the owner on 2026-11-02: load the wizard on demand.** The context menu no longer carries the wizard template inline; the wizard body is fetched by a separate authorized request when the wizard is opened. Implemented by WP-36. Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. The wizard template stays inline in the context menu (D4 unchanged), with the 512 KB S1 budget asserted by spec.
+**Changed by the owner on 2026-11-02: load the wizard on demand.** The context menu no longer carries the wizard template inline; the wizard body is fetched by a separate authorized request when the wizard is opened. Status: Implemented by WP-36 (GET /depending_custom_fields/wizard, ContextMenuWizardController#show, session only, the rules of the menu; the menu entry carries data-wizard-url and no template; the S1 budget applies to the body). Earlier status: resolved by Claude on the owner's mandate of 2026-10-19 with the text that follows, now superseded. The wizard template stays inline in the context menu (D4 unchanged), with the 512 KB S1 budget asserted by spec.
 
 **Question.** Context menu size: keep the wizard template inline (with a 512 KB S1 budget asserted by spec) rather than loading the wizard body lazily?
 
@@ -250,7 +250,7 @@ Implementation note (WP-10, review semantics-r2-1): "unconstrained" covers the d
 
 **Impact.** WP-18 spec; the lazy variant would add an endpoint and a WP.
 
-**Work packages.** WP-18
+**Work packages.** WP-18, WP-36
 
 ### UD-14
 
@@ -631,7 +631,7 @@ The area designs started from ten default decisions. This table shows where the 
 | D1 | Accept a child and parent combination when neither changed; JS keeps a stored disallowed value | Refined: tolerance per value (UD-04); copies are judged against the source (UD-06). Kept as today by owner choice: a parent that is not available counts as changed, so the child must be cleared (UD-05; for a child the user cannot edit on issues and projects it counts as unchanged, WP-09c), and a non-editable child is validated when its parent changes on every object (UD-07, confirmed: the rules lead; the WP-09b plugin rule on issues and projects, and on time entries since WP-38, SD-22) | The whole-set wording would block adding an allowed value next to a legacy one; project copy silently skipped issues |
 | D2 | Bulk edit: hide '(no change)' on descendants when a parent gets a value, force default or '(none)' | Deviates: '(no change)' stays available, the per-parent default is preselected with a hint, '(none)' is forced only for parent '(none)' or a parent value without links (UD-09); required children get a marked '(none)' (UD-10; removed by WP-34, UD-10 changed by the owner: required children are left as core renders them and the clear stops there) | The literal D2 clears still-valid values on every selected issue (setting Country on 50 issues would wipe City where it is still valid) |
 | D3 | hide_when_disabled keeps its key; hides the field while the parent offers no options | Follows, never in bulk edit and never while a stored non-matching value is shown | |
-| D4 | Context menu without cache, per selection; wizard otherwise unchanged | Refined: wizard opens on '(no change)' (UD-11); wizard body stays inline with a size budget (UD-13); wizard save security is SD-01 | Saving the wizard untouched used to write the root default onto every selected issue |
+| D4 | Context menu without cache, per selection; wizard otherwise unchanged | Refined: wizard opens on '(no change)' (UD-11); wizard body stays inline with a size budget (UD-13), loaded on demand since WP-36 (UD-13 changed by the owner); wizard save security is SD-01 | Saving the wizard untouched used to write the root default onto every selected issue |
 | D5 | Keep JS shims one minor version; drop globals; MappingBuilder uncached or removed; legacy nested params one minor version | Refined: MappingBuilder, ParentMenuBuilder and the after_save dispatch are deleted (UD-14); admin safe attributes are permanent (UD-15); deprecation targets per UD-01 | No users of the builders found; removing the safe attributes would silently break jc-redmine_extended_api |
 | D6 | Admin transport prunes unknown keys except inactive enumerations | Follows; pruning only on the JSON path | |
 | D7 | Two-column import, separator auto, merge or replace, preview, all or nothing | Follows; enumerations matched by name or '#<id>' (UD-19 changed, WP-35); optional spreadsheet formula protection, default off (UD-18) | |

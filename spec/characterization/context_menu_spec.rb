@@ -78,12 +78,16 @@ RSpec.describe 'Issue context menu (characterization)', type: :request do
     folder.css('ul li a').map { |a| [a.text.strip, CGI.unescape(a['href'].to_s)] }
   end
 
-  # Ids of the fields in each data-level column of the wizard template.
+  # Ids of the fields in each data-level column of the wizard. Changed by
+  # WP-36 (UD-13 changed by the owner): the body is fetched from GET
+  # /depending_custom_fields/wizard for the menu entry (dcf_wizard_form); was
+  # read from the inline template#cf-wizard-<id> of the menu. The expectations
+  # that use it are unchanged.
   def wizard_levels(menu, parent_field)
-    template = menu.at_css("template#cf-wizard-#{parent_field.id}")
-    return nil unless template
+    form = dcf_wizard_form(menu, parent_field)
+    return nil unless form
 
-    template.css('div.cf-col').map do |col|
+    form.css('div.cf-col').map do |col|
       col.css('select').map { |s| s['name'][/\[(\d+)\]\z/, 1].to_i }
     end
   end

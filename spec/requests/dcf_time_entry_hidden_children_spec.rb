@@ -448,8 +448,10 @@ RSpec.describe 'Time entries with a depending child the user cannot see (WP-38, 
   describe 'context-menu wizard (POST /depending_custom_fields/save)' do
     it 'exists for issues only: no time entry route, model or hook' do
       routes = Rails.application.routes.routes.select { |r| r.defaults[:controller] == 'context_menu_wizard' }
+      # Changed by WP-36 (UD-13 changed by the owner): the GET of the wizard
+      # body (issues only as well) is the second route; was the save alone.
       expect(routes.map { |r| [r.path.spec.to_s, r.defaults[:action]] })
-        .to eq([['/depending_custom_fields/save(.:format)', 'save']])
+        .to eq([['/depending_custom_fields/wizard(.:format)', 'show'], ['/depending_custom_fields/save(.:format)', 'save']])
       source = File.read(File.expand_path('../../app/controllers/context_menu_wizard_controller.rb', __dir__))
       expect(source).to include('Issue.where(id: ids)')
       expect(source).not_to include('TimeEntry')
