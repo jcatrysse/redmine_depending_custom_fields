@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Seeds the performance data sets with the MAIN plugin data model (0.0.15).
 # Run inside a checkout:  RAILS_ENV=development bundle exec rails runner seed_perf.rb <ids.json>
 # Deterministic (fixed random seed), bulk inserts for issues and custom values, verification through the models.
@@ -10,7 +12,9 @@ ActionMailer::Base.perform_deliveries = false
 OUT = ARGV[0] || 'ids.json'
 RNG = Random.new(20260101)
 T0 = Time.now
-def log(msg) = puts("[seed #{(Time.now - T0).round(1)}s] #{msg}")
+def log(msg)
+  puts("[seed #{(Time.now - T0).round(1)}s] #{msg}")
+end
 
 ADMIN_PASSWORD = 'admin123!'
 MEMBER_PASSWORD = 'Passw0rd!x'
@@ -77,7 +81,7 @@ end
 log 'projects and users ready'
 
 # ----------------------------------------------------------------- fields
-def make_field(name, format, values: nil, parent: nil, multiple: false, projects:, trackers:, mapping: nil, defaults: nil)
+def make_field(name, format, projects:, trackers:, values: nil, parent: nil, multiple: false, mapping: nil, defaults: nil)
   cf = IssueCustomField.new(name: name)
   cf.field_format = format
   cf.multiple = multiple
@@ -139,7 +143,9 @@ plain = make_field('Plain25k', 'list', values: plain_values, projects: [baseline
 log "S2 fields ready (#{(Time.now - t).round(1)}s): Part=#{part.possible_values.size} values, mapping #{part.value_dependencies.size} parents"
 
 # ----------------------------------------------------------------- bulk issues
-def pick(arr) = arr[RNG.rand(arr.size)]
+def pick(arr)
+  arr[RNG.rand(arr.size)]
+end
 
 def bulk_insert_issues(specs, author:, status_pool:, priority:)
   base = Time.now.utc - 86_400 * 90

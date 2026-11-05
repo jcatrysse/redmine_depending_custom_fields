@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Performance probe, identical file in every perf checkout (config/initializers/zz_perf_probe.rb).
 # Per request: SQL query count (without SCHEMA and CACHE), the numbers of the Rails "Completed" line (view and ActiveRecord
 # runtime, allocations), GC heap_live_slots and objects allocated. Published as X-Perf-* response headers and appended as one
@@ -43,13 +45,16 @@ ActiveSupport::Notifications.subscribe('sql.active_record') do |*args|
   payload = args.last
   st = Thread.current[PerfProbe::KEY]
   next unless st
+
   next if payload[:name] == 'SCHEMA' || payload[:name] == 'CACHE' || payload[:cached]
+
   st[:sql] += 1
 end
 
 ActiveSupport::Notifications.subscribe('process_action.action_controller') do |event|
   st = Thread.current[PerfProbe::KEY]
   next unless st
+
   p = event.payload
   st[:view_ms] = (p[:view_runtime] || 0).round(1)
   st[:db_ms] = (p[:db_runtime] || 0).round(1)
