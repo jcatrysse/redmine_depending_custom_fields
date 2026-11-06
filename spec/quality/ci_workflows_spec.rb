@@ -42,6 +42,13 @@ RSpec.describe 'GitHub workflows' do
       it 'references no secrets' do
         expect(File.read(path)).not_to match(/\bsecrets\b/)
       end
+
+      # ruby/setup-ruby builds only the latest patch of each Ruby series for a
+      # new runner image: on ubuntu-latest = ubuntu-26.04 the pinned 3.2.5,
+      # 3.3.9 and 3.4.5 are unavailable and the job stops in "Set up Ruby".
+      it 'runs every job on the pinned ubuntu-24.04 image' do
+        expect(doc['jobs'].values.map { |job| job['runs-on'] }.uniq).to eq(['ubuntu-24.04'])
+      end
     end
   end
 
