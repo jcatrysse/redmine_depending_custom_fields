@@ -473,3 +473,37 @@ One figure needs a second look before the release notes make a claim about Redmi
 ## 11. How to repeat the measurement
 
 The harness is in `.codex/perf/` (README there). The summary of this run is in `docs/perf/results-2026-11-05/summary.md` and `summary.json`; the raw per-request data (about 100 files per Redmine version) is not committed.
+
+## 12. Re-measurement after WP-39 (2026-11-06)
+
+The owner chose R1 and R5(a); WP-39 implemented both (the mapping is now a JSON script element next to the field, and the wizard body is fetched when the pointer or keyboard focus rests 150 ms on the entry). The full harness ran again on the WP-39 head (`adcda3b`, same data, same method, 30 rounds, `measure.sh 30`, 36 minutes); the summary is in `docs/perf/results-2026-11-06-wp39/`. Main was measured again in the same run, so each row compares numbers of one run; the "before" column is the branch of section 5.
+
+Pages with the 25,000 value field (server median, response size, gzipped size):
+
+| Page | Version | main | branch before WP-39 | branch after WP-39 |
+|---|---|---|---|---|
+| issue_new_s2 | 5.1 | 602 ms, 1,369.8 KB, 197.9 KB | 846 ms, 1,626.5 KB, 207.9 KB | 730 ms, 1,377.6 KB, 198.2 KB |
+| issue_edit_s2 | 5.1 | 729 ms, 1,371.2 KB | 735 ms, 1,628.0 KB | 626 ms, 1,379.1 KB |
+| issue_show_s2 | 5.1 | 761 ms, 1,379.0 KB | 877 ms, 1,635.8 KB | 787 ms, 1,387.0 KB |
+| bulk_edit_s2 | 5.1 | 671 ms, 1,369.9 KB | 779 ms, 1,626.6 KB | 672 ms, 1,377.7 KB |
+| issue_update_s2 | 5.1 | 198 ms | 243 ms | 219 ms |
+| issue_new_s2 | 6.1 | 469 ms, 1,373.2 KB, 198.9 KB | 510 ms, 1,629.9 KB, 208.8 KB | 453 ms, 1,381.1 KB, 199.0 KB |
+| issue_edit_s2 | 6.1 | 490 ms | 531 ms | 472 ms |
+| issue_show_s2 | 6.1 | 668 ms | 762 ms | 656 ms |
+| bulk_edit_s2 | 6.1 | 608 ms | 689 ms | 538 ms |
+| issue_update_s2 | 6.1 | 237 ms | 269 ms | 232 ms |
+
+Typical data (S1) stays faster than main: issue_new_s1 5.1 main 184 / branch 103 ms, 6.1 129 / 101 ms; issue_edit_s1 5.1 186 / 108 ms, 6.1 130 / 109 ms; pages 33 to 39 KB against 313 to 318 KB.
+
+Browser, new issue form with the large field (load event, median): 5.1 main 1,850 / before 2,027 / after 1,792 ms; 6.1 main 1,811 / before 1,925 / after 1,764 ms. Parent change to child options painted, large field: 5.1 main 274 / after 171 ms, 6.1 main 310 / after 156 ms. The JavaScript heap of that page did not change with WP-39 (5.1 5.9 MB, 6.1 9.6 MB, main 4.7 to 4.8 MB; R3 was not part of WP-39).
+
+Wizard. The harness clicks the entry without resting on it, so its wizard_ms (click to form shown) measures the path without prefetch: S2 5.1 main 501 / after 1,479 ms, 6.1 main 409 / after 1,241 ms. A separate run with the pointer resting 400 ms on the entry before the click (`browser_bench.js` with a hover step, 5 repetitions, context menu pages only, not committed) gives the realistic case:
+
+| Context menu, 10 issues | Version | main: menu + wizard | branch: menu + wizard |
+|---|---|---|---|
+| S1 typical data | 5.1 | 171 + 5 = 176 ms | 107 + 10 = 117 ms |
+| S1 typical data | 6.1 | 178 + 5 = 183 ms | 109 + 10 = 119 ms |
+| S2 25,000 values | 5.1 | 783 + 462 = 1,245 ms | 170 + 1,032 = 1,202 ms |
+| S2 25,000 values | 6.1 | 908 + 381 = 1,289 ms | 164 + 950 = 1,114 ms |
+
+Conclusion of the re-measurement: R1 did what it promised. The pages with the large field are within 8 KB of main again (gzipped within 0.3 KB), and their server time dropped by 10 to 20 percent against the branch before WP-39. On 6.1 no server page is slower than main by the rule of section 3.5 (the largest difference is saving an issue with typical data, 88 against 83 ms, within noise). With prefetch the right click plus wizard is faster than main on typical data and equal or faster with the large field. On 5.1 three rows with the large field stay slower by that rule: the new issue form (730 against 602 ms; as administrator 763 against 585 ms; 846 against 708 ms in the first run) and saving such an issue (219 against 198 ms, 11 percent). The edit form of the same field on 5.1 is faster than main (626 against 729 ms) and 6.1 shows no such difference, so the cause is still open (R2 and R6); it only concerns fields with tens of thousands of values on Redmine 5.1.
