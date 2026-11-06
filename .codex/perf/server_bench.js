@@ -6,7 +6,11 @@
  * line, SQL query count, process CPU ms, response bytes (and gzip bytes) and status. The probe initializer
  * (lib/zz_perf_probe.rb, one file for both variants) publishes the per-request numbers as X-Perf-* response headers.
  *
- *   node server_bench.js --version 51|61 [--rounds 30] [--warmup 5] [--mixed 300] [--only regex] [--out results/raw]
+ *   node server_bench.js --version 51|61 [--rounds 30] [--warmup 5] [--mixed 300] [--only regex] [--variants main,branch] [--out results/raw]
+ *
+ * --variants (default main,branch): any of none, main, branch. `none` is Redmine without the plugin (checkout n<ver>, database
+ * dcf_perf_n<ver>, a clone of the branch database whose depending fields were turned into core fields, see build_none.sh); the
+ * variants are interleaved per page and rotate their order per round (two variants: alternate, as before).
  *
  * Phases: boot RSS, login, functional check of the update pages, warm-up rounds, memory checkpoint, measured rounds (main and
  * branch interleaved per page, first variant alternates per round), mixed run of N requests, memory checkpoint, heavy pages.
@@ -42,9 +46,10 @@ const log = (...a) => console.error(`[server_bench ${VER} ${new Date().toISOStri
 
 const ids = S.paths.ids(VER);
 const ALL = pages(ids).filter((p) => !ONLY || new RegExp(ONLY).test(p.key));
-const NAMES = { main: `m${VER}`, branch: `p${VER}` };
-const DBS = { main: `dcf_perf_m${VER}`, branch: `dcf_perf_p${VER}` };
-const VARIANTS = ['main', 'branch'];
+const NAMES = { main: `m${VER}`, branch: `p${VER}`, none: `n${VER}` };
+const DBS = { main: `dcf_perf_m${VER}`, branch: `dcf_perf_p${VER}`, none: `dcf_perf_n${VER}` };
+const VARIANTS = arg('variants', 'main,branch').split(',').filter(Boolean);
+if (!VARIANTS.length || VARIANTS.some((v) => !NAMES[v])) { console.error('--variants: none, main, branch'); process.exit(1); }
 
 const clients = {}; // clients[variant][user]
 const csrf = {}; // csrf[variant][page.key]
@@ -168,7 +173,7 @@ async function restart(variant) {
       log(`BOOT FAILED for ${v}`);
     }
   }
-  if (!up.branch) { log('branch did not boot, aborting'); S.stop(NAMES.main); process.exit(2); }
+  if (VARIANTS.some((v) => !up[v])) { log('a variant did not boot, aborting'); VARIANTS.forEach((v) => S.stop(NAMES[v])); process.exit(2); }
   const active = () => VARIANTS.filter((v) => up[v]);
   try {
     for (const v of active()) await login(v);
@@ -177,7 +182,7 @@ async function restart(variant) {
 
     const normal = ALL.filter((p) => !p.heavy);
     const memory = [{ label: 'after_boot', ...Object.fromEntries(active().map((v) => [v, { rss_kb: boot[v].rss_kb }])) }];
-    const order = (r) => (r % 2 === 0 ? active() : active().reverse());
+    const order = (r) => { const a = active(); const k = r % a.length; return a.slice(k).concat(a.slice(0, k)); };
 
     // warm-up
     for (let r = 0; r < WARM; r++) {
@@ -260,7 +265,7 @@ async function restart(variant) {
     }
     meta.boot = boot; meta.memory = memory; meta.heavy_modes = modes;
     meta.finished = new Date().toISOString(); meta.minutes = (Date.now() - t0) / 60000; meta.load_at_end = S.loadavg1();
-    meta.config = { heavy_timeout_s: HEAVY_TIMEOUT_MS / 1000, heavy_slow_ms: HEAVY_SLOW_MS, heavy_rounds: HEAVY_ROUNDS };
+    meta.variants = VARIANTS; meta.config = { heavy_timeout_s: HEAVY_TIMEOUT_MS / 1000, heavy_slow_ms: HEAVY_SLOW_MS, heavy_rounds: HEAVY_ROUNDS };
     fs.writeFileSync(path.join(OUT, `server_${VER}_meta.json`), JSON.stringify(meta, null, 1));
     log(`done in ${meta.minutes.toFixed(1)} min`);
   } finally {

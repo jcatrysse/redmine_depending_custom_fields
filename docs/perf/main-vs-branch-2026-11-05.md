@@ -507,3 +507,241 @@ Wizard. The harness clicks the entry without resting on it, so its wizard_ms (cl
 | S2 25,000 values | 6.1 | 908 + 381 = 1,289 ms | 164 + 950 = 1,114 ms |
 
 Conclusion of the re-measurement: R1 did what it promised. The pages with the large field are within 8 KB of main again (gzipped within 0.3 KB), and their server time dropped by 10 to 20 percent against the branch before WP-39. On 6.1 no server page is slower than main by the rule of section 3.5 (the largest difference is saving an issue with typical data, 88 against 83 ms, within noise). With prefetch the right click plus wizard is faster than main on typical data and equal or faster with the large field. On 5.1 three rows with the large field stay slower by that rule: the new issue form (730 against 602 ms; as administrator 763 against 585 ms; 846 against 708 ms in the first run) and saving such an issue (219 against 198 ms, 11 percent). The edit form of the same field on 5.1 is faster than main (626 against 729 ms) and 6.1 shows no such difference, so the cause is still open (R2 and R6); it only concerns fields with tens of thousands of values on Redmine 5.1.
+
+## 13. Redmine without the plugin (2026-11-06)
+
+The owner asked for the difference in general performance without the plugin and with the plugin, for normal amounts of fields and values. Sections 5 to 12 compare the plugin with its predecessor. This section compares it with plain Redmine, so it shows what the plugin costs on top of Redmine itself.
+
+Method, in short:
+
+* A third variant, `none`: a copy of the production checkout without `plugins/redmine_depending_custom_fields` (same production configuration and probe), on a database cloned from the branch database. In that clone the depending list fields became core `list` fields, the depending enumeration fields core `enumeration` fields (no extended user field exists in the S1 data), with the same possible values; issues, values and projects are unchanged and the plugin tables and settings are removed. Redmine boots, the S1 pages show all fields and saving an issue stores and restores the values (checked by the bench on all three variants). `none` shows the same fields but no filtering by a parent, no project level configuration pages and no wizard in the context menu.
+* Typical data (S1: 3 projects, 300 issues, Country, City, District, Languages, Zone, Site and plain fields), the eight S1 server pages and the two S1 browser pages of the earlier runs. Main and the branch are the same builds as in section 12 (the plugin code of the branch is identical at `adcda3b` and at `8606acb`, where the run was made).
+* The three variants are interleaved per page, their order rotates per round: 30 measured rounds after 5 warm-up rounds, one Puma worker with one thread per variant, Redmine 5.1 and 6.1, each block started with a one minute load average below 1.0. Browser: 10 repetitions in Chromium, same method as before. Medians; the summary is in `docs/perf/results-2026-11-06-noplugin/` (`summary.json`, `summary.md` with p90 and minimum), and the tables below were made from it by `.codex/perf/report_noplugin.js`. The pages of the plugin only features (project configuration, administration editor) have no counterpart in plain Redmine and are not part of this run.
+
+### 13.a Redmine 5.1: server, per request (medians of 30 rounds)
+
+Time (ms):
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | wall | 57.4 | 111.2 | 63.2 | +5.8 | +10.1 |
+| issue_new_s1 | CPU | 48.0 | 99.9 | 52.8 | +4.8 | +10.0 |
+| issue_new_s1 | view | 32.0 | 83.3 | 34.0 | +2.0 | +6.3 |
+| issue_new_s1 | ActiveRecord | 11.8 | 11.7 | 11.8 | 0.0 | 0.0 |
+| issue_edit_s1 | wall | 58.4 | 111.0 | 61.7 | +3.3 | +5.7 |
+| issue_edit_s1 | CPU | 49.5 | 100.5 | 52.5 | +3.1 | +6.3 |
+| issue_edit_s1 | view | 28.9 | 79.3 | 31.5 | +2.6 | +9.2 |
+| issue_edit_s1 | ActiveRecord | 11.1 | 11.6 | 11.4 | +0.3 | +2.3 |
+| issue_show_s1 | wall | 101.1 | 157.4 | 106.3 | +5.2 | +5.1 |
+| issue_show_s1 | CPU | 79.5 | 133.3 | 84.1 | +4.5 | +5.7 |
+| issue_show_s1 | view | 43.8 | 95.8 | 47.4 | +3.6 | +8.2 |
+| issue_show_s1 | ActiveRecord | 26.4 | 27.2 | 27.4 | +1.0 | +3.8 |
+| issue_list_s1 | wall | 114.0 | 168.1 | 117.1 | +3.1 | +2.8 |
+| issue_list_s1 | CPU | 93.4 | 142.3 | 94.3 | +0.9 | +1.0 |
+| issue_list_s1 | view | 54.5 | 106.8 | 56.0 | +1.5 | +2.8 |
+| issue_list_s1 | ActiveRecord | 25.8 | 26.4 | 26.5 | +0.7 | +2.7 |
+| bulk_edit_s1 | wall | 114.7 | 158.8 | 114.9 | +0.2 | +0.2 |
+| bulk_edit_s1 | CPU | 98.9 | 144.8 | 99.9 | +1.0 | +1.1 |
+| bulk_edit_s1 | view | 21.4 | 73.2 | 25.6 | +4.2 | +19.3 |
+| bulk_edit_s1 | ActiveRecord | 19.6 | 19.6 | 19.9 | +0.2 | +1.0 |
+| context_menu_s1 | wall | 67.3 | 99.8 | 63.2 | -4.0 | -6.0 |
+| context_menu_s1 | CPU | 57.4 | 88.3 | 53.1 | -4.3 | -7.5 |
+| context_menu_s1 | view | 14.0 | 37.0 | 7.8 | -6.3 | -44.6 |
+| context_menu_s1 | ActiveRecord | 12.4 | 15.1 | 12.6 | +0.2 | +1.2 |
+| issue_update_s1 | wall | 44.5 | 43.6 | 44.3 | -0.2 | -0.5 |
+| issue_update_s1 | CPU | 36.4 | 35.6 | 36.3 | -0.1 | -0.3 |
+| issue_update_s1 | view | 0.0 | 0.0 | 0.0 | 0.0 | - |
+| issue_update_s1 | ActiveRecord | 9.9 | 10.1 | 9.5 | -0.4 | -4.0 |
+| project_settings_s1 | wall | 48.4 | 110.7 | 60.2 | +11.8 | +24.3 |
+| project_settings_s1 | CPU | 39.0 | 97.9 | 47.8 | +8.8 | +22.4 |
+| project_settings_s1 | view | 25.9 | 83.8 | 33.4 | +7.5 | +29.0 |
+| project_settings_s1 | ActiveRecord | 11.9 | 14.4 | 14.9 | +3.1 | +26.2 |
+
+Work and size per request:
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | SQL queries | 40 | 41 | 40 | 0 | 0.0 |
+| issue_new_s1 | allocations (objects) | 38,034 | 254,229 | 42,218 | +4,185 | +11.0 |
+| issue_new_s1 | response (KB) | 26.4 | 313.1 | 33.2 | +6.8 | +25.6 |
+| issue_new_s1 | gzipped (KB) | 5.9 | 64.9 | 7.3 | +1.3 | +22.2 |
+| issue_edit_s1 | SQL queries | 44 | 45 | 44 | 0 | 0.0 |
+| issue_edit_s1 | allocations (objects) | 39,244 | 255,391 | 43,814 | +4,570 | +11.6 |
+| issue_edit_s1 | response (KB) | 27.9 | 314.4 | 35.2 | +7.3 | +26.1 |
+| issue_edit_s1 | gzipped (KB) | 6.2 | 65.2 | 7.5 | +1.4 | +22.4 |
+| issue_show_s1 | SQL queries | 67 | 68 | 67 | 0 | 0.0 |
+| issue_show_s1 | allocations (objects) | 61,261 | 278,408 | 66,731 | +5,470 | +8.9 |
+| issue_show_s1 | response (KB) | 37.6 | 324.1 | 44.9 | +7.3 | +19.5 |
+| issue_show_s1 | gzipped (KB) | 8.3 | 67.4 | 9.7 | +1.4 | +16.7 |
+| issue_list_s1 | SQL queries | 58 | 60 | 58 | 0 | 0.0 |
+| issue_list_s1 | allocations (objects) | 87,675 | 305,450 | 90,520 | +2,845 | +3.2 |
+| issue_list_s1 | response (KB) | 68.1 | 355.5 | 71.5 | +3.4 | +5.0 |
+| issue_list_s1 | gzipped (KB) | 9.1 | 68.3 | 9.7 | +0.6 | +7.1 |
+| bulk_edit_s1 | SQL queries | 70 | 70 | 70 | 0 | 0.0 |
+| bulk_edit_s1 | allocations (objects) | 75,513 | 291,283 | 80,906 | +5,393 | +7.1 |
+| bulk_edit_s1 | response (KB) | 26.7 | 312.6 | 33.2 | +6.5 | +24.5 |
+| bulk_edit_s1 | gzipped (KB) | 5.4 | 64.3 | 6.7 | +1.3 | +23.7 |
+| context_menu_s1 | SQL queries | 38 | 44 | 38 | 0 | 0.0 |
+| context_menu_s1 | allocations (objects) | 58,856 | 156,171 | 39,396 | -19,460 | -33.1 |
+| context_menu_s1 | response (KB) | 54.6 | 25.5 | 13.1 | -41.5 | -76.0 |
+| context_menu_s1 | gzipped (KB) | 2.2 | 2.7 | 1.2 | -1.0 | -45.5 |
+| issue_update_s1 | SQL queries | 46 | 49 | 46 | 0 | 0.0 |
+| issue_update_s1 | allocations (objects) | 19,192 | 20,920 | 20,834 | +1,642 | +8.6 |
+| issue_update_s1 | response (KB) | 0.1 | 0.1 | 0.1 | 0.0 | 0.0 |
+| project_settings_s1 | SQL queries | 37 | 43 | 43 | +6 | +16.2 |
+| project_settings_s1 | allocations (objects) | 28,972 | 250,225 | 35,829 | +6,857 | +23.7 |
+| project_settings_s1 | response (KB) | 20.5 | 312.0 | 28.1 | +7.6 | +37.1 |
+| project_settings_s1 | gzipped (KB) | 4.8 | 64.1 | 5.8 | +1.0 | +20.4 |
+
+Memory of the Puma worker, Redmine 5.1 (RSS in MB):
+
+| checkpoint | none | main | branch | branch - none (MB) | branch - none (%) |
+|---|---|---|---|---|---|
+| after_boot | 180 | 183 | 181 | +1 | +0.6 |
+| after_warmup | 198 | 243 | 205 | +7 | +3.7 |
+| after_rounds | 198 | 254 | 208 | +9 | +4.6 |
+
+Ruby heap_live_slots after the rounds: none 646,388, main 858,977, branch 664,945.
+
+Browser, Redmine 5.1 (Chromium 153.0.8010.12, 10 repetitions, medians):
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | load event (ms) | 137 | 202 | 156 | +18 | +13.4 |
+| issue_new_s1 | domContentLoaded (ms) | 135 | 199 | 153 | +18 | +13.3 |
+| issue_new_s1 | JS heap (MB) | 3.35 | 4.08 | 3.54 | +0.18 | +5.5 |
+| issue_new_s1 | script duration (ms) | 43.7 | 48.2 | 50.4 | +6.7 | +15.4 |
+| issue_new_s1 | plugin script CPU profile (ms) | 0.0 | 3.5 | 4.8 | +4.8 | - |
+| issue_new_s1 | plugin asset bytes (KB) | 0.0 | 30.4 | 74.4 | +74.4 | - |
+| interaction_s1_country | parent change to options painted (ms) | 5.4 | 9.8 | 6.6 | +1.2 | +22.0 |
+| interaction_s1_country | parent change handler (ms) | 0.4 | 1.6 | 1.5 | +1.1 | +275.0 |
+| context_menu_s1 | load event (ms) | 138 | 202 | 136 | -3 | -1.9 |
+| context_menu_s1 | domContentLoaded (ms) | 135 | 199 | 135 | -0 | -0.0 |
+| context_menu_s1 | JS heap (MB) | 3.21 | 3.91 | 3.28 | +0.07 | +2.2 |
+| context_menu_s1 | script duration (ms) | 44.6 | 46.0 | 42.7 | -1.9 | -4.3 |
+| context_menu_s1 | plugin asset bytes (KB) | 0.0 | 30.4 | 74.4 | +74.4 | - |
+| context_menu_s1 | right click to menu shown (ms) | 78.3 | 109.8 | 73.4 | -5.0 | -6.3 |
+| context_menu_s1 | wizard opened (ms, no hover) | - | 3.0 | 35.8 | - | - |
+
+### 13.b Redmine 6.1: server, per request (medians of 30 rounds)
+
+Time (ms):
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | wall | 60.1 | 70.0 | 60.0 | -0.1 | -0.2 |
+| issue_new_s1 | CPU | 49.7 | 61.0 | 50.3 | +0.6 | +1.2 |
+| issue_new_s1 | view | 32.3 | 42.8 | 33.3 | +1.0 | +3.1 |
+| issue_new_s1 | ActiveRecord | 12.3 | 11.7 | 11.6 | -0.7 | -5.3 |
+| issue_edit_s1 | wall | 60.3 | 76.3 | 63.5 | +3.2 | +5.3 |
+| issue_edit_s1 | CPU | 51.6 | 66.2 | 53.4 | +1.8 | +3.5 |
+| issue_edit_s1 | view | 29.9 | 42.7 | 32.4 | +2.5 | +8.4 |
+| issue_edit_s1 | ActiveRecord | 11.1 | 11.6 | 11.4 | +0.3 | +3.2 |
+| issue_show_s1 | wall | 106.9 | 116.8 | 108.7 | +1.8 | +1.7 |
+| issue_show_s1 | CPU | 85.6 | 94.8 | 87.2 | +1.6 | +1.8 |
+| issue_show_s1 | view | 48.0 | 57.5 | 48.3 | +0.3 | +0.6 |
+| issue_show_s1 | ActiveRecord | 25.6 | 26.3 | 26.4 | +0.8 | +2.9 |
+| issue_list_s1 | wall | 119.4 | 132.1 | 117.7 | -1.7 | -1.4 |
+| issue_list_s1 | CPU | 98.7 | 108.5 | 98.5 | -0.1 | -0.1 |
+| issue_list_s1 | view | 59.1 | 67.7 | 58.7 | -0.5 | -0.8 |
+| issue_list_s1 | ActiveRecord | 24.5 | 25.2 | 24.9 | +0.4 | +1.8 |
+| bulk_edit_s1 | wall | 114.3 | 129.5 | 117.1 | +2.8 | +2.4 |
+| bulk_edit_s1 | CPU | 100.6 | 113.8 | 103.5 | +2.9 | +2.9 |
+| bulk_edit_s1 | view | 21.6 | 33.8 | 25.1 | +3.4 | +16.0 |
+| bulk_edit_s1 | ActiveRecord | 18.1 | 19.4 | 19.3 | +1.2 | +6.6 |
+| context_menu_s1 | wall | 68.9 | 105.5 | 65.2 | -3.7 | -5.4 |
+| context_menu_s1 | CPU | 59.6 | 93.5 | 54.6 | -5.0 | -8.4 |
+| context_menu_s1 | view | 14.8 | 38.3 | 8.1 | -6.7 | -45.1 |
+| context_menu_s1 | ActiveRecord | 11.3 | 14.9 | 12.2 | +0.9 | +8.4 |
+| issue_update_s1 | wall | 42.3 | 46.0 | 45.1 | +2.8 | +6.7 |
+| issue_update_s1 | CPU | 35.1 | 37.4 | 37.2 | +2.1 | +6.0 |
+| issue_update_s1 | view | 0.0 | 0.0 | 0.0 | 0.0 | - |
+| issue_update_s1 | ActiveRecord | 9.6 | 9.9 | 9.6 | +0.1 | +1.0 |
+| project_settings_s1 | wall | 51.9 | 74.4 | 61.3 | +9.3 | +18.0 |
+| project_settings_s1 | CPU | 42.5 | 62.5 | 49.5 | +7.0 | +16.5 |
+| project_settings_s1 | view | 29.3 | 46.6 | 34.5 | +5.2 | +17.6 |
+| project_settings_s1 | ActiveRecord | 11.8 | 14.3 | 14.6 | +2.8 | +24.2 |
+
+Work and size per request:
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | SQL queries | 41 | 42 | 41 | 0 | 0.0 |
+| issue_new_s1 | allocations (objects) | 30,972 | 59,629 | 33,072 | +2,100 | +6.8 |
+| issue_new_s1 | response (KB) | 29.9 | 316.5 | 36.6 | +6.7 | +22.6 |
+| issue_new_s1 | gzipped (KB) | 6.7 | 65.9 | 8.0 | +1.3 | +19.7 |
+| issue_edit_s1 | SQL queries | 45 | 46 | 45 | 0 | 0.0 |
+| issue_edit_s1 | allocations (objects) | 32,563 | 61,202 | 34,814 | +2,251 | +6.9 |
+| issue_edit_s1 | response (KB) | 31.6 | 318.1 | 38.9 | +7.3 | +23.0 |
+| issue_edit_s1 | gzipped (KB) | 6.9 | 66.2 | 8.3 | +1.4 | +19.9 |
+| issue_show_s1 | SQL queries | 69 | 70 | 69 | 0 | 0.0 |
+| issue_show_s1 | allocations (objects) | 54,393 | 83,935 | 57,480 | +3,087 | +5.7 |
+| issue_show_s1 | response (KB) | 44.7 | 331.2 | 52.0 | +7.3 | +16.3 |
+| issue_show_s1 | gzipped (KB) | 9.5 | 68.9 | 10.9 | +1.4 | +14.5 |
+| issue_list_s1 | SQL queries | 59 | 61 | 59 | 0 | 0.0 |
+| issue_list_s1 | allocations (objects) | 70,461 | 100,412 | 72,509 | +2,048 | +2.9 |
+| issue_list_s1 | response (KB) | 77.2 | 364.6 | 80.5 | +3.4 | +4.4 |
+| issue_list_s1 | gzipped (KB) | 10.0 | 69.6 | 10.7 | +0.7 | +6.5 |
+| bulk_edit_s1 | SQL queries | 70 | 70 | 70 | 0 | 0.0 |
+| bulk_edit_s1 | allocations (objects) | 69,478 | 97,815 | 72,762 | +3,285 | +4.7 |
+| bulk_edit_s1 | response (KB) | 29.4 | 315.3 | 36.0 | +6.5 | +22.1 |
+| bulk_edit_s1 | gzipped (KB) | 6.1 | 65.2 | 7.4 | +1.3 | +21.3 |
+| context_menu_s1 | SQL queries | 38 | 44 | 38 | 0 | 0.0 |
+| context_menu_s1 | allocations (objects) | 53,393 | 150,490 | 36,566 | -16,827 | -31.5 |
+| context_menu_s1 | response (KB) | 56.9 | 27.1 | 15.0 | -41.9 | -73.7 |
+| context_menu_s1 | gzipped (KB) | 2.3 | 2.8 | 1.3 | -1.0 | -44.0 |
+| issue_update_s1 | SQL queries | 45 | 48 | 45 | 0 | 0.0 |
+| issue_update_s1 | allocations (objects) | 18,007 | 19,879 | 19,657 | +1,650 | +9.2 |
+| issue_update_s1 | response (KB) | 0.0 | 0.0 | 0.0 | 0.0 | - |
+| project_settings_s1 | SQL queries | 37 | 43 | 43 | +6 | +16.2 |
+| project_settings_s1 | allocations (objects) | 24,384 | 58,052 | 30,354 | +5,970 | +24.5 |
+| project_settings_s1 | response (KB) | 24.8 | 316.3 | 32.3 | +7.6 | +30.5 |
+| project_settings_s1 | gzipped (KB) | 5.6 | 65.0 | 6.6 | +1.0 | +17.8 |
+
+Memory of the Puma worker, Redmine 6.1 (RSS in MB):
+
+| checkpoint | none | main | branch | branch - none (MB) | branch - none (%) |
+|---|---|---|---|---|---|
+| after_boot | 224 | 230 | 229 | +5 | +2.0 |
+| after_warmup | 243 | 301 | 275 | +32 | +13.0 |
+| after_rounds | 244 | 319 | 287 | +43 | +17.4 |
+
+Ruby heap_live_slots after the rounds: none 648,973, main 894,355, branch 814,109.
+
+Browser, Redmine 6.1 (Chromium 153.0.8010.12, 10 repetitions, medians):
+
+| page | metric | none | main | branch | branch - none | branch - none (%) |
+|---|---|---|---|---|---|---|
+| issue_new_s1 | load event (ms) | 180 | 197 | 191 | +11 | +6.1 |
+| issue_new_s1 | domContentLoaded (ms) | 175 | 194 | 188 | +13 | +7.4 |
+| issue_new_s1 | JS heap (MB) | 3.78 | 4.55 | 4.00 | +0.22 | +5.8 |
+| issue_new_s1 | script duration (ms) | 48.3 | 50.9 | 51.2 | +2.8 | +5.8 |
+| issue_new_s1 | plugin script CPU profile (ms) | 0.0 | 3.2 | 4.6 | +4.6 | - |
+| issue_new_s1 | plugin asset bytes (KB) | 0.0 | 30.4 | 74.4 | +74.4 | - |
+| interaction_s1_country | parent change to options painted (ms) | 10.0 | 9.5 | 8.8 | -1.2 | -12.0 |
+| interaction_s1_country | parent change handler (ms) | 0.3 | 1.6 | 1.6 | +1.3 | +433.3 |
+| context_menu_s1 | load event (ms) | 160 | 175 | 157 | -4 | -2.3 |
+| context_menu_s1 | domContentLoaded (ms) | 158 | 172 | 153 | -6 | -3.6 |
+| context_menu_s1 | JS heap (MB) | 3.59 | 4.30 | 3.65 | +0.06 | +1.7 |
+| context_menu_s1 | script duration (ms) | 45.4 | 46.8 | 47.5 | +2.2 | +4.8 |
+| context_menu_s1 | plugin asset bytes (KB) | 0.0 | 30.4 | 74.4 | +74.4 | - |
+| context_menu_s1 | right click to menu shown (ms) | 82.6 | 113.1 | 74.7 | -7.9 | -9.6 |
+| context_menu_s1 | wizard opened (ms, no hover) | - | 3.3 | 35.5 | - | - |
+
+### 13.c Conclusion for the owner
+
+On normal data (a few hundred issues, a handful of depending fields) the plugin adds very little to plain Redmine:
+
+* Showing and editing issues (new issue form, edit form, issue page, issue list, bulk edit): the plugin adds 0.2 to 5.8 ms per request on Redmine 5.1 (0.2 to 10.1 percent, on pages of 57 to 115 ms) and between minus 1.7 and plus 3.2 ms on Redmine 6.1 (minus 1.4 to plus 5.3 percent). Only the new issue form on 5.1 touches the 10 percent line of section 3.5 (5.8 ms, 10.1 percent), and its p90 shows large outliers in that series, so it does not stand out from noise. For comparison, the released plugin (main) added 44 to 56 ms on these five pages on 5.1 and 10 to 16 ms on 6.1.
+* Saving an issue costs nothing noticeable: 44.3 against 44.5 ms on 5.1 and 45.1 against 42.3 ms on 6.1 (2.8 ms). The number of SQL queries is identical to plain Redmine on these pages and on the context menu (main used 1 to 6 more); only the project settings page has more (below).
+* The project settings page costs more: 11.8 ms (24 percent) on 5.1 and 9.3 ms (18 percent) on 6.1, against 48 and 52 ms. That page now carries the plugin's own part (the configuration tab, 6 more SQL queries, 7.6 KB more HTML), so the difference is the price of the feature, and it is a page that is rarely opened.
+* The right click context menu is faster with the plugin than in plain Redmine (63.2 against 67.3 ms on 5.1, 65.2 against 68.9 ms on 6.1; the response is 13.1 against 54.6 KB on 5.1), and its response is much smaller: without the plugin Redmine puts a submenu with all values of each list field into the menu (the `none` response holds 131 `custom_field_values` links; a check of the `none` page on 5.1, not part of the measured series), the plugin replaces these entries for its fields by one wizard entry.
+* Size on the wire: the issue forms, issue page and bulk edit are 6.5 to 7.3 KB larger (gzipped 1.3 to 1.4 KB) on top of 26 to 45 KB, the list 3.4 KB. The plugin's scripts and stylesheet are 74.4 KB that plain Redmine does not load; the browser fetches them once and then caches them.
+* In the browser the new issue form loads 18 ms slower on 5.1 (156 against 137 ms) and 11 ms slower on 6.1 (191 against 180 ms); the page with the context menu loads as fast or faster (136 against 138 ms and 157 against 160 ms). The plugin's own scripts need 4.6 to 4.8 ms of CPU per page load, the JavaScript heap is 0.2 MB higher, and a change of a parent field is handled and painted in 6.6 ms (5.1) and 8.8 ms (6.1) including the filtering of the child options.
+* Memory of the Puma worker: right after boot the plugin adds 1 MB (5.1) and 5 MB (6.1); after the rounds 9 MB (4.6 percent, 208 against 198 MB) on 5.1 and 43 MB (17.4 percent, 287 against 244 MB) on 6.1. The released plugin needed 254 and 319 MB there, so the branch uses less than main, but on 6.1 it is a visible step above plain Redmine. It is one measurement of one worker per variant, which is how the memory of the earlier sections was measured too; the size of the step on 6.1 has not been traced to a cause.
+
+In plain words: on normal data the plugin is almost free for the people who work with issues, a few milliseconds per page on a page that takes 60 to 120 ms, with the same number of database queries as Redmine, and it makes the context menu faster. What it costs is a little more data per page, 74 KB of scripts downloaded once, and more memory per Puma worker (about 10 MB on 5.1, about 40 MB on 6.1). The one page that clearly takes longer is the project settings page, because it has the plugin's configuration on it.
+
+What was not measured here: the data sets with the very large field (S2 and the baseline), where the plugin has the most to do and section 12 holds the comparison with main; the plugin only pages; Redmine 7.0; several workers or users at the same time; a mixed run of many requests; cold start of the first request. `none` renders the child fields as plain lists, so the differences above contain the cost of the mapping and the dependency behaviour together with the cost of loading the plugin, which is what an administrator sees when installing it.
+
+To repeat: `.codex/perf/build_none.sh`, then `measure.sh 30` with `BENCH_VARIANTS=none,main,branch` (README of `.codex/perf`, section "Redmine without the plugin"). The run took 5 minutes (about 1.7 minutes of server bench and 0.8 minutes of browser bench per Redmine version).

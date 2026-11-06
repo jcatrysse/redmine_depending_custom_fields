@@ -10,14 +10,20 @@
 # Environment: HEAVY_TIMEOUT_S (45), HEAVY_ROUNDS (3), HEAVY_NORMAL_ROUNDS (15), SEC_ROUNDS (8), WARMUP (5), MIXED (300),
 #              BROWSER_REPS (10), PROFILE_REPS (2), BROWSER_TIMEOUT_S (30),
 #              LOAD_MAX (1.0), LOAD_WAIT_MAX seconds (900, then it proceeds and records the load), VERSIONS ("51 61").
+#   BENCH_VARIANTS ("main,branch"; "none,main,branch" adds Redmine without the plugin, checkout n<ver>, see build_none.sh),
+#   RESULTS_DIR (default $P/results), MAPPING_CHECK (1; 0 skips it), SERVER_ONLY_RE and BROWSER_ONLY_RE (page regex passed as --only).
 source "$(dirname "$0")/common.sh"
 N=30
 SMOKE=0
 if [ "${1:-}" = "--smoke" ]; then SMOKE=1; N=2; elif [ -n "${1:-}" ]; then N=$1; fi
 WARMUP=${WARMUP:-5}; MIXED=${MIXED:-300}; BROWSER_REPS=${BROWSER_REPS:-10}; PROFILE_REPS=${PROFILE_REPS:-2}
-RESULTS=$P/results
+RESULTS=${RESULTS_DIR:-$P/results}
+BENCH_VARIANTS=${BENCH_VARIANTS:-main,branch}; MAPPING_CHECK=${MAPPING_CHECK:-1}
+SERVER_ONLY=(); BROWSER_ONLY=()
+[ -n "${SERVER_ONLY_RE:-}" ] && SERVER_ONLY=(--only "$SERVER_ONLY_RE")
+[ -n "${BROWSER_ONLY_RE:-}" ] && BROWSER_ONLY=(--only "$BROWSER_ONLY_RE")
 if [ $SMOKE = 1 ]; then
-  WARMUP=1; MIXED=20; BROWSER_REPS=2; PROFILE_REPS=1; RESULTS=$P/results/smoke
+  WARMUP=1; MIXED=20; BROWSER_REPS=2; PROFILE_REPS=1; RESULTS=${RESULTS_DIR:-$P/results}/smoke
   export HEAVY_TIMEOUT_S=${HEAVY_TIMEOUT_S:-15} BROWSER_TIMEOUT_S=${BROWSER_TIMEOUT_S:-15}; LOAD_WAIT_MAX=${LOAD_WAIT_MAX:-0}
 fi
 LOAD_MAX=${LOAD_MAX:-1.0}; LOAD_WAIT_MAX=${LOAD_WAIT_MAX:-900}
@@ -32,7 +38,7 @@ fi
 export SEC_ROUNDS=${SEC_ROUNDS:-8}
 T0=$(date +%s)
 say() { echo "[measure $(date +%H:%M:%S) +$(( ($(date +%s) - T0) / 60 ))m] $*"; }
-stop_all() { for n in m51 p51 m61 p61; do "$H/server.sh" stop $n >/dev/null 2>&1; done; }
+stop_all() { for n in m51 p51 m61 p61 n51 n61; do "$H/server.sh" stop $n >/dev/null 2>&1; done; }
 trap stop_all EXIT
 wait_load() {
   local waited=0 l
@@ -49,7 +55,7 @@ pg_isready -q -h localhost || pg_ctlcluster 16 main start
 # 1. refresh the branch plugin into p51 and p61
 for v in $VERSIONS; do
   ver=$(ver_of $v)
-  [ -d "$E/p$v" ] && [ -d "$E/m$v" ] && [ -f "$P/data/ids-$v.json" ] || { say "checkout or data for $v missing: run .codex/perf/build.sh first"; exit 3; }
+  [ -d "$E/p$v" ] && [ -d "$E/m$v" ] && { [[ "$BENCH_VARIANTS" != *none* ]] || [ -d "$E/n$v" ]; } && [ -f "$P/data/ids-$v.json" ] || { say "checkout or data for $v missing: run .codex/perf/build.sh first"; exit 3; }
   if ! diff -rq "$E/src-branch" "$E/p$v/plugins/redmine_depending_custom_fields" >/dev/null 2>&1 || [ ! -f "$E/p$v/config/initializers/zz_perf_probe.rb" ]; then
     say "refreshing the branch plugin in p$v"
     dcf_select_ruby "$ver" >/dev/null 2>&1 || true
@@ -59,18 +65,21 @@ for v in $VERSIONS; do
   fi
   cmp -s "$H/lib/zz_perf_probe.rb" "$E/m$v/config/initializers/zz_perf_probe.rb" || cp "$H/lib/zz_perf_probe.rb" "$E/m$v/config/initializers/zz_perf_probe.rb"
   cmp -s "$H/lib/zz_perf_probe.rb" "$E/p$v/config/initializers/zz_perf_probe.rb" || cp "$H/lib/zz_perf_probe.rb" "$E/p$v/config/initializers/zz_perf_probe.rb"
+  [ ! -d "$E/n$v" ] || cmp -s "$H/lib/zz_perf_probe.rb" "$E/n$v/config/initializers/zz_perf_probe.rb" || cp "$H/lib/zz_perf_probe.rb" "$E/n$v/config/initializers/zz_perf_probe.rb"
   grep -m1 "version '" "$E/p$v/plugins/redmine_depending_custom_fields/init.rb" | sed "s/^/[p$v plugin] /"
 done
 # the branch commit, for the record
 git -C "$REPO" rev-parse --short HEAD > "$RESULTS/branch_commit.txt" 2>/dev/null
 # 2. per version
 for v in $VERSIONS; do
+  if [ "$MAPPING_CHECK" = 1 ]; then
   wait_load; say "mapping check $v"
   node "$H/verify_mapping.js" --version $v --out "$RESULTS" || say "MAPPING CHECK FAILED for $v (see $RESULTS/mapping_check_$v.json)"
+  fi
   wait_load; say "server bench $v (rounds $N)"
-  node "$H/server_bench.js" --version $v --rounds "$N" --warmup "$WARMUP" --mixed "$MIXED" --out "$RESULTS/raw" 2>&1 | tee "$P/logs/server_bench_$v.log" | sed -n '/round \|done in\|FAILED\|timeout/p'
+  node "$H/server_bench.js" --version $v --rounds "$N" --warmup "$WARMUP" --mixed "$MIXED" --variants "$BENCH_VARIANTS" "${SERVER_ONLY[@]}" --out "$RESULTS/raw" 2>&1 | tee "$P/logs/server_bench_$v.log" | sed -n '/round \|done in\|FAILED\|timeout/p'
   wait_load; say "browser bench $v (reps $BROWSER_REPS)"
-  node "$H/browser_bench.js" --version $v --reps "$BROWSER_REPS" --profile "$PROFILE_REPS" --out "$RESULTS/raw" 2>&1 | tee "$P/logs/browser_bench_$v.log" | sed -n '/done in\|FAILED\|timeout/p'
+  node "$H/browser_bench.js" --version $v --reps "$BROWSER_REPS" --profile "$PROFILE_REPS" --variants "$BENCH_VARIANTS" "${BROWSER_ONLY[@]}" --out "$RESULTS/raw" 2>&1 | tee "$P/logs/browser_bench_$v.log" | sed -n '/done in\|FAILED\|timeout/p'
 done
 node "$H/summarize.js" --dir "$RESULTS" --out "$RESULTS"
 say "finished"

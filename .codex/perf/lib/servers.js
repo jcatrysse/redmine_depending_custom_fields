@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { H, P, E } = require('./paths');
-const PORTS = { m51: 3051, p51: 3052, m61: 3061, p61: 3062 };
+const PORTS = { m51: 3051, p51: 3052, m61: 3061, p61: 3062, n51: 3053, n61: 3063 };
 
 function start(name) {
   const out = execFileSync(`${H}/server.sh`, ['start', name, String(PORTS[name])], { encoding: 'utf8', timeout: 240000 });

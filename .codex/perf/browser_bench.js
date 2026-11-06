@@ -3,7 +3,11 @@
 /*
  * Browser harness: Chromium (Playwright) against the production servers of main and branch, logged in (session cookie).
  *
- *   node browser_bench.js --version 51|61 [--reps 10] [--profile 3] [--only regex] [--out results/raw]
+ *   node browser_bench.js --version 51|61 [--reps 10] [--profile 3] [--only regex] [--variants main,branch] [--out results/raw]
+ *
+ * --variants (default main,branch): any of none, main, branch (none = Redmine without the plugin, checkout n<ver>). Interleaved, the
+ * order rotates per repetition. For none the interaction only records the options shown (no filtering exists, ok is true) and
+ * the context menu is timed without the wizard entry (there is none).
  *
  * Pages: issue_new_s1, issue_new_s2 (Feature form with the 25,000 value Part), issue_edit_s2, admin_part_editor (admin editor of
  * Part), context_menu_s1 and context_menu_s2 (10 issues selected in the list, right click).
@@ -38,8 +42,9 @@ const log = (...a) => console.error(`[browser_bench ${VER} ${new Date().toISOStr
 
 const ids = S.paths.ids(VER);
 const F = ids.fields; const I = ids.issues; const V = ids.values;
-const NAMES = { main: `m${VER}`, branch: `p${VER}` };
-const VARIANTS = ['main', 'branch'];
+const NAMES = { main: `m${VER}`, branch: `p${VER}`, none: `n${VER}` };
+const VARIANTS = arg('variants', 'main,branch').split(',').filter(Boolean);
+if (!VARIANTS.length || VARIANTS.some((v) => !NAMES[v])) { console.error('--variants: none, main, branch'); process.exit(1); }
 const PLUGIN_URL = /redmine_depending_custom_fields|depending_custom_fields\.js|context_menu_wizard\.js|dcf_[a-z_]+\.js/;
 
 const listUrl = (project, idList) => `/projects/${project}/issues?set_filter=1&f[]=issue_id&op[issue_id]==&v[issue_id][]=${idList.join(',')}&per_page=25`;
@@ -52,6 +57,7 @@ const PAGES = [
   { key: 'context_menu_s2', user: 'member', path: listUrl('perf-large', I.s2_ctx_ids), menu: true, reps: 5 }
 ].filter((p) => !ONLY || new RegExp(ONLY).test(p.key));
 
+const rot = (a, r) => { const k = r % a.length; return a.slice(k).concat(a.slice(0, k)); };
 const metric = (list, name) => (list.find((m) => m.name === name) || { value: 0 }).value;
 
 async function newCtx(browser, port, cookie) {
@@ -61,8 +67,8 @@ async function newCtx(browser, port, cookie) {
 }
 
 // In-page helpers: time stamps are taken inside the page (performance.now) so the harness round trips do not count.
-async function interact(page, spec) {
-  return page.evaluate(async ({ parent, child, value, allowed }) => {
+async function interact(page, spec, record) {
+  return page.evaluate(async ({ parent, child, value, allowed, record }) => {
     const p = document.querySelector(`#issue_custom_field_values_${parent}`);
     const c = document.querySelector(`#issue_custom_field_values_${child}`);
     const visible = () => Array.from(c.options).filter((o) => o.value && !o.hidden && !o.disabled && o.style.display !== 'none').map((o) => o.value);
@@ -73,12 +79,12 @@ async function interact(page, spec) {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const t2 = performance.now();
     const got = visible();
-    const ok = got.length === allowed.length && allowed.every((a) => got.includes(a));
+    const ok = record || (got.length === allowed.length && allowed.every((a) => got.includes(a)));
     return { sync_ms: t1 - t0, paint_ms: t2 - t0, ok, options: got.length };
-  }, spec);
+  }, { ...spec, record: !!record });
 }
 
-async function contextMenu(page) {
+async function contextMenu(page, noWizard) {
   await page.evaluate(() => {
     window.__cm = { t0: null, t1: null };
     window.addEventListener('contextmenu', (e) => { if (window.__cm.t0 === null) window.__cm.t0 = performance.now(); }, true);
@@ -94,6 +100,7 @@ async function contextMenu(page) {
   await page.mouse.click(box.x + 10, box.y + 5, { button: 'right' });
   await page.waitForFunction(() => window.__cm && window.__cm.t1 !== null, null, { timeout: 30000 });
   const menu = await page.evaluate(() => window.__cm.t1 - window.__cm.t0);
+  if (noWizard) return { menu_ms: menu };
   // the wizard entry
   await page.evaluate(() => {
     window.__wz = { t0: null, t1: null };
@@ -110,7 +117,7 @@ async function contextMenu(page) {
   return { menu_ms: menu, wizard_ms: wizard };
 }
 
-async function load(ctx, base, spec, { profile = false } = {}) {
+async function load(ctx, base, spec, { profile = false, variant = '' } = {}) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e.message).slice(0, 200)));
@@ -138,8 +145,8 @@ async function load(ctx, base, spec, { profile = false } = {}) {
       nodes: metric(m1, 'Nodes'), plugin_assets_kb: nav.kb, plugin_assets_ms: nav.ms, plugin_asset_requests: nav.count, js_errors: errors.length
     };
     const extra = {};
-    if (spec.interaction) extra.interaction = await interact(page, spec.interaction);
-    if (spec.menu) extra.menu = await contextMenu(page);
+    if (spec.interaction) extra.interaction = await interact(page, spec.interaction, variant === 'none');
+    if (spec.menu) extra.menu = await contextMenu(page, variant === 'none');
     return { sample, ...extra };
   } finally {
     await page.close().catch(() => {});
@@ -166,12 +173,12 @@ function pluginTime(profile) {
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const t0 = Date.now();
-  const meta = { kind: 'browser', version: VER, reps: REPS, profile_reps: PROFILE, started: new Date().toISOString(), load_at_start: S.loadavg1(), notes: {} };
+  const meta = { kind: 'browser', version: VER, reps: REPS, profile_reps: PROFILE, variants: VARIANTS, started: new Date().toISOString(), load_at_start: S.loadavg1(), notes: {} };
   const up = {};
   for (const v of VARIANTS) {
     try { log(S.start(NAMES[v])); up[v] = true; } catch (e) { meta.notes[`boot_failed_${v}`] = String(e.stdout || e.message).slice(-800); }
   }
-  if (!up.branch) { log('branch did not boot'); S.stop(NAMES.main); process.exit(2); }
+  if (VARIANTS.some((v) => !up[v])) { log('a variant did not boot'); VARIANTS.forEach((v) => S.stop(NAMES[v])); process.exit(2); }
   const browser = await chromium.launch();
   meta.chromium = browser.version();
   const base = {}; const ctxs = {};
@@ -195,7 +202,7 @@ function pluginTime(profile) {
     // heavy pages first: a timeout restarts a server, which must be warm again before the repetitions
     for (const p of [...PAGES].sort((a, b) => (b.heavy ? 1 : 0) - (a.heavy ? 1 : 0))) {
       for (const v of live()) {
-        try { await load(ctxs[v][p.user], base[v], p); } catch (e) {
+        try { await load(ctxs[v][p.user], base[v], p, { variant: v }); } catch (e) {
           if (p.heavy) { rec(v, p.key).mode = { mode: 'timeout', timeout_s: NAV_TIMEOUT_MS / 1000, error: String(e.message).slice(0, 120) }; log(`${p.key} ${v}: ${String(e.message).slice(0, 80)}, restarting server`); S.start(NAMES[v]); await login(v); }
           else throw e;
         }
@@ -203,11 +210,11 @@ function pluginTime(profile) {
     }
     for (let r = 0; r < REPS; r++) {
       for (const p of PAGES.filter((x) => r < (x.reps ? Math.min(x.reps, REPS) : REPS))) {
-        for (const v of (r % 2 === 0 ? live() : live().reverse())) {
+        for (const v of rot(live(), r)) {
           const entry = rec(v, p.key);
           if (entry.mode.mode === 'timeout') continue;
           try {
-            const res = await load(ctxs[v][p.user], base[v], p);
+            const res = await load(ctxs[v][p.user], base[v], p, { variant: v });
             entry.samples.push({ phase: 'measured', ...res.sample, ...(res.menu || {}) });
             if (res.interaction) rec(v, p.interaction.key).samples.push({ phase: 'measured', ...res.interaction });
           } catch (e) {
@@ -221,7 +228,7 @@ function pluginTime(profile) {
     // plugin script cost: profiled loads
     for (let r = 0; r < PROFILE; r++) {
       for (const p of PAGES.filter((x) => !x.menu && x.key !== 'issue_edit_s2')) {
-        for (const v of (r % 2 === 0 ? live() : live().reverse())) {
+        for (const v of rot(live(), r)) {
           const entry = rec(v, p.key);
           if (entry.mode.mode === 'timeout') continue;
           try {

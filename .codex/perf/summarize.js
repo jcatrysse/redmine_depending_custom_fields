@@ -3,7 +3,9 @@
 /*
  * Reads results/raw/*.json (server_*, browser_*, *_meta.json) and writes results/summary.json and results/summary.md:
  * per version, kind, page and metric: median, p90, min (and n, max) for main and branch, delta (branch - main) and ratio
- * (branch / main), both on the median. Cells without data say why (n/a, timeout, not run).
+ * (branch / main), both on the median. Cells without data say why (n/a, timeout, not run). When the raw files hold the variant
+ * `none` (Redmine without the plugin, see build_none.sh) every metric also has delta_none / ratio_none (branch - none, branch / none),
+ * main_delta_none (main - none), and the markdown tables get the columns none, branch minus none (ms) and branch minus none (percent).
  *
  *   node summarize.js [--dir results] [--raw raw] [--out results]
  */
@@ -43,7 +45,12 @@ for (const ver of Object.values(summary.versions)) {
   for (const kind of ['server', 'browser']) {
     for (const page of Object.values(ver[kind] || {})) {
       for (const m of Object.values(page.metrics)) {
-        const a = m.main; const b = m.branch;
+        const a = m.main; const b = m.branch; const n = m.none;
+        if (n && b && n.median !== null && b.median !== null) {
+          m.delta_none = b.median - n.median;
+          m.ratio_none = n.median === 0 ? null : b.median / n.median;
+          if (a && a.median !== null) m.main_delta_none = a.median - n.median;
+        }
         if (a && b && a.median !== null && b.median !== null) {
           m.delta = b.median - a.median;
           m.ratio = a.median === 0 ? null : b.median / a.median;
@@ -74,16 +81,20 @@ const SERVER_METRICS = [['ms', 'Wall time (ms)', 0], ['cpu_ms', 'Process CPU tim
   ['db_ms', 'ActiveRecord time (ms), Rails Completed line', 0], ['alloc', 'Allocations (Rails Completed line)', 0], ['sql', 'SQL queries (without SCHEMA and CACHE)', 0],
   ['bytes', 'Response bytes', 0], ['gzip_bytes', 'Response bytes gzipped', 0]];
 
-let md = `# Performance summary: main (0.0.15) versus branch\n\nGenerated ${summary.generated}. Cells: median / p90 / min. Delta = branch median minus main median, ratio = branch median / main median (below 1 means the branch is faster or smaller).\n\n`;
+const HAS_NONE = Object.values(summary.versions).some((v) => ['server', 'browser'].some((k) => Object.values(v[k] || {}).some((p) => p.n.none !== undefined)));
+let md = `# Performance summary: main (0.0.15) versus branch${HAS_NONE ? ' versus Redmine without the plugin (none)' : ''}\n\nGenerated ${summary.generated}. Cells: median / p90 / min. Delta = branch median minus main median, ratio = branch median / main median (below 1 means the branch is faster or smaller).${HAS_NONE ? ' Branch - none is the branch median minus the median of Redmine without the plugin (ms or the unit of the table, and percent of none).' : ''}\n\n`;
 
 function table(first, metricKey, label, digits, pagesObj) {
-  let t = `#### ${label}\n\n| page | main (med / p90 / min) | branch (med / p90 / min) | delta | ratio | n main/branch | note |\n|---|---|---|---|---|---|---|\n`;
+  const NV = HAS_NONE ? ['none', 'main', 'branch'] : ['main', 'branch'];
+  let t = `#### ${label}\n\n| page | ${HAS_NONE ? 'none (med / p90 / min) | ' : ''}main (med / p90 / min) | branch (med / p90 / min) | delta | ratio | ${HAS_NONE ? 'branch - none | branch - none (%) | ' : ''}n ${NV.join('/')} | note |\n|---|${HAS_NONE ? '---|---|---|' : ''}---|---|---|---|---|---|\n`;
   for (const [pk, p] of Object.entries(pagesObj)) {
     const m = p.metrics[metricKey];
-    const note = ['main', 'branch'].map((v) => { const t2 = modeText(p.mode[v]); return t2 ? `${v}: ${t2}` : ''; }).filter(Boolean).join('; ') +
-      ['main', 'branch'].map((v) => (p.failed[v] ? ` ${v}: ${p.failed[v]} failed` : '')).join('');
+    const note = NV.map((v) => { const t2 = modeText(p.mode[v]); return t2 ? `${v}: ${t2}` : ''; }).filter(Boolean).join('; ') +
+      NV.map((v) => (p.failed[v] ? ` ${v}: ${p.failed[v]} failed` : '')).join('');
     if (!m && !(first && note)) continue;
-    t += `| ${pk} | ${cell(m && m.main, digits)} | ${cell(m && m.branch, digits)} | ${m && m.delta !== undefined ? f1(m.delta, digits) : '-'} | ${m && m.ratio !== undefined && m.ratio !== null ? m.ratio.toFixed(2) : '-'} | ${p.n.main ?? '-'}/${p.n.branch ?? '-'} | ${note} |\n`;
+    const noneCols = HAS_NONE ? `${cell(m && m.none, digits)} | ` : '';
+    const dn = HAS_NONE ? `${m && m.delta_none !== undefined ? f1(m.delta_none, digits) : '-'} | ${m && m.ratio_none !== undefined && m.ratio_none !== null ? f1((m.ratio_none - 1) * 100, 1) : '-'} | ` : '';
+    t += `| ${pk} | ${noneCols}${cell(m && m.main, digits)} | ${cell(m && m.branch, digits)} | ${m && m.delta !== undefined ? f1(m.delta, digits) : '-'} | ${m && m.ratio !== undefined && m.ratio !== null ? m.ratio.toFixed(2) : '-'} | ${dn}${NV.map((v) => p.n[v] ?? '-').join('/')} | ${note} |\n`;
   }
   return t + '\n';
 }
@@ -95,12 +106,16 @@ for (const [ver, data] of Object.entries(summary.versions)) {
     md += `Server bench: ${sm.rounds} measured rounds, ${sm.warmup} warm-up rounds, mixed run ${sm.mixed}, ${sm.minutes ? sm.minutes.toFixed(1) : '?'} min, load average at start ${sm.load_at_start}.\n\n`;
     if (sm.notes && Object.keys(sm.notes).length) md += `Notes: ${JSON.stringify(sm.notes)}\n\n`;
     if (sm.memory) {
-      md += `### Memory (puma worker, 1 thread)\n\n| checkpoint | main RSS (MB) | branch RSS (MB) | main peak RSS (MB) | branch peak RSS (MB) | main heap_live_slots | branch heap_live_slots |\n|---|---|---|---|---|---|---|\n`;
+      const hasN = !!(sm.variants && sm.variants.includes('none'));
+      md += `### Memory (puma worker, 1 thread)\n\n| checkpoint | ${hasN ? 'none RSS (MB) | ' : ''}main RSS (MB) | branch RSS (MB) | ${hasN ? 'none peak RSS (MB) | ' : ''}main peak RSS (MB) | branch peak RSS (MB) | ${hasN ? 'none heap_live_slots | ' : ''}main heap_live_slots | branch heap_live_slots |\n|---|${hasN ? '---|---|---|' : ''}---|---|---|---|---|---|\n`;
       const mb = (k) => (k ? (k / 1024).toFixed(0) : '-');
       for (const c of sm.memory) {
         const star = (v) => ((c.restarted || []).includes(v) ? ' (restarted)' : '');
-        md += `| ${c.label} | ${mb(c.main && c.main.rss_kb)}${star('main')} | ${mb(c.branch && c.branch.rss_kb)}${star('branch')} | ${mb(c.main && c.main.hwm_kb)} | ${mb(c.branch && c.branch.hwm_kb)} | ${f1(c.main && c.main.heap_live_slots, 0)} | ${f1(c.branch && c.branch.heap_live_slots, 0)} |\n`;
-        if (c.mixed) md += `| mixed run totals (${c.mixed.branch ? c.mixed.branch.n : '?'} requests) | time ${c.mixed.main ? (c.mixed.main.ms / 1000).toFixed(0) : '-'} s, objects ${c.mixed.main ? f1(c.mixed.main.alloc_total, 0) : '-'}, SQL ${c.mixed.main ? c.mixed.main.sql : '-'} | time ${(c.mixed.branch.ms / 1000).toFixed(0)} s, objects ${f1(c.mixed.branch.alloc_total, 0)}, SQL ${c.mixed.branch.sql} | | | | |\n`;
+        const nR = hasN ? `${mb(c.none && c.none.rss_kb)}${star('none')} | ` : '';
+        const nP = hasN ? `${mb(c.none && c.none.hwm_kb)} | ` : '';
+        const nH = hasN ? `${f1(c.none && c.none.heap_live_slots, 0)} | ` : '';
+        md += `| ${c.label} | ${nR}${mb(c.main && c.main.rss_kb)}${star('main')} | ${mb(c.branch && c.branch.rss_kb)}${star('branch')} | ${nP}${mb(c.main && c.main.hwm_kb)} | ${mb(c.branch && c.branch.hwm_kb)} | ${nH}${f1(c.main && c.main.heap_live_slots, 0)} | ${f1(c.branch && c.branch.heap_live_slots, 0)} |\n`;
+        if (c.mixed && !hasN) md += `| mixed run totals (${c.mixed.branch ? c.mixed.branch.n : '?'} requests) | time ${c.mixed.main ? (c.mixed.main.ms / 1000).toFixed(0) : '-'} s, objects ${c.mixed.main ? f1(c.mixed.main.alloc_total, 0) : '-'}, SQL ${c.mixed.main ? c.mixed.main.sql : '-'} | time ${(c.mixed.branch.ms / 1000).toFixed(0)} s, objects ${f1(c.mixed.branch.alloc_total, 0)}, SQL ${c.mixed.branch.sql} | | | | |\n`;
       }
       md += '\n';
     }
